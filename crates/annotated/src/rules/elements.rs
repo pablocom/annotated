@@ -56,6 +56,22 @@ impl<T> HasElements for VecDeque<T> {
     }
 }
 
+impl<C: HasElements + ?Sized> HasElements for &C {
+    type Element = C::Element;
+
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&C::Element, &Location<'_>)) {
+        C::for_each_element(self, at, check);
+    }
+}
+
+impl<C: HasElements + ?Sized> HasElements for Box<C> {
+    type Element = C::Element;
+
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&C::Element, &Location<'_>)) {
+        C::for_each_element(self, at, check);
+    }
+}
+
 impl<K: Display, V, S> HasElements for HashMap<K, V, S> {
     type Element = V;
 

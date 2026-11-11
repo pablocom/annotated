@@ -10,7 +10,9 @@ error[E0277]: `each` can't go through the elements of `u8`
   = help: the trait `HasElements` is not implemented for `u8`
   = note: implement `annotated::rules::HasElements` for `u8` to say what its elements are
   = help: the following other types implement trait `HasElements`:
+            &C
             BTreeMap<K, V>
+            Box<C>
             HashMap<K, V, S>
             Vec<T>
             VecDeque<T>

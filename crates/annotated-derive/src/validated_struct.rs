@@ -98,19 +98,28 @@ impl<'a> ValidatedField<'a> {
 }
 
 fn option_content(checked_type: &Type) -> Option<&Type> {
+    content_of("Option", checked_type)
+}
+
+fn content_of<'a>(wrapper: &str, checked_type: &'a Type) -> Option<&'a Type> {
     let Type::Path(type_path) = checked_type else {
         return None;
     };
     let last_segment = type_path.path.segments.last()?;
-    if last_segment.ident != "Option" {
+    if last_segment.ident != wrapper {
         return None;
     }
     last_type_argument(type_path)
 }
 
 fn element_type(collection: &Type) -> Option<&Type> {
+    if let Some(boxed_collection) = content_of("Box", collection) {
+        return element_type(boxed_collection);
+    }
     match collection {
         Type::Array(array) => Some(&array.elem),
+        Type::Slice(slice) => Some(&slice.elem),
+        Type::Reference(reference) => element_type(&reference.elem),
         Type::Path(type_path) => last_type_argument(type_path),
         _ => None,
     }

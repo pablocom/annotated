@@ -205,3 +205,63 @@ fn each_checks_every_value_of_a_hash_map() {
 
     assert_eq!(violations_of(&shelf), ["labels[top]: length"]);
 }
+
+#[derive(Validate)]
+struct Draft<'a> {
+    #[validate(each(length(max = 3)))]
+    labels: &'a [String],
+    #[validate(each(length(max = 3)))]
+    stickers: Box<[String]>,
+    #[validate(each(length(max = 3)))]
+    pins: &'a [Option<String>],
+    #[validate(each(length(max = 3)))]
+    stamps: Box<[Option<String>]>,
+}
+
+fn draft() -> Draft<'static> {
+    Draft {
+        labels: &[],
+        stickers: Box::new([]),
+        pins: &[],
+        stamps: Box::new([]),
+    }
+}
+
+#[test]
+fn each_checks_every_element_of_a_borrowed_slice() {
+    let labels = ["tin".to_owned(), "jars".to_owned()];
+    let draft = Draft {
+        labels: &labels,
+        ..draft()
+    };
+
+    assert_eq!(violations_of(&draft), ["labels[1]: length"]);
+}
+
+#[test]
+fn each_checks_every_element_of_a_boxed_slice() {
+    let draft = Draft {
+        stickers: Box::new(["jars".to_owned(), "tin".to_owned()]),
+        ..draft()
+    };
+
+    assert_eq!(violations_of(&draft), ["stickers[0]: length"]);
+}
+
+#[test]
+fn each_checks_the_value_inside_every_optional_element_of_a_borrowed_slice() {
+    let pins = [None, Some("jars".to_owned())];
+    let draft = Draft { pins: &pins, ..draft() };
+
+    assert_eq!(violations_of(&draft), ["pins[1]: length"]);
+}
+
+#[test]
+fn each_checks_the_value_inside_every_optional_element_of_a_boxed_slice() {
+    let draft = Draft {
+        stamps: Box::new([Some("jars".to_owned()), None]),
+        ..draft()
+    };
+
+    assert_eq!(violations_of(&draft), ["stamps[0]: length"]);
+}
