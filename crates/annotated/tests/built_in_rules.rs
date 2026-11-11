@@ -2,7 +2,7 @@
 
 mod support;
 
-use annotated::Validate;
+use annotated::{Problem, Validate};
 use support::violations_of;
 
 #[derive(Validate)]
@@ -96,4 +96,78 @@ fn url_takes_the_schemes_it_accepts_as_a_named_argument() {
         release.validate().unwrap_err().to_string(),
         "download: must be a URL using ftp or sftp"
     );
+}
+
+fn not_reserved(slug: &str) -> Result<(), Problem> {
+    if slug == "admin" {
+        return Err(Problem::custom("reserved_slug", "is reserved"));
+    }
+    Ok(())
+}
+
+#[derive(Validate)]
+struct NewProduct {
+    #[validate(prefix = "SKU-")]
+    sku: String,
+    #[validate(suffix(".pdf"))]
+    manual: String,
+    #[validate(contains("@", message = "must be an address"))]
+    support: String,
+    #[validate(custom(not_reserved))]
+    slug: String,
+}
+
+fn new_product() -> NewProduct {
+    NewProduct {
+        sku: "SKU-1042".to_owned(),
+        manual: "chair.pdf".to_owned(),
+        support: "help@example.com".to_owned(),
+        slug: "garden-chair".to_owned(),
+    }
+}
+
+#[test]
+fn prefix_checks_that_a_field_starts_with_its_value() {
+    let product = NewProduct {
+        sku: "1042".to_owned(),
+        ..new_product()
+    };
+
+    assert_eq!(
+        product.validate().unwrap_err().to_string(),
+        r#"sku: must start with "SKU-""#
+    );
+}
+
+#[test]
+fn suffix_checks_that_a_field_ends_with_its_value() {
+    let product = NewProduct {
+        manual: "chair.doc".to_owned(),
+        ..new_product()
+    };
+
+    assert_eq!(violations_of(&product), ["manual: suffix"]);
+}
+
+#[test]
+fn contains_checks_that_a_field_contains_its_value() {
+    let product = NewProduct {
+        support: "help".to_owned(),
+        ..new_product()
+    };
+
+    assert_eq!(
+        product.validate().unwrap_err().to_string(),
+        "support: must be an address"
+    );
+}
+
+#[test]
+fn custom_checks_a_field_with_your_function() {
+    let product = NewProduct {
+        slug: "admin".to_owned(),
+        ..new_product()
+    };
+
+    assert_eq!(violations_of(&product), ["slug: reserved_slug"]);
 }

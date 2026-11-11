@@ -13,3 +13,5 @@ Every change users of the crates can notice is listed here. The format follows [
 - The `email` rule: an email address as HTML's `<input type="email">` accepts one, at most 254 bytes.
 - The `url` rule, behind the `url` feature: an absolute URL valid by the WHATWG URL Standard, of the scheme `http` or `https`, or of those set with `schemes`.
 - The `ip` rule: an IPv4 or IPv6 address, or only one of them with `v4()` or `v6()`.
+- The `contains`, `prefix` and `suffix` rules: a string containing, starting with or ending with a text.
+- The `custom` rule: any `Fn(&V) -> Result<(), Problem>` of your own, checking any value that borrows as a `V`, so a check of `&str` checks a `String` field.

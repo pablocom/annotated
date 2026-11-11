@@ -52,6 +52,24 @@ pub enum Problem {
         /// The IP version accepted, 4 or 6, or `None` for both.
         version: Option<u8>,
     },
+    /// A string doesn't contain a text: `contains`, code `contains`, with the param `text`.
+    #[non_exhaustive]
+    Contains {
+        /// The text it must contain.
+        text: &'static str,
+    },
+    /// A string doesn't start with a prefix: `prefix`, code `prefix`, with the param `prefix`.
+    #[non_exhaustive]
+    Prefix {
+        /// The text it must start with.
+        prefix: &'static str,
+    },
+    /// A string doesn't end with a suffix: `suffix`, code `suffix`, with the param `suffix`.
+    #[non_exhaustive]
+    Suffix {
+        /// The text it must end with.
+        suffix: &'static str,
+    },
     /// A problem reported by a rule of your own, made with [`Problem::custom`].
     #[non_exhaustive]
     Custom {
@@ -199,6 +217,9 @@ impl Problem {
             Self::Email => "email",
             Self::Url { .. } => "url",
             Self::Ip { .. } => "ip",
+            Self::Contains { .. } => "contains",
+            Self::Prefix { .. } => "prefix",
+            Self::Suffix { .. } => "suffix",
             Self::Custom { code, .. } => code,
         }
     }
@@ -221,6 +242,9 @@ impl Problem {
             Self::Required | Self::Email => Vec::new(),
             Self::Url { schemes } => vec![("schemes", schemes.join(", "))],
             Self::Ip { version } => version.iter().map(|version| ("version", version.to_string())).collect(),
+            Self::Contains { text } => vec![("text", (*text).to_owned())],
+            Self::Prefix { prefix } => vec![("prefix", (*prefix).to_owned())],
+            Self::Suffix { suffix } => vec![("suffix", (*suffix).to_owned())],
             Self::Custom { params, .. } => params.clone(),
         }
     }
@@ -244,6 +268,9 @@ impl Display for Problem {
             Self::Url { schemes } => write!(formatter, "must be a URL using {}", either_of(schemes)),
             Self::Ip { version: None } => formatter.write_str("must be an IP address"),
             Self::Ip { version: Some(version) } => write!(formatter, "must be an IPv{version} address"),
+            Self::Contains { text } => write!(formatter, "must contain {text:?}"),
+            Self::Prefix { prefix } => write!(formatter, "must start with {prefix:?}"),
+            Self::Suffix { suffix } => write!(formatter, "must end with {suffix:?}"),
             Self::Custom { message, .. } => formatter.write_str(message),
         }
     }
@@ -399,6 +426,63 @@ mod tests {
     #[test]
     fn an_ip_of_any_version_has_no_params() {
         assert_eq!(Problem::Ip { version: None }.params(), []);
+    }
+
+    #[test]
+    fn a_string_without_a_text_is_known_as_contains() {
+        assert_eq!(Problem::Contains { text: "@" }.code(), "contains");
+    }
+
+    #[test]
+    fn a_string_without_a_text_reads_as_the_text_quoted() {
+        assert_eq!(Problem::Contains { text: "@" }.to_string(), r#"must contain "@""#);
+    }
+
+    #[test]
+    fn a_contains_param_is_its_text() {
+        assert_eq!(Problem::Contains { text: "@" }.params(), [("text", "@".to_owned())]);
+    }
+
+    #[test]
+    fn a_string_without_a_prefix_is_known_as_prefix() {
+        assert_eq!(Problem::Prefix { prefix: "SKU-" }.code(), "prefix");
+    }
+
+    #[test]
+    fn a_string_without_a_prefix_reads_as_the_prefix_quoted() {
+        assert_eq!(
+            Problem::Prefix { prefix: "SKU-" }.to_string(),
+            r#"must start with "SKU-""#
+        );
+    }
+
+    #[test]
+    fn a_prefix_param_is_its_prefix() {
+        assert_eq!(
+            Problem::Prefix { prefix: "SKU-" }.params(),
+            [("prefix", "SKU-".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_string_without_a_suffix_is_known_as_suffix() {
+        assert_eq!(Problem::Suffix { suffix: ".pdf" }.code(), "suffix");
+    }
+
+    #[test]
+    fn a_string_without_a_suffix_reads_as_the_suffix_quoted() {
+        assert_eq!(
+            Problem::Suffix { suffix: ".pdf" }.to_string(),
+            r#"must end with ".pdf""#
+        );
+    }
+
+    #[test]
+    fn a_suffix_param_is_its_suffix() {
+        assert_eq!(
+            Problem::Suffix { suffix: ".pdf" }.params(),
+            [("suffix", ".pdf".to_owned())]
+        );
     }
 
     #[test]
