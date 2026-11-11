@@ -13,6 +13,7 @@ categories = ["data-structures", "encoding", "rust-patterns"]
 [features]
 default = ["serde"]
 serde = ["dep:serde"]
+json = ["serde", "dep:serde_json"]
 regex = ["dep:regex", "annotated-derive/regex"]
 unicode = ["dep:unicode-segmentation"]
 
@@ -20,6 +21,7 @@ unicode = ["dep:unicode-segmentation"]
 annotated-derive = { version = "=0.1.0", path = "../annotated-derive" }
 regex = { version = "1.13.1", optional = true }
 serde = { version = "1.0.229", optional = true }
+serde_json = { version = "1.0.154", optional = true }
 unicode-segmentation = { version = "1.13.3", optional = true }
 
 [dev-dependencies]

@@ -7,10 +7,13 @@
 //!
 //! With the `serde` feature, on by default, `#[derive(Deserialize)]` checks a struct as it is deserialized:
 //! [`from_deserializer`] answers every missing field and broken rule together, and serde's own `Deserialize`
-//! refuses a struct breaking its rules with every violation in its error's message.
+//! refuses a struct breaking its rules with every violation in its error's message. The `json` feature reads
+//! JSON this way with [`json::from_str`] and [`json::from_slice`].
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(feature = "json")]
+pub mod json;
 pub mod rules;
 
 #[doc(hidden)]
