@@ -1,0 +1,16 @@
+[package]
+name = "annotated"
+description = "Annotate structs with validation rules and get every problem at once, missing fields included"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords = ["validation", "validate", "serde", "derive", "annotations"]
+categories = ["data-structures", "encoding", "rust-patterns"]
+
+[dependencies]
+
+[lints]
+workspace = true
