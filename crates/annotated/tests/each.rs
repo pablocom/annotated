@@ -3,6 +3,7 @@
 mod support;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::hash::RandomState;
 
 use annotated::Validate;
 use support::violations_of;
@@ -166,6 +167,8 @@ struct Shelf {
     queue: VecDeque<String>,
     #[validate(each(length(max = 3)))]
     labels: HashMap<String, String>,
+    #[validate(each(length(max = 3)))]
+    notes: HashMap<String, Option<String>, RandomState>,
 }
 
 fn shelf() -> Shelf {
@@ -173,6 +176,7 @@ fn shelf() -> Shelf {
         slots: [None, None],
         queue: VecDeque::new(),
         labels: HashMap::new(),
+        notes: HashMap::default(),
     }
 }
 
@@ -204,6 +208,16 @@ fn each_checks_every_value_of_a_hash_map() {
     };
 
     assert_eq!(violations_of(&shelf), ["labels[top]: length"]);
+}
+
+#[test]
+fn each_checks_the_value_inside_every_optional_value_of_a_map_written_with_its_hasher() {
+    let shelf = Shelf {
+        notes: HashMap::from_iter([("top".to_owned(), None), ("bottom".to_owned(), Some("jars".to_owned()))]),
+        ..shelf()
+    };
+
+    assert_eq!(violations_of(&shelf), ["notes[bottom]: length"]);
 }
 
 #[derive(Validate)]

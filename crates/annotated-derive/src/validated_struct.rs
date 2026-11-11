@@ -142,7 +142,7 @@ fn content_of<'a>(wrapper: &str, checked_type: &'a Type) -> Option<&'a Type> {
     if last_segment.ident != wrapper {
         return None;
     }
-    last_type_argument(type_path)
+    type_arguments(type_path).next()
 }
 
 fn element_type(collection: &Type) -> Option<&Type> {
@@ -153,23 +153,34 @@ fn element_type(collection: &Type) -> Option<&Type> {
         Type::Array(array) => Some(&array.elem),
         Type::Slice(slice) => Some(&slice.elem),
         Type::Reference(reference) => element_type(&reference.elem),
-        Type::Path(type_path) => last_type_argument(type_path),
+        Type::Path(map) if is_map(map) => type_arguments(map).nth(1),
+        Type::Path(collection) => type_arguments(collection).next(),
         _ => None,
     }
 }
 
-fn last_type_argument(type_path: &TypePath) -> Option<&Type> {
-    let PathArguments::AngleBracketed(arguments) = &type_path.path.segments.last()?.arguments else {
-        return None;
+fn is_map(type_path: &TypePath) -> bool {
+    type_path
+        .path
+        .segments
+        .last()
+        .is_some_and(|last_segment| last_segment.ident.to_string().ends_with("Map"))
+}
+
+fn type_arguments(type_path: &TypePath) -> impl Iterator<Item = &Type> {
+    let arguments = match type_path
+        .path
+        .segments
+        .last()
+        .map(|last_segment| &last_segment.arguments)
+    {
+        Some(PathArguments::AngleBracketed(arguments)) => Some(&arguments.args),
+        _ => None,
     };
-    arguments
-        .args
-        .iter()
-        .filter_map(|argument| match argument {
-            GenericArgument::Type(argument) => Some(argument),
-            _ => None,
-        })
-        .next_back()
+    arguments.into_iter().flatten().filter_map(|argument| match argument {
+        GenericArgument::Type(argument) => Some(argument),
+        _ => None,
+    })
 }
 
 impl FieldRule {
