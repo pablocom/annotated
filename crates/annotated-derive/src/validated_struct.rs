@@ -199,7 +199,36 @@ fn type_arguments(type_path: &TypePath) -> impl Iterator<Item = &Type> {
     })
 }
 
+pub fn nested_rules_in(rules: &[FieldRule]) -> Vec<Span> {
+    rules
+        .iter()
+        .flat_map(|rule| match rule {
+            FieldRule::Nested { span } => vec![*span],
+            FieldRule::Each { element_rules, .. } => nested_rules_in(element_rules),
+            FieldRule::Check(_) => Vec::new(),
+        })
+        .collect()
+}
+
+impl ValidatedField<'_> {
+    pub fn has_nested_values(&self) -> bool {
+        !nested_rules_in(&self.rules).is_empty()
+    }
+
+    pub fn joins_nested_violations_element_by_element(&self) -> bool {
+        self.has_nested_values() && !self.rules.iter().any(FieldRule::checks_only_nested_values)
+    }
+}
+
 impl FieldRule {
+    pub fn checks_only_nested_values(&self) -> bool {
+        match self {
+            Self::Nested { .. } => true,
+            Self::Each { element_rules, .. } => element_rules.iter().all(Self::checks_only_nested_values),
+            Self::Check(_) => false,
+        }
+    }
+
     fn from_written(written: WrittenRule, checked_type: Option<&Type>) -> syn::Result<Self> {
         match written {
             WrittenRule::Each { span, element_rules } => Self::each(element_rules, checked_type, span),

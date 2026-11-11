@@ -238,7 +238,10 @@ fn a_map_with_a_value_that_could_not_be_built_is_not_built() {
 
 #[test]
 fn a_value_given_again_for_a_key_replaces_the_one_before_with_its_violations() {
-    let body = r#"{ "home": { "street": "", "postalCode": "28013" }, "home": { "street": "Gran Vía 1", "postalCode": "280" } }"#;
+    let body = r#"{
+        "home": { "street": "", "postalCode": "28013" },
+        "home": { "street": "Gran Vía 1", "postalCode": "280" }
+    }"#;
 
     assert_eq!(
         violations_reading::<BTreeMap<String, Address>>(body),
@@ -248,7 +251,10 @@ fn a_value_given_again_for_a_key_replaces_the_one_before_with_its_violations() {
 
 #[test]
 fn a_valid_value_given_again_for_a_key_leaves_no_violation_of_the_one_before() {
-    let body = r#"{ "home": { "street": "", "postalCode": "28013" }, "home": { "street": "Gran Vía 1", "postalCode": "28013" } }"#;
+    let body = r#"{
+        "home": { "street": "", "postalCode": "28013" },
+        "home": { "street": "Gran Vía 1", "postalCode": "28013" }
+    }"#;
 
     assert_eq!(
         read::<BTreeMap<String, Address>>(body),

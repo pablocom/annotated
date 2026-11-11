@@ -1,5 +1,6 @@
 use proc_macro2::{Literal, Span, TokenStream, TokenTree};
-use quote::{ToTokens, format_ident, quote};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, parse_quote};
 
 use crate::deserialized_struct::DeserializedStruct;
@@ -20,16 +21,23 @@ struct DeserializeExpansion<'a> {
     seq: Ident,
     key: Ident,
     deserialized: Ident,
+    has_finished: Ident,
     visitor_lifetime: Lifetime,
+    field_checks_label: Lifetime,
+    struct_checks_label: Lifetime,
 }
 
 impl<'a> DeserializeExpansion<'a> {
     fn new(deserialized_struct: &'a DeserializedStruct<'a>) -> Self {
         let local = |name| Ident::new(name, Span::mixed_site());
-        let not_built = quote!(return ::core::option::Option::None);
+        let field_checks_label = Lifetime::new("'field_checks", Span::mixed_site());
+        let finishing_the_field_checks = quote!(break #field_checks_label true);
         Self {
             deserialized_struct,
-            rules: Expansion::new(deserialized_struct.validated.is_reporting_all, not_built),
+            rules: Expansion::new(
+                deserialized_struct.validated.is_reporting_all,
+                finishing_the_field_checks,
+            ),
             serde: quote!(::annotated::__private::serde),
             deserializer: local("deserializer"),
             formatter: local("formatter"),
@@ -37,7 +45,10 @@ impl<'a> DeserializeExpansion<'a> {
             seq: local("seq"),
             key: local("key"),
             deserialized: local("deserialized"),
+            has_finished: local("has_finished"),
             visitor_lifetime: Lifetime::new("'__visitor", Span::call_site()),
+            field_checks_label,
+            struct_checks_label: Lifetime::new("'struct_checks", Span::mixed_site()),
         }
     }
 
@@ -104,7 +115,14 @@ impl<'a> DeserializeExpansion<'a> {
         let where_clause = generics.make_where_clause();
         for field in self.fields() {
             let field_type = field.field_type;
-            if mentions_any(field_type.to_token_stream(), &parameters) {
+            if !mentions_any(field_type.to_token_stream(), &parameters) {
+                continue;
+            }
+            if field.has_nested_values() {
+                where_clause
+                    .predicates
+                    .push(parse_quote!(#field_type: ::annotated::Deserialize<'de>));
+            } else {
                 where_clause
                     .predicates
                     .push(parse_quote!(#field_type: #serde::Deserialize<'de>));
@@ -176,6 +194,7 @@ impl<'a> DeserializeExpansion<'a> {
             }
 
             impl<'de> #serde::Deserialize<'de> for __Field {
+                #[inline]
                 fn deserialize<__D: #serde::Deserializer<'de>>(
                     deserializer: __D,
                 ) -> ::core::result::Result<Self, __D::Error> {
@@ -276,36 +295,79 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn visit_seq(&self) -> TokenStream {
         let Self { serde, seq, .. } = self;
+        let Expansion { found, .. } = &self.rules;
         let elements = self.fields().iter().map(|field| {
             let slot = slot_of(field);
+            let slot_type = slot_type_of(field);
             let field_type = field.field_type;
+            if !field.has_nested_values() {
+                return quote! {
+                    let #slot: #slot_type = #serde::de::SeqAccess::next_element::<#field_type>(&mut #seq)?;
+                };
+            }
+            let read_violations = read_violations_of(field);
+            let reading_with_its_violations = self.reading_with_its_violations(field);
+            let element = quote_spanned! {field_type.span()=>
+                ::annotated::__private::serde::de::SeqAccess::next_element_seed(
+                    &mut #seq,
+                    #reading_with_its_violations,
+                )?
+            };
             quote! {
-                let #slot: ::core::option::Option<#field_type> =
-                    #serde::de::SeqAccess::next_element::<#field_type>(&mut #seq)?;
+                let mut #read_violations = self.#found.new_alike();
+                let #slot: #slot_type = #element;
             }
         });
         let slots = self.fields().iter().map(slot_of);
+        let read_violations = self.fields_with_nested_values().map(read_violations_of);
         quote! {
+            #[inline]
             fn visit_seq<__A: #serde::de::SeqAccess<'de>>(
                 self,
                 mut #seq: __A,
             ) -> ::core::result::Result<Self::Value, __A::Error> {
                 #(#elements)*
-                ::core::result::Result::Ok(self.checked_value((#(#slots,)*)))
+                ::core::result::Result::Ok(self.checked_value((#(#slots,)*), (#(#read_violations,)*)))
             }
         }
     }
 
+    fn reading_with_its_violations(&self, field: &ValidatedField) -> TokenStream {
+        let Expansion { at, .. } = &self.rules;
+        let field_type = field.field_type;
+        let name = &field.name;
+        let read_violations = read_violations_of(field);
+        quote_spanned! {field_type.span()=>
+            ::annotated::__private::DeserializeAt::<#field_type>::new(&self.#at.field(#name), &mut #read_violations)
+        }
+    }
+
+    fn fields_with_nested_values(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
+        self.fields().iter().filter(|field| field.has_nested_values())
+    }
+
     fn visit_map(&self) -> TokenStream {
         let Self { serde, map, key, .. } = self;
+        let Expansion { found, .. } = &self.rules;
         let fields = self.fields();
         let slots = fields.iter().map(slot_of);
-        let field_types = fields.iter().map(|field| field.field_type);
+        let slot_types = fields.iter().map(slot_type_of);
         let field_arms = fields.iter().enumerate().map(|(index, field)| {
             let variant = format_ident!("Field{index}");
             let slot = slot_of(field);
             let field_type = field.field_type;
             let name = &field.name;
+            let value = if field.has_nested_values() {
+                let reading_with_its_violations = self.reading_with_its_violations(field);
+                quote_spanned! {field_type.span()=>
+                    ::annotated::__private::serde::de::MapAccess::next_value_seed(
+                        &mut #map,
+                        #reading_with_its_violations,
+                    )?
+                }
+            } else {
+                quote!(#serde::de::MapAccess::next_value::<#field_type>(&mut #map)?)
+            };
             quote! {
                 __Field::#variant => {
                     if ::core::option::Option::is_some(&#slot) {
@@ -313,9 +375,7 @@ impl<'a> DeserializeExpansion<'a> {
                             <__A::Error as #serde::de::Error>::duplicate_field(#name),
                         );
                     }
-                    #slot = ::core::option::Option::Some(
-                        #serde::de::MapAccess::next_value::<#field_type>(&mut #map)?,
-                    );
+                    #slot = ::core::option::Option::Some(#value);
                 }
             }
         });
@@ -327,12 +387,15 @@ impl<'a> DeserializeExpansion<'a> {
             }
         });
         let read_slots = fields.iter().map(slot_of);
+        let read_violations: Vec<_> = self.fields_with_nested_values().map(read_violations_of).collect();
         quote! {
+            #[inline]
             fn visit_map<__A: #serde::de::MapAccess<'de>>(
                 self,
                 mut #map: __A,
             ) -> ::core::result::Result<Self::Value, __A::Error> {
-                #(let mut #slots: ::core::option::Option<#field_types> = ::core::option::Option::None;)*
+                #(let mut #slots: #slot_types = ::core::option::Option::None;)*
+                #(let mut #read_violations = self.#found.new_alike();)*
                 while let ::core::option::Option::Some(#key) =
                     #serde::de::MapAccess::next_key::<__Field>(&mut #map)?
                 {
@@ -341,7 +404,7 @@ impl<'a> DeserializeExpansion<'a> {
                         #unknown_field_arm
                     }
                 }
-                ::core::result::Result::Ok(self.checked_value((#(#read_slots,)*)))
+                ::core::result::Result::Ok(self.checked_value((#(#read_slots,)*), (#(#read_violations,)*)))
             }
         }
     }
@@ -350,34 +413,67 @@ impl<'a> DeserializeExpansion<'a> {
     // without LTO ran 7987 instructions against 7918, and `serde_json::from_str` then `validate()` 7977. Emitting the
     // checks in each instead would compile every `pattern` twice.
     fn checked_value(&self) -> TokenStream {
-        let deserialized = &self.deserialized;
+        let Self {
+            deserialized,
+            has_finished,
+            field_checks_label,
+            struct_checks_label,
+            ..
+        } = self;
         let Expansion { at, found, .. } = &self.rules;
         let input = self.input();
         let name = &input.ident;
         let (_, type_generics, _) = input.generics.split_for_impl();
         let fields = self.fields();
         let slots = fields.iter().map(slot_of);
-        let field_types = fields.iter().map(|field| field.field_type);
-        let optional_slots = fields.iter().filter(|field| field.is_optional).map(slot_of);
+        let slot_types = fields.iter().map(slot_type_of);
+        let read_violations = self.fields_with_nested_values().map(read_violations_of);
+        let read_violations_types = self
+            .fields_with_nested_values()
+            .map(|_| quote!(::annotated::FoundViolations));
+        let values_of_slots = fields.iter().map(value_of_slot);
+        let validities = self.fields_keeping_their_validity().map(validity_of);
         let field_checks = self.field_checks();
         let build = self.build();
-        let struct_checks = self.rules.struct_checks(
-            &self.deserialized_struct.validated,
-            &quote!(&#deserialized),
-            &quote!(#name #type_generics),
-        );
+        let struct_checks = self
+            .rules
+            .stopping_with(quote!(break #struct_checks_label))
+            .struct_checks(
+                &self.deserialized_struct.validated,
+                &quote!(&#deserialized),
+                &quote!(#name #type_generics),
+            );
+        let (finishing, struct_checks_unless_finished) = if struct_checks.is_empty() {
+            (quote!(let _ =), TokenStream::new())
+        } else {
+            (
+                quote!(let #has_finished =),
+                quote! {
+                    if !#has_finished {
+                        #struct_checks_label: {
+                            #(#struct_checks)*
+                        }
+                    }
+                },
+            )
+        };
         quote! {
             #[inline(always)]
             fn checked_value(
                 self,
-                (#(#slots,)*): (#(::core::option::Option<#field_types>,)*),
+                (#(#slots,)*): (#(#slot_types,)*),
+                (#(mut #read_violations,)*): (#(#read_violations_types,)*),
             ) -> ::core::option::Option<#name #type_generics> {
                 let #at = self.#at;
                 let #found = self.#found;
-                #(let #optional_slots = ::core::option::Option::flatten(#optional_slots);)*
-                #(#field_checks)*
+                #(#values_of_slots)*
+                #(let mut #validities = false;)*
+                #finishing #field_checks_label: {
+                    #(#field_checks)*
+                    false
+                };
                 #build
-                #(#struct_checks)*
+                #struct_checks_unless_finished
                 ::core::option::Option::Some(#deserialized)
             }
         }
@@ -390,25 +486,29 @@ impl<'a> DeserializeExpansion<'a> {
             .enumerate()
             .map(|(index, field)| {
                 let keeps_validity = self.rules.keeps_validity_of(validated_struct, index);
-                if field.is_optional {
+                if field.is_optional && !field.has_nested_values() {
                     let slot = slot_of(field);
                     let value_of_field = quote!(&#slot);
                     if keeps_validity {
-                        return self.rules.field_validity(field, &value_of_field);
+                        return self.optional_field_validity(field, &value_of_field);
                     }
                     return self.rules.field_checks(field, &value_of_field);
                 }
                 if keeps_validity {
-                    return self.present_field_validity(field);
+                    return self.read_field_validity(field);
                 }
-                self.present_field_checks(field)
+                self.read_field_checks(field)
             })
             .collect()
     }
 
-    fn present_field_checks(&self, field: &ValidatedField) -> TokenStream {
+    fn read_field_checks(&self, field: &ValidatedField) -> TokenStream {
         let slot = slot_of(field);
-        let missing = self.missing(field);
+        let SlotStates {
+            built,
+            not_built,
+            missing,
+        } = self.slot_states(field);
         if field.rules.is_empty() {
             return quote! {
                 if ::core::option::Option::is_none(&#slot) {
@@ -416,38 +516,114 @@ impl<'a> DeserializeExpansion<'a> {
                 }
             };
         }
-        let value = &self.rules.value;
-        let checks = self.rules.field_rule_checks(field);
+        let checks = self.rules_of(field).field_rule_checks(field);
+        let waiting_for_the_elements = waiting_for_the_elements(field);
+        let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built }));
+        let missing_arm = (!field.is_optional).then(|| quote!(::core::option::Option::None => { #missing }));
         quote! {
             match &#slot {
-                ::core::option::Option::Some(#value) => {
+                #built => {
+                    #waiting_for_the_elements
                     #checks
                 }
-                ::core::option::Option::None => {
-                    #missing
-                }
+                #not_built_arm
+                #missing_arm
             }
         }
     }
 
-    fn present_field_validity(&self, field: &ValidatedField) -> TokenStream {
+    fn fields_keeping_their_validity(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
+        let validated_struct = &self.deserialized_struct.validated;
+        let rules = self.rules.clone();
+        self.fields()
+            .iter()
+            .enumerate()
+            .filter(move |(index, _)| rules.keeps_validity_of(validated_struct, *index))
+            .map(|(_, field)| field)
+    }
+
+    fn optional_field_validity(&self, field: &ValidatedField, value_of_field: &TokenStream) -> TokenStream {
+        let is_valid = validity_of(field);
+        let value = &self.rules.value;
+        if field.rules.is_empty() {
+            return quote!(#is_valid = true;);
+        }
+        let passes_every_rule = self.rules.field_passes_every_rule(field);
+        quote! {
+            #is_valid = {
+                let #value = #value_of_field;
+                #passes_every_rule
+            };
+        }
+    }
+
+    fn read_field_validity(&self, field: &ValidatedField) -> TokenStream {
         let slot = slot_of(field);
         let is_valid = validity_of(field);
-        let missing = self.missing(field);
-        let value = &self.rules.value;
-        let (present, passes_every_rule) = if field.rules.is_empty() {
-            (quote!(_), quote!(true))
+        let SlotStates {
+            built,
+            not_built,
+            missing,
+        } = self.slot_states(field);
+        let (built, passes_every_rule) = if field.rules.is_empty() {
+            (quote!(::core::option::Option::Some(_)), quote!(true))
         } else {
-            (quote!(#value), self.rules.field_passes_every_rule(field))
+            (built, self.rules_of(field).field_passes_every_rule(field))
         };
+        let waiting_for_the_elements = waiting_for_the_elements(field);
+        let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built false }));
+        let missing_arm = (!field.is_optional).then(|| quote!(::core::option::Option::None => { #missing false }));
         quote! {
-            let #is_valid = match &#slot {
-                ::core::option::Option::Some(#present) => #passes_every_rule,
-                ::core::option::Option::None => {
-                    #missing
-                    false
+            #is_valid = match &#slot {
+                #built => {
+                    #waiting_for_the_elements
+                    #passes_every_rule
                 }
+                #not_built_arm
+                #missing_arm
             };
+        }
+    }
+
+    fn rules_of(&self, field: &ValidatedField) -> Expansion {
+        if !field.has_nested_values() {
+            return self.rules.clone();
+        }
+        self.rules.reading_nested_violations_from(&read_violations_of(field))
+    }
+
+    fn slot_states(&self, field: &ValidatedField) -> SlotStates {
+        let value = &self.rules.value;
+        let found = &self.rules.found;
+        let missing = self.missing(field);
+        if !field.has_nested_values() {
+            return SlotStates {
+                built: quote!(::core::option::Option::Some(#value)),
+                not_built: None,
+                missing,
+            };
+        }
+        let read_violations = read_violations_of(field);
+        let stop_if_finished = self.rules.stop_if_finished();
+        let not_built = quote! {
+            #found.append(&mut #read_violations);
+            #stop_if_finished
+        };
+        let (built, not_built_pattern) = if field.is_optional {
+            (
+                quote!(::core::option::Option::Some(#value)),
+                quote!(::core::option::Option::None),
+            )
+        } else {
+            (
+                quote!(::core::option::Option::Some(::core::option::Option::Some(#value))),
+                quote!(::core::option::Option::Some(::core::option::Option::None)),
+            )
+        };
+        SlotStates {
+            built,
+            not_built: Some((not_built_pattern, not_built)),
+            missing,
         }
     }
 
@@ -471,16 +647,23 @@ impl<'a> DeserializeExpansion<'a> {
         let fields = self.fields().iter().map(|field| {
             let member = field.member;
             let slot = slot_of(field);
-            if field.is_optional {
-                return quote!(#member: #slot);
+            match (field.has_nested_values(), field.is_optional) {
+                (false, true) => quote!(#member: #slot),
+                (false, false) | (true, true) => quote!(#member: #slot?),
+                (true, false) => quote!(#member: ::core::option::Option::flatten(#slot)?),
             }
-            quote!(#member: #slot?)
         });
         let name = &self.input().ident;
         quote! {
             let #deserialized = #name { #(#fields,)* };
         }
     }
+}
+
+struct SlotStates {
+    built: TokenStream,
+    not_built: Option<(TokenStream, TokenStream)>,
+    missing: TokenStream,
 }
 
 struct UnknownField {
@@ -492,6 +675,42 @@ struct UnknownField {
 
 fn slot_of(field: &ValidatedField) -> Ident {
     format_ident!("{}_slot", field.member, span = Span::mixed_site())
+}
+
+fn slot_type_of(field: &ValidatedField) -> TokenStream {
+    let field_type = field.field_type;
+    if field.has_nested_values() {
+        return quote!(::core::option::Option<::core::option::Option<#field_type>>);
+    }
+    quote!(::core::option::Option<#field_type>)
+}
+
+fn value_of_slot(field: &ValidatedField) -> TokenStream {
+    let slot = slot_of(field);
+    match (field.has_nested_values(), field.is_optional) {
+        (_, false) => TokenStream::new(),
+        (false, true) => quote!(let #slot = ::core::option::Option::flatten(#slot);),
+        (true, true) => quote! {
+            let #slot = ::core::option::Option::unwrap_or(
+                #slot,
+                ::core::option::Option::Some(::core::option::Option::None),
+            );
+        },
+    }
+}
+
+fn waiting_for_the_elements(field: &ValidatedField) -> TokenStream {
+    if !field.joins_nested_violations_element_by_element() {
+        return TokenStream::new();
+    }
+    let read_violations = read_violations_of(field);
+    quote! {
+        let mut #read_violations = ::annotated::__private::ElementViolations::new(#read_violations);
+    }
+}
+
+fn read_violations_of(field: &ValidatedField) -> Ident {
+    format_ident!("{}_read_violations", field.member, span = Span::mixed_site())
 }
 
 fn with_lifetime(generics: &Generics, lifetime: &Lifetime) -> Generics {

@@ -14,8 +14,9 @@ use crate::{DeserializeError, FoundViolations, Location};
 ///
 /// - `Ok(Some(value))` when the value could be built, though rules in it may have broken: those are in
 ///   `found`.
-/// - `Ok(None)` when it couldn't, because a field inside is missing, say, or because `found` finished
-///   [failing fast](FoundViolations::failing_fast). Either way `found` has a violation saying why.
+/// - `Ok(None)` when it couldn't, because a field inside is missing, say: `found` has a violation saying why. A
+///   value that could be built is answered even once `found` is finished
+///   [failing fast](FoundViolations::failing_fast), since the value around it may still have to check it.
 /// - `Err` with the format's own error, such as a syntax error, which ends deserialization as it would end
 ///   serde's.
 ///
@@ -72,8 +73,8 @@ pub trait Deserialize<'de>: Sized {
 }
 
 /// Reads a `T` found at a location, pushing its violations into a report: the `DeserializeSeed` a collection
-/// reads its elements with.
-pub(crate) struct DeserializeAt<'a, 'l, T> {
+/// reads its elements with, and a struct its nested fields.
+pub struct DeserializeAt<'a, 'l, T> {
     at: &'a Location<'l>,
     found: &'a mut FoundViolations,
     read: PhantomData<fn() -> T>,
@@ -81,7 +82,7 @@ pub(crate) struct DeserializeAt<'a, 'l, T> {
 
 impl<'a, 'l, T> DeserializeAt<'a, 'l, T> {
     /// Reads a `T` found at `at`, pushing its violations into `found`.
-    pub(crate) fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
+    pub fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
     where
         T: Deserialize<'de>,
     {

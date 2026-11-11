@@ -1,0 +1,5 @@
+error: `#[derive(Deserialize)]` reads a field's value once, so `nested` can appear once in its rules
+  --> tests/ui/deserialize/nested_twice.rs:11:29
+   |
+11 |     #[validate(nested, each(nested))]
+   |                             ^^^^^^

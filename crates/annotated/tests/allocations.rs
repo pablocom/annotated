@@ -168,6 +168,37 @@ fn deserializing_a_valid_value_allocates_only_its_three_strings() {
     assert_eq!(allocations.count_total, 3);
 }
 
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[allow(dead_code)]
+struct Crew {
+    #[validate(nested)]
+    captain: CrewMember,
+    #[validate(each(nested))]
+    sailors: Vec<CrewMember>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[allow(dead_code)]
+struct CrewMember {
+    #[validate(required)]
+    name: String,
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_a_valid_nested_value_allocates_only_its_three_strings_and_its_list() {
+    let body = r#"{ "captain": { "name": "Alex" }, "sailors": [{ "name": "Sam" }, { "name": "Lu" }] }"#;
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(annotated::from_deserializer::<Crew, _>(&mut deserializer));
+    });
+
+    assert_eq!(allocations.count_total, 4);
+}
+
 #[test]
 fn violations_appended_to_an_empty_report_are_moved_without_allocating() {
     let root = Location::root();

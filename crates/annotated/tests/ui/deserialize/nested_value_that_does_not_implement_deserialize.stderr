@@ -1,0 +1,64 @@
+error[E0277]: `Address` doesn't implement `annotated::Deserialize`
+  --> tests/ui/deserialize/nested_value_that_does_not_implement_deserialize.rs:12:23
+   |
+12 |     shipping_address: Address,
+   |                       ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `annotated::Deserialize<'_>` is not implemented for `Address`
+  --> tests/ui/deserialize/nested_value_that_does_not_implement_deserialize.rs:4:1
+   |
+ 4 | struct Address {
+   | ^^^^^^^^^^^^^^
+   = note: derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand
+   = note: `Address` implements similarly named trait `_serde::Deserialize`, but not `annotated::Deserialize<'_>`
+   = help: the following other types implement trait `annotated::Deserialize<'de>`:
+             BTreeMap<K, V>
+             Box<T>
+             Box<[T]>
+             HashMap<K, V, S>
+             Order
+             Route
+             Vec<T>
+             VecDeque<T>
+             std::option::Option<T>
+note: required by a bound in `annotated::__private::DeserializeAt::<'a, 'l, T>::new`
+  --> src/deserialize.rs
+   |
+   |     pub fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
+   |            --- required by a bound in this associated function
+   |     where
+   |         T: Deserialize<'de>,
+   |            ^^^^^^^^^^^^^^^^ required by this bound in `DeserializeAt::<'a, 'l, T>::new`
+
+error[E0277]: `Address` doesn't implement `annotated::Deserialize`
+  --> tests/ui/deserialize/nested_value_that_does_not_implement_deserialize.rs:18:12
+   |
+18 |     stops: Vec<Address>,
+   |            ^^^ unsatisfied trait bound
+   |
+help: the trait `annotated::Deserialize<'_>` is not implemented for `Address`
+  --> tests/ui/deserialize/nested_value_that_does_not_implement_deserialize.rs:4:1
+   |
+ 4 | struct Address {
+   | ^^^^^^^^^^^^^^
+   = note: derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand
+   = note: `Address` implements similarly named trait `_serde::Deserialize`, but not `annotated::Deserialize<'_>`
+   = help: the following other types implement trait `annotated::Deserialize<'de>`:
+             BTreeMap<K, V>
+             Box<T>
+             Box<[T]>
+             HashMap<K, V, S>
+             Order
+             Route
+             Vec<T>
+             VecDeque<T>
+             std::option::Option<T>
+   = note: required for `Vec<Address>` to implement `annotated::Deserialize<'_>`
+note: required by a bound in `annotated::__private::DeserializeAt::<'a, 'l, T>::new`
+  --> src/deserialize.rs
+   |
+   |     pub fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
+   |            --- required by a bound in this associated function
+   |     where
+   |         T: Deserialize<'de>,
+   |            ^^^^^^^^^^^^^^^^ required by this bound in `DeserializeAt::<'a, 'l, T>::new`

@@ -1,9 +1,8 @@
-use proc_macro2::Span;
 use syn::punctuated::Punctuated;
 use syn::{Attribute, DeriveInput, Error, GenericParam, Meta, Token};
 
 use crate::serde_names::SerdeStruct;
-use crate::validated_struct::{FieldRule, ValidatedStruct};
+use crate::validated_struct::{FieldRule, ValidatedStruct, nested_rules_in};
 
 pub struct DeserializedStruct<'a> {
     pub validated: ValidatedStruct<'a>,
@@ -35,7 +34,7 @@ impl<'a> DeserializedStruct<'a> {
         for field in &validated.fields {
             refuse_options(field.attributes)?;
             refuse_serde_attributes_other_than(&ON_A_FIELD, field.attributes)?;
-            refuse_nested_values(&field.rules)?;
+            refuse_nested_more_than_once(&field.rules)?;
         }
         let serde = SerdeStruct::from_input(input)?;
         Ok(Self { validated, serde })
@@ -91,20 +90,12 @@ fn attributes_named<'a>(name: &'a str, attributes: &'a [Attribute]) -> impl Iter
         .filter(move |attribute| attribute.path().is_ident(name))
 }
 
-fn refuse_nested_values(rules: &[FieldRule]) -> syn::Result<()> {
-    let Some(nested) = nested_rule_in(rules) else {
+fn refuse_nested_more_than_once(rules: &[FieldRule]) -> syn::Result<()> {
+    let Some(&second_nested) = nested_rules_in(rules).get(1) else {
         return Ok(());
     };
     Err(Error::new(
-        nested,
-        "`#[derive(Deserialize)]` can't read a value checked with `nested` yet",
+        second_nested,
+        "`#[derive(Deserialize)]` reads a field's value once, so `nested` can appear once in its rules",
     ))
-}
-
-fn nested_rule_in(rules: &[FieldRule]) -> Option<Span> {
-    rules.iter().find_map(|rule| match rule {
-        FieldRule::Nested { span } => Some(*span),
-        FieldRule::Each { element_rules, .. } => nested_rule_in(element_rules),
-        FieldRule::Check(_) => None,
-    })
 }

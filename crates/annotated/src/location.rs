@@ -64,6 +64,20 @@ impl<'a> Location<'a> {
         }
     }
 
+    /// Whether `path` is the path of this location or of a location under it.
+    pub(crate) fn leads_to(&self, path: &Path) -> bool {
+        self.segments_matched_at_the_start_of(path.segments()).is_some()
+    }
+
+    fn segments_matched_at_the_start_of(&self, segments: &[PathSegment]) -> Option<usize> {
+        let Some((parent, step)) = self.parent_and_step else {
+            return Some(0);
+        };
+        let matched_by_parent = parent.segments_matched_at_the_start_of(segments)?;
+        let segment = segments.get(matched_by_parent)?;
+        step.is(segment).then_some(matched_by_parent + 1)
+    }
+
     const fn followed_by(&'a self, step: Step<'a>) -> Self {
         Self {
             parent_and_step: Some((self, step)),
@@ -72,6 +86,15 @@ impl<'a> Location<'a> {
 }
 
 impl Step<'_> {
+    fn is(&self, segment: &PathSegment) -> bool {
+        match (self, segment) {
+            (Self::Field(name), PathSegment::Field(segment_name)) => name == segment_name,
+            (Self::Index(index), PathSegment::Index(segment_index)) => index == segment_index,
+            (Self::Key(key), PathSegment::Key(rendered_key)) => renders_as(*key, rendered_key),
+            _ => false,
+        }
+    }
+
     fn to_segment(self) -> PathSegment {
         match self {
             Self::Field(name) => PathSegment::Field(name),
@@ -79,6 +102,22 @@ impl Step<'_> {
             Self::Key(key) => PathSegment::Key(key.to_string()),
         }
     }
+}
+
+fn renders_as(key: &dyn Display, rendered: &str) -> bool {
+    struct RenderingCompared<'a> {
+        rest: &'a str,
+    }
+
+    impl fmt::Write for RenderingCompared<'_> {
+        fn write_str(&mut self, written: &str) -> fmt::Result {
+            self.rest = self.rest.strip_prefix(written).ok_or(fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut comparison = RenderingCompared { rest: rendered };
+    fmt::write(&mut comparison, format_args!("{key}")).is_ok() && comparison.rest.is_empty()
 }
 
 impl Debug for Location<'_> {
@@ -118,6 +157,74 @@ mod tests {
             path.segments(),
             [PathSegment::Field("labels"), PathSegment::Key("en".to_owned())]
         );
+    }
+
+    #[test]
+    fn a_location_leads_to_its_own_path() {
+        let root = Location::root();
+        let stock = root.field("stock");
+
+        assert!(stock.key(&"sku-1").leads_to(&Path::root().field("stock").key("sku-1")));
+    }
+
+    #[test]
+    fn a_location_leads_to_the_paths_under_it() {
+        let root = Location::root();
+        let members = root.field("members");
+
+        assert!(
+            members
+                .index(1)
+                .leads_to(&Path::root().field("members").index(1).field("name"))
+        );
+    }
+
+    #[test]
+    fn a_location_does_not_lead_to_the_path_of_its_parent() {
+        let root = Location::root();
+        let members = root.field("members");
+
+        assert!(!members.index(1).leads_to(&Path::root().field("members")));
+    }
+
+    #[test]
+    fn a_location_does_not_lead_to_a_path_through_another_field() {
+        let root = Location::root();
+        let members = root.field("members");
+
+        assert!(!members.index(1).leads_to(&Path::root().field("guests").index(1)));
+    }
+
+    #[test]
+    fn a_location_does_not_lead_to_a_path_through_another_index() {
+        let root = Location::root();
+        let members = root.field("members");
+
+        assert!(!members.index(1).leads_to(&Path::root().field("members").index(2)));
+    }
+
+    #[test]
+    fn a_location_does_not_lead_to_a_path_through_another_key() {
+        let root = Location::root();
+        let stock = root.field("stock");
+
+        assert!(!stock.key(&"sku-1").leads_to(&Path::root().field("stock").key("sku-2")));
+    }
+
+    #[test]
+    fn a_location_does_not_lead_to_a_path_through_a_key_its_own_key_starts() {
+        let root = Location::root();
+        let stock = root.field("stock");
+
+        assert!(!stock.key(&"sku-1").leads_to(&Path::root().field("stock").key("sku-10")));
+    }
+
+    #[test]
+    fn a_location_does_not_lead_to_a_path_with_an_index_where_it_has_a_key() {
+        let root = Location::root();
+        let shifts = root.field("shifts");
+
+        assert!(!shifts.key(&0).leads_to(&Path::root().field("shifts").index(0)));
     }
 
     #[test]

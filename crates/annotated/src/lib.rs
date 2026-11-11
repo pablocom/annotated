@@ -157,14 +157,43 @@ pub use annotated_derive::Validate;
 /// - A field that came is checked by its `#[validate(...)]` rules exactly as [`Validate`] checks it, so for
 ///   input with every field there, the same violations are reported in the same order as deserializing with
 ///   serde, then validating.
-/// - Struct-level rules run last, as with [`Validate`], once every field came; when one is missing they are
-///   skipped, since there is no struct to check.
+/// - A field checked with `nested`, or with `each(...)` holding `nested`, is read through
+///   [`Deserialize`](trait@Deserialize), so a field missing inside it is reported at its full path, and the
+///   violations inside it come at its `nested` rule, as [`Validate`] reports them. Its type must implement
+///   `annotated::Deserialize`, as the containers holding such values do, `Option`, `Box`, sequences and maps among
+///   them. When its value couldn't be built, its violations are reported and its other rules skipped. A field's
+///   rules can name `nested` once.
+/// - Struct-level rules run last, as with [`Validate`], once every field came and could be built; otherwise they
+///   are skipped, since there is no struct to check.
+///
+/// ```
+/// use annotated::Deserialize;
+///
+/// #[derive(Deserialize, Debug)]
+/// #[serde(rename_all = "camelCase")]
+/// struct Address {
+///     #[validate(required)]
+///     street: String,
+///     #[validate(length(min = 5))]
+///     postal_code: String,
+/// }
+///
+/// #[derive(Deserialize, Debug)]
+/// struct Route {
+///     #[validate(each(nested))]
+///     stops: Vec<Address>,
+/// }
+///
+/// let body = r#"{ "stops": [{ "street": "Gran Vía 1" }, { "street": "", "postalCode": "28013" }] }"#;
+/// let mut body = serde_json::Deserializer::from_str(body);
+/// let error = annotated::from_deserializer::<Route, _>(&mut body).unwrap_err();
+///
+/// assert_eq!(error.to_string(), "stops[0].postalCode: is missing\nstops[1].street: is required");
+/// ```
 ///
 /// [`from_deserializer_fail_fast`] answers only the first violation: the first that [`from_deserializer`]
 /// answers. No rule runs after it, but the input is still read to its end, since a field is known to be
 /// missing only then.
-///
-/// Fields checked with `nested` or `each(nested)` aren't supported yet.
 #[cfg(feature = "serde")]
 pub use annotated_derive::Deserialize;
 pub use violation::Violation;

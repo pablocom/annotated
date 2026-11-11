@@ -1,6 +1,6 @@
 use annotated::{Deserialize, Validate};
 
-#[derive(Validate)]
+#[derive(Validate, serde::Deserialize)]
 struct Address {
     #[validate(required)]
     street: String,
@@ -14,7 +14,7 @@ struct Order {
 
 #[derive(Deserialize)]
 struct Route {
-    #[validate(length(max = 10), each(nested))]
+    #[validate(each(nested))]
     stops: Vec<Address>,
 }
 

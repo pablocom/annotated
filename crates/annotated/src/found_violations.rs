@@ -93,6 +93,17 @@ impl FoundViolations {
         self.violations.append(&mut other.violations);
     }
 
+    pub(crate) fn push_violation(&mut self, violation: Violation) {
+        if self.is_finished() {
+            return;
+        }
+        self.violations.push(violation);
+    }
+
+    pub(crate) fn into_violations(self) -> Vec<Violation> {
+        self.violations
+    }
+
     /// How many violations were found so far.
     #[must_use]
     pub fn len(&self) -> usize {

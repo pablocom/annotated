@@ -2,7 +2,7 @@ use proc_macro2::{Group, Span, TokenStream, TokenTree};
 use quote::{format_ident, quote, quote_spanned};
 use syn::{Expr, Ident};
 
-use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField, ValidatedStruct};
+use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in};
 
 #[derive(Clone)]
 pub struct Expansion {
@@ -14,6 +14,14 @@ pub struct Expansion {
     found_before: Ident,
     is_reporting_all: bool,
     stop: TokenStream,
+    nested_values: NestedValues,
+    is_within_an_element: bool,
+}
+
+#[derive(Clone)]
+enum NestedValues {
+    Validated,
+    ReadWithViolationsIn(Ident),
 }
 
 pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
@@ -53,12 +61,30 @@ impl Expansion {
             found_before: local("found_before"),
             is_reporting_all,
             stop,
+            nested_values: NestedValues::Validated,
+            is_within_an_element: false,
         }
+    }
+
+    pub fn stopping_with(&self, stop: TokenStream) -> Self {
+        Self { stop, ..self.clone() }
+    }
+
+    pub fn reading_nested_violations_from(&self, read_violations: &Ident) -> Self {
+        Self {
+            nested_values: NestedValues::ReadWithViolationsIn(read_violations.clone()),
+            ..self.clone()
+        }
+    }
+
+    fn has_read_nested_values(&self) -> bool {
+        matches!(self.nested_values, NestedValues::ReadWithViolationsIn(_))
     }
 
     fn within_an_element(&self) -> Self {
         Self {
             stop: quote!(return false),
+            is_within_an_element: true,
             ..self.clone()
         }
     }
@@ -129,6 +155,9 @@ impl Expansion {
         let check = match rule {
             FieldRule::Check(check) => self.value_check(check, value_at),
             FieldRule::Nested { span } => self.nested_check(*span, value_at),
+            FieldRule::Each { span, .. } if self.has_read_nested_values() && rule.checks_only_nested_values() => {
+                self.nested_check(*span, value_at)
+            }
             FieldRule::Each {
                 element_rules,
                 are_elements_optional,
@@ -155,11 +184,31 @@ impl Expansion {
             found_before,
             ..
         } = self;
-        quote_spanned! {span=>
-            {
-                let #found_before = #found.len();
-                ::annotated::Validate::validate_into(#value, #value_at, #found);
-                #found.len() == #found_before
+        let NestedValues::ReadWithViolationsIn(read_violations) = &self.nested_values else {
+            return quote_spanned! {span=>
+                {
+                    let #found_before = #found.len();
+                    ::annotated::Validate::validate_into(#value, #value_at, #found);
+                    #found.len() == #found_before
+                }
+            };
+        };
+        let after_a_violation = self.after_a_violation();
+        if self.is_within_an_element {
+            return quote! {
+                if #read_violations.join_those_at(#value_at, #found) {
+                    #after_a_violation
+                } else {
+                    true
+                }
+            };
+        }
+        quote! {
+            if #read_violations.is_empty() {
+                true
+            } else {
+                #found.append(&mut #read_violations);
+                #after_a_violation
             }
         }
     }
@@ -181,13 +230,22 @@ impl Expansion {
         let within_an_element = self.within_an_element();
         let element_checks = within_an_element.checks(element_rules, are_elements_optional, &quote!(#element_at));
         let after_a_violation = self.after_a_violation();
+        let (skipping_the_element_s_read_violations, joining_the_read_violations_left) = match &self.nested_values {
+            NestedValues::ReadWithViolationsIn(read_violations) if !nested_rules_in(element_rules).is_empty() => (
+                quote!(#read_violations.skip_those_at(#element_at);),
+                quote!(#read_violations.join_those_at(#value_at, #found);),
+            ),
+            _ => (TokenStream::new(), TokenStream::new()),
+        };
         quote_spanned! {span=>
             {
                 let #found_before = #found.len();
                 ::annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
                     #element_checks
+                    #skipping_the_element_s_read_violations
                     true
                 });
+                #joining_the_read_violations_left
                 if #found.len() == #found_before {
                     true
                 } else {
