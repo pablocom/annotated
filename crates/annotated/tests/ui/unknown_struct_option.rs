@@ -7,4 +7,10 @@ struct NewMember {
     name: String,
 }
 
+#[derive(Validate)]
+#[validate(required)]
+struct NewTeam {
+    name: String,
+}
+
 fn main() {}

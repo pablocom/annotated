@@ -1,0 +1,11 @@
+error: `NewPassword` has no field `repeated_pasword`
+ --> tests/ui/struct_level_custom_at_a_field_that_does_not_exist.rs:4:44
+  |
+4 | #[validate(custom(passwords_match, field = repeated_pasword))]
+  |                                            ^^^^^^^^^^^^^^^^
+
+error: `NewPin` has no field `"repeatedPin"`
+  --> tests/ui/struct_level_custom_at_a_field_that_does_not_exist.rs:12:39
+   |
+12 | #[validate(custom(pins_match, field = "repeatedPin"))]
+   |                                       ^^^^^^^^^^^^^

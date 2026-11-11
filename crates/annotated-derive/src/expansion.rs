@@ -1,8 +1,8 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::Ident;
+use syn::{Expr, Ident};
 
-use crate::validated_struct::{FieldRule, RuleCheck, ValidatedField, ValidatedStruct};
+use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField, ValidatedStruct};
 
 struct Expansion {
     at: Ident,
@@ -21,6 +21,10 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
         .iter()
         .filter(|field| !field.rules.is_empty())
         .map(|field| expansion.field_checks(field));
+    let struct_checks = validated_struct
+        .struct_checks
+        .iter()
+        .map(|check| expansion.struct_check(check));
     let input = validated_struct.input;
     let name = &input.ident;
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
@@ -28,6 +32,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
         impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
             fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::FoundViolations) {
                 #(#field_checks)*
+                #(#struct_checks)*
             }
         }
     }
@@ -136,13 +141,41 @@ impl Expansion {
         let RuleCheck {
             rule, message, span, ..
         } = check;
-        let message = if let Some(message) = message {
-            quote!(::core::option::Option::Some(#message))
-        } else {
-            quote!(::core::option::Option::None)
-        };
+        let message = message_override(message.as_ref());
         quote_spanned! {*span=>
             ::annotated::__private::passes(::annotated::Rule::check(&#rule, #value), &#field_at, #found, #message)
         }
+    }
+
+    fn struct_check(&self, check: &StructCheck) -> TokenStream {
+        let Self { at, found, .. } = self;
+        let StructCheck {
+            check,
+            field_name,
+            message,
+            span,
+        } = check;
+        let reported_at = if let Some(field_name) = field_name {
+            quote!(&#at.field(#field_name))
+        } else {
+            quote!(#at)
+        };
+        let message = message_override(message.as_ref());
+        quote_spanned! {*span=>
+            let _ = ::annotated::__private::passes(
+                ::annotated::Rule::check(&::annotated::rules::custom::<Self, _>(#check), self),
+                #reported_at,
+                #found,
+                #message,
+            );
+        }
+    }
+}
+
+fn message_override(message: Option<&Expr>) -> TokenStream {
+    if let Some(message) = message {
+        quote!(::core::option::Option::Some(#message))
+    } else {
+        quote!(::core::option::Option::None)
     }
 }

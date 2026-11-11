@@ -6,13 +6,23 @@ use syn::{
     PathArguments, Type, TypePath,
 };
 
-use crate::written_rule::{NamedArgument, RuleCall, WrittenRule, validate_attributes, written_rules};
+use crate::written_rule::{
+    NamedArgument, RuleCall, StructCustom, StructRule, WrittenRule, written_rules, written_struct_rules,
+};
 use crate::{pattern, serde_names};
 
 pub struct ValidatedStruct<'a> {
     pub input: &'a DeriveInput,
     pub fields: Vec<ValidatedField<'a>>,
     pub is_reporting_all: bool,
+    pub struct_checks: Vec<StructCheck>,
+}
+
+pub struct StructCheck {
+    pub check: Expr,
+    pub field_name: Option<String>,
+    pub message: Option<Expr>,
+    pub span: Span,
 }
 
 pub struct ValidatedField<'a> {
@@ -58,27 +68,50 @@ impl<'a> ValidatedStruct<'a> {
             .iter()
             .zip(serde_names::field_names(input)?)
             .map(|(field, name)| ValidatedField::from_field(field, name))
+            .collect::<syn::Result<Vec<_>>>()?;
+        let struct_rules = written_struct_rules(&input.attrs)?;
+        let is_reporting_all = struct_rules.iter().any(|rule| matches!(rule, StructRule::ReportAll));
+        let struct_checks = struct_rules
+            .into_iter()
+            .filter_map(|rule| match rule {
+                StructRule::Custom(custom) => Some(StructCheck::from_custom(*custom, &input.ident, &fields)),
+                StructRule::ReportAll => None,
+            })
             .collect::<syn::Result<_>>()?;
         Ok(Self {
             input,
             fields,
-            is_reporting_all: is_reporting_all(input)?,
+            is_reporting_all,
+            struct_checks,
         })
     }
 }
 
-fn is_reporting_all(input: &DeriveInput) -> syn::Result<bool> {
-    let mut is_reporting_all = false;
-    for attribute in validate_attributes(&input.attrs) {
-        attribute.parse_nested_meta(|option| {
-            if !option.path.is_ident("report_all") {
-                return Err(option.error("a struct's `#[validate(...)]` takes `report_all`"));
-            }
-            is_reporting_all = true;
-            Ok(())
-        })?;
+impl StructCheck {
+    fn from_custom(custom: StructCustom, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<Self> {
+        let field_name = custom
+            .field
+            .map(|field| serde_name_of(&field, struct_name, fields))
+            .transpose()?;
+        Ok(Self {
+            check: custom.check,
+            field_name,
+            message: custom.message,
+            span: custom.span,
+        })
     }
-    Ok(is_reporting_all)
+}
+
+fn serde_name_of(field: &Expr, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<String> {
+    let named_field = fields
+        .iter()
+        .find(|validated| matches!(field, Expr::Path(path) if path.path.is_ident(validated.member)));
+    named_field.map(|validated| validated.name.clone()).ok_or_else(|| {
+        Error::new_spanned(
+            field,
+            format!("`{struct_name}` has no field `{}`", field.to_token_stream()),
+        )
+    })
 }
 
 impl<'a> ValidatedField<'a> {

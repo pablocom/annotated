@@ -1,5 +1,11 @@
-error: a struct's `#[validate(...)]` takes `report_all`
+error: a struct's `#[validate(...)]` takes `report_all` and `custom(...)`
  --> tests/ui/unknown_struct_option.rs:4:12
   |
 4 | #[validate(report_everything)]
   |            ^^^^^^^^^^^^^^^^^
+
+error: a struct's `#[validate(...)]` takes `report_all` and `custom(...)`
+  --> tests/ui/unknown_struct_option.rs:11:12
+   |
+11 | #[validate(required)]
+   |            ^^^^^^^^

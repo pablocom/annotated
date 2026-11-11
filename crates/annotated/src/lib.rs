@@ -62,6 +62,39 @@ pub use validate::Validate;
 ///   its key: anything implementing [`rules::HasElements`]. `each(nested)` validates every element.
 /// - Fields are reported by the name serde reads them by, from `#[serde(...)]` attributes such as
 ///   `rename_all` and `rename`. The struct doesn't need to derive serde's traits.
+///
+/// `#[validate(custom(check))]` on the struct checks the whole struct with any `Fn(&Self) -> Result<(),
+/// Problem>`, and reports at the struct's own location: the root, or the field it is `nested` under.
+/// `custom(check, field = name)` reports at that field instead, by its serde name, and `message = "..."`
+/// replaces the problem's message. Struct-level rules are checked after every field, each of them, in the
+/// order written, beside `report_all` in the same or another `#[validate(...)]`.
+///
+/// ```
+/// use annotated::{Problem, Validate};
+///
+/// #[derive(Validate)]
+/// #[serde(rename_all = "camelCase")]
+/// #[validate(custom(passwords_match, field = repeated_password))]
+/// struct NewPassword {
+///     #[validate(length(min = 8))]
+///     password: String,
+///     repeated_password: String,
+/// }
+///
+/// fn passwords_match(new_password: &NewPassword) -> Result<(), Problem> {
+///     if new_password.repeated_password != new_password.password {
+///         return Err(Problem::custom("passwords_differ", "must match the password"));
+///     }
+///     Ok(())
+/// }
+///
+/// let new_password = NewPassword {
+///     password: "correct horse battery staple".to_owned(),
+///     repeated_password: "correct horse".to_owned(),
+/// };
+///
+/// assert_eq!(new_password.validate().unwrap_err().to_string(), "repeatedPassword: must match the password");
+/// ```
 pub use annotated_derive::Validate;
 pub use violation::Violation;
 pub use violations::Violations;

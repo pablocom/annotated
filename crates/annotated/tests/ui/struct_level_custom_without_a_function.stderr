@@ -1,0 +1,11 @@
+error: `custom` on a struct takes one function checking the struct, then optionally `field = ...` and `message = ...`: `custom(check, field = name)`
+ --> tests/ui/struct_level_custom_without_a_function.rs:4:12
+  |
+4 | #[validate(custom)]
+  |            ^^^^^^
+
+error: `custom` on a struct takes one function checking the struct, then optionally `field = ...` and `message = ...`: `custom(check, field = name)`
+  --> tests/ui/struct_level_custom_without_a_function.rs:11:12
+   |
+11 | #[validate(custom(field = repeated_pin))]
+   |            ^^^^^^

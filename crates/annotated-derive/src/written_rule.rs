@@ -24,6 +24,18 @@ pub struct NamedArgument {
     pub value: Expr,
 }
 
+pub enum StructRule {
+    ReportAll,
+    Custom(Box<StructCustom>),
+}
+
+pub struct StructCustom {
+    pub check: Expr,
+    pub field: Option<Expr>,
+    pub message: Option<Expr>,
+    pub span: Span,
+}
+
 enum Argument {
     Named(NamedArgument),
     Value(Expr),
@@ -37,7 +49,15 @@ pub fn written_rules(attributes: &[Attribute]) -> syn::Result<Vec<WrittenRule>> 
     Ok(rules)
 }
 
-pub fn validate_attributes(attributes: &[Attribute]) -> impl Iterator<Item = &Attribute> {
+pub fn written_struct_rules(attributes: &[Attribute]) -> syn::Result<Vec<StructRule>> {
+    let mut rules = Vec::new();
+    for attribute in validate_attributes(attributes) {
+        rules.extend(attribute.parse_args_with(Punctuated::<StructRule, Token![,]>::parse_terminated)?);
+    }
+    Ok(rules)
+}
+
+fn validate_attributes(attributes: &[Attribute]) -> impl Iterator<Item = &Attribute> {
     attributes
         .iter()
         .filter(|attribute| attribute.path().is_ident("validate"))
@@ -77,6 +97,54 @@ fn element_rules(each: &Path, input: ParseStream) -> syn::Result<Vec<WrittenRule
         }
     }
     Ok(element_rules.into_iter().collect())
+}
+
+impl Parse for StructRule {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path = input.call(Path::parse_mod_style)?;
+        if path.is_ident("report_all") {
+            return Ok(Self::ReportAll);
+        }
+        if !path.is_ident("custom") {
+            return Err(Error::new_spanned(
+                path,
+                "a struct's `#[validate(...)]` takes `report_all` and `custom(...)`",
+            ));
+        }
+        Ok(Self::Custom(Box::new(StructCustom::parse_after(&path, input)?)))
+    }
+}
+
+const STRUCT_CUSTOM_ARGUMENTS: &str = "`custom` on a struct takes one function checking the struct, then optionally \
+     `field = ...` and `message = ...`: `custom(check, field = name)`";
+
+impl StructCustom {
+    fn parse_after(custom: &Path, input: ParseStream) -> syn::Result<Self> {
+        if !input.peek(token::Paren) {
+            return Err(Error::new_spanned(custom, STRUCT_CUSTOM_ARGUMENTS));
+        }
+        let arguments;
+        parenthesized!(arguments in input);
+        let mut check = None;
+        let mut field = None;
+        let mut message = None;
+        for argument in Punctuated::<Argument, Token![,]>::parse_terminated(&arguments)? {
+            match argument {
+                Argument::Value(value) if check.is_none() => check = Some(value),
+                Argument::Named(named) if named.name == "field" => field = Some(named.value),
+                Argument::Named(named) if named.name == "message" => message = Some(named.value),
+                Argument::Value(value) => return Err(Error::new_spanned(value, STRUCT_CUSTOM_ARGUMENTS)),
+                Argument::Named(named) => return Err(Error::new_spanned(named.name, STRUCT_CUSTOM_ARGUMENTS)),
+            }
+        }
+        let check = check.ok_or_else(|| Error::new_spanned(custom, STRUCT_CUSTOM_ARGUMENTS))?;
+        Ok(Self {
+            check,
+            field,
+            message,
+            span: custom.span(),
+        })
+    }
 }
 
 impl RuleCall {
