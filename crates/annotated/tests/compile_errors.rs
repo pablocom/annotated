@@ -1,9 +1,11 @@
-//! What `#[derive(Validate)]` refuses, with the compile error that explains why.
+//! What the derives and traits refuse, with the compile error that explains why.
 
 #[test]
 fn compile_errors_explain_what_the_derive_refuses() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/*.rs");
+    #[cfg(feature = "serde")]
+    cases.compile_fail("tests/ui/deserialize/*.rs");
     #[cfg(feature = "regex")]
     cases.compile_fail("tests/ui/regex/*.rs");
     #[cfg(not(feature = "regex"))]

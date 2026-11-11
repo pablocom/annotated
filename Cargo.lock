@@ -26,6 +26,8 @@ dependencies = [
  "iri-string",
  "proptest",
  "regex",
+ "serde",
+ "serde_json",
  "trybuild",
  "unicode-segmentation",
 ]

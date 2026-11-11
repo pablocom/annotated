@@ -12,6 +12,10 @@ pub mod rules;
 #[doc(hidden)]
 pub mod __private;
 
+#[cfg(feature = "serde")]
+mod deserialize;
+#[cfg(feature = "serde")]
+mod deserialize_error;
 mod found_violations;
 mod location;
 mod param_value;
@@ -22,6 +26,10 @@ mod validate;
 mod violation;
 mod violations;
 
+#[cfg(feature = "serde")]
+pub use deserialize::{Deserialize, from_deserializer, from_deserializer_fail_fast};
+#[cfg(feature = "serde")]
+pub use deserialize_error::DeserializeError;
 pub use found_violations::FoundViolations;
 pub use location::Location;
 pub use param_value::ParamValue;

@@ -1,0 +1,17 @@
+error[E0277]: `Address` doesn't implement `annotated::Deserialize`
+ --> tests/ui/deserialize/deserializing_a_value_that_does_not_implement_deserialize.rs:7:44
+  |
+7 |     let _ = annotated::from_deserializer::<Address, _>(&mut deserializer);
+  |                                            ^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `Deserialize<'_>` is not implemented for `Address`
+ --> tests/ui/deserialize/deserializing_a_value_that_does_not_implement_deserialize.rs:1:1
+  |
+1 | struct Address {
+  | ^^^^^^^^^^^^^^
+  = note: derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand
+note: required by a bound in `from_deserializer`
+ --> src/deserialize.rs
+  |
+  | pub fn from_deserializer<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+  |                                  ^^^^^^^^^^^^^^^^ required by this bound in `from_deserializer`
