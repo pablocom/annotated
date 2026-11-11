@@ -1,7 +1,11 @@
-use annotated::{Validate, Violation};
+use annotated::{Validate, Violation, Violations};
 
 pub fn violations_of(value: &impl Validate) -> Vec<String> {
-    match value.validate() {
+    paths_and_codes(value.validate())
+}
+
+pub fn paths_and_codes(outcome: Result<(), Violations>) -> Vec<String> {
+    match outcome {
         Ok(()) => Vec::new(),
         Err(violations) => violations.iter().map(path_and_code).collect(),
     }

@@ -1,7 +1,9 @@
 //! Validation for structs: write rules on their fields, and get every problem back at once.
 //!
 //! A value is checked with [`Validate::validate`], which answers `Ok(())` or every [`Violation`] found,
-//! each a [`Problem`] at the [`Path`] where it happened. Fields are reported by the names serde reads them by.
+//! each a [`Problem`] at the [`Path`] where it happened, or with [`Validate::validate_fail_fast`], which
+//! answers only the first violation: the first that `validate` answers. Fields are reported by the names
+//! serde reads them by.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -55,6 +57,10 @@ pub use validate::Validate;
 ///
 /// - Every field is checked, and the first rule a field breaks stops that field's other rules.
 ///   `#[validate(report_all)]` on the struct reports every rule a field breaks instead.
+/// - [`Validate::validate_fail_fast`] checks the same rules in the same order, nested values and elements
+///   included, and answers only the first violation, even under `report_all`. It stops right after it,
+///   except that a `nested` value or element finding it doesn't stop the struct around it at once: that
+///   struct records nothing more and stops at its own next violation or its end.
 /// - On an `Option` field, `required` checks the `Option` itself; every other rule checks the value inside,
 ///   and is skipped when there is none.
 /// - `nested` validates a field whose type implements [`Validate`], under the field's name.

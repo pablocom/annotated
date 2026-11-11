@@ -6,7 +6,26 @@ use crate::Location;
 /// A collection whose elements `#[validate(each(...))]` checks: a sequence's elements at their index, or a
 /// map's values at their key.
 ///
-/// Implement it for a collection of your own to let `each` go through it.
+/// Implement it for a collection of your own to let `each` go through it:
+///
+/// ```
+/// use annotated::{Location, rules::HasElements};
+///
+/// struct Pair<T> {
+///     first: T,
+///     second: T,
+/// }
+///
+/// impl<T> HasElements for Pair<T> {
+///     type Element = T;
+///
+///     fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&T, &Location<'_>) -> bool) {
+///         if check(&self.first, &at.index(0)) {
+///             check(&self.second, &at.index(1));
+///         }
+///     }
+/// }
+/// ```
 #[diagnostic::on_unimplemented(
     message = "`each` can't go through the elements of `{Self}`",
     label = "`{Self}` doesn't implement `annotated::rules::HasElements`",
@@ -16,16 +35,19 @@ pub trait HasElements {
     /// An element of the collection, or a value of the map.
     type Element;
 
-    /// Calls `check` with every element and its location under `at`, in the collection's order.
-    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&Self::Element, &Location<'_>));
+    /// Calls `check` with every element and its location under `at`, in the collection's order, while it
+    /// answers `true`: once it answers `false`, the elements after are skipped.
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&Self::Element, &Location<'_>) -> bool);
 }
 
 impl<T> HasElements for [T] {
     type Element = T;
 
-    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&T, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&T, &Location<'_>) -> bool) {
         for (index, element) in self.iter().enumerate() {
-            check(element, &at.index(index));
+            if !check(element, &at.index(index)) {
+                return;
+            }
         }
     }
 }
@@ -33,7 +55,7 @@ impl<T> HasElements for [T] {
 impl<T, const N: usize> HasElements for [T; N] {
     type Element = T;
 
-    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&T, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&T, &Location<'_>) -> bool) {
         self.as_slice().for_each_element(at, check);
     }
 }
@@ -41,7 +63,7 @@ impl<T, const N: usize> HasElements for [T; N] {
 impl<T> HasElements for Vec<T> {
     type Element = T;
 
-    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&T, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&T, &Location<'_>) -> bool) {
         self.as_slice().for_each_element(at, check);
     }
 }
@@ -49,9 +71,11 @@ impl<T> HasElements for Vec<T> {
 impl<T> HasElements for VecDeque<T> {
     type Element = T;
 
-    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&T, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&T, &Location<'_>) -> bool) {
         for (index, element) in self.iter().enumerate() {
-            check(element, &at.index(index));
+            if !check(element, &at.index(index)) {
+                return;
+            }
         }
     }
 }
@@ -59,7 +83,7 @@ impl<T> HasElements for VecDeque<T> {
 impl<C: HasElements + ?Sized> HasElements for &C {
     type Element = C::Element;
 
-    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&C::Element, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&C::Element, &Location<'_>) -> bool) {
         C::for_each_element(self, at, check);
     }
 }
@@ -67,7 +91,7 @@ impl<C: HasElements + ?Sized> HasElements for &C {
 impl<C: HasElements + ?Sized> HasElements for Box<C> {
     type Element = C::Element;
 
-    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&C::Element, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&C::Element, &Location<'_>) -> bool) {
         C::for_each_element(self, at, check);
     }
 }
@@ -75,9 +99,11 @@ impl<C: HasElements + ?Sized> HasElements for Box<C> {
 impl<K: Display, V, S> HasElements for HashMap<K, V, S> {
     type Element = V;
 
-    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&V, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&V, &Location<'_>) -> bool) {
         for (key, value) in self {
-            check(value, &at.key(key));
+            if !check(value, &at.key(key)) {
+                return;
+            }
         }
     }
 }
@@ -85,9 +111,53 @@ impl<K: Display, V, S> HasElements for HashMap<K, V, S> {
 impl<K: Display, V> HasElements for BTreeMap<K, V> {
     type Element = V;
 
-    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&V, &Location<'_>)) {
+    fn for_each_element(&self, at: &Location<'_>, mut check: impl FnMut(&V, &Location<'_>) -> bool) {
         for (key, value) in self {
-            check(value, &at.key(key));
+            if !check(value, &at.key(key)) {
+                return;
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn elements_checked_until_a_check_answers_false(collection: &impl HasElements) -> usize {
+        let mut checked = 0;
+        collection.for_each_element(&Location::root(), |_, _| {
+            checked += 1;
+            false
+        });
+        checked
+    }
+
+    #[test]
+    fn going_through_a_slice_stops_once_a_check_answers_false() {
+        let slice: &[&str] = &["tin", "jars"];
+
+        assert_eq!(elements_checked_until_a_check_answers_false(&slice), 1);
+    }
+
+    #[test]
+    fn going_through_a_queue_stops_once_a_check_answers_false() {
+        let queue = VecDeque::from(["tin", "jars"]);
+
+        assert_eq!(elements_checked_until_a_check_answers_false(&queue), 1);
+    }
+
+    #[test]
+    fn going_through_a_hash_map_stops_once_a_check_answers_false() {
+        let map = HashMap::from([("top", "tin"), ("bottom", "jars")]);
+
+        assert_eq!(elements_checked_until_a_check_answers_false(&map), 1);
+    }
+
+    #[test]
+    fn going_through_a_b_tree_map_stops_once_a_check_answers_false() {
+        let map = BTreeMap::from([("top", "tin"), ("bottom", "jars")]);
+
+        assert_eq!(elements_checked_until_a_check_answers_false(&map), 1);
     }
 }

@@ -72,6 +72,21 @@ fn validating_a_valid_value_by_its_derived_rules_allocates_nothing() {
     assert_eq!(allocations.count_total, 0);
 }
 
+#[test]
+fn validating_a_valid_value_failing_fast_allocates_nothing() {
+    let member = NewMember {
+        full_name: "Alex Morgan".to_owned(),
+        nickname: Some("Al".to_owned()),
+        website: "https://example.com/alex".to_owned(),
+    };
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = black_box(member.validate_fail_fast());
+    });
+
+    assert_eq!(allocations.count_total, 0);
+}
+
 #[cfg(feature = "regex")]
 #[derive(Validate)]
 struct Address {

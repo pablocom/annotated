@@ -4,6 +4,7 @@ use syn::{Expr, Ident};
 
 use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField, ValidatedStruct};
 
+#[derive(Clone)]
 struct Expansion {
     at: Ident,
     found: Ident,
@@ -12,6 +13,7 @@ struct Expansion {
     problem: Ident,
     found_before: Ident,
     is_reporting_all: bool,
+    stop: TokenStream,
 }
 
 pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
@@ -52,6 +54,14 @@ impl Expansion {
             problem: local("problem"),
             found_before: local("found_before"),
             is_reporting_all,
+            stop: quote!(return),
+        }
+    }
+
+    fn within_an_element(&self) -> Self {
+        Self {
+            stop: quote!(return false),
+            ..self.clone()
         }
     }
 
@@ -161,14 +171,21 @@ impl Expansion {
             found_before,
             ..
         } = self;
-        let element_checks = self.checks(element_rules, are_elements_optional, &quote!(#element_at));
+        let within_an_element = self.within_an_element();
+        let element_checks = within_an_element.checks(element_rules, are_elements_optional, &quote!(#element_at));
+        let after_a_violation = self.after_a_violation();
         quote_spanned! {span=>
             {
                 let #found_before = #found.len();
                 ::annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
                     #element_checks
+                    true
                 });
-                #found.len() == #found_before
+                if #found.len() == #found_before {
+                    true
+                } else {
+                    #after_a_violation
+                }
             }
         }
     }
@@ -191,14 +208,25 @@ impl Expansion {
     ) -> TokenStream {
         let Self { found, problem, .. } = self;
         let message = message_override(message);
+        let after_a_violation = self.after_a_violation();
         quote_spanned! {span=>
             match #outcome {
                 ::core::result::Result::Ok(()) => true,
                 ::core::result::Result::Err(#problem) => {
                     ::annotated::__private::record_violation(#found, #reported_at, #problem, #message);
-                    false
+                    #after_a_violation
                 }
             }
+        }
+    }
+
+    fn after_a_violation(&self) -> TokenStream {
+        let Self { found, stop, .. } = self;
+        quote! {
+            if #found.is_finished() {
+                #stop;
+            }
+            false
         }
     }
 
