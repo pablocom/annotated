@@ -5,7 +5,7 @@ How `annotated` is built and why. The [README](README.md) says what it promises;
 ## The two ways in
 
 1. **Validation** checks a value that already exists. `#[derive(Validate)]` implements `Validate`, and `value.validate()` answers `Ok(())` or every violation found. It works on any struct, whether or not serde built it.
-2. **Collecting deserialization** builds a value and validates it in one go. `#[derive(Deserialize)]` deserializes through a hidden twin of the struct whose required fields are `Option`s, so a missing field becomes a violation instead of stopping serde. It then runs the same rules and reports every problem together. It also implements `serde::Deserialize`, so the struct still works anywhere serde does.
+2. **Collecting deserialization** builds a value and validates it in one go. `#[derive(Deserialize)]` generates the struct's own serde visitor, which passes the location down into nested values, so a missing field at any depth becomes a violation instead of stopping serde. It runs the same rules and reports every problem together. It also implements `serde::Deserialize`, so the struct still works anywhere serde does.
 
 Both report fields by the name serde reads them by: the derives read `#[serde(...)]` through `serde_derive_internals`, the crate serde's own derive is built on.
 
@@ -75,6 +75,7 @@ Each entry in `#[validate(...)]` is one rule, and the derive turns it into a con
 
 - **Every field, first failure per field by default.** Every field is checked. Within one field, rules run in the order written and the first failure stops that field's rules, so a blank value isn't also reported as too short, and cheap rules can guard expensive ones. A violation found under the field by `nested` or `each` counts as its failure too. A struct-level `#[validate(report_all)]` reports every failing rule instead. Elements under `each` are each checked independently.
 - **Struct-level rules come last.** They run after every field, in the order written. One with `field = name` counts as that field's last rule: it is skipped when the field already failed, and the first one at a field that fails stops the later ones there, unless the struct has `report_all`. So a blank repeated password is reported as required, not also as different. One at the struct itself always runs. A field a struct-level rule names keeps whether it passed in a local `bool`, so this costs nothing on the success path.
+- **Failing fast is chosen per call.** `value.validate_fail_fast()`, `annotated::from_deserializer_fail_fast` and `annotated::json::from_str_fail_fast` / `from_slice_fail_fast` stop at the first violation of any kind and answer exactly one: the first the full report would list, so the two always agree on it. The same struct is checked either way, and nested values follow the call. `FoundViolations::failing_fast()` starts such a report, and `is_finished()` answers whether it has its one violation; generated code asks it only right after recording a violation, and `HasElements` only after an element failed, so the success path pays nothing for it. Deserializing still reads the input to its end, since a missing field is known only then, but runs no rule once finished.
 - **Strings are never trimmed.** Rules check the value exactly as the handler will receive it. Only `required` treats whitespace-only as empty.
 - **`length` counts `char`s on strings by default** (Unicode scalar values). `unit = "bytes"` counts UTF-8 bytes. `unit = "graphemes"`, behind the `unicode` feature, counts what a person sees as one character. On collections it counts elements, and `unit` is refused at compile time: a unit turns `length()` into a `StringLength` rule, which checks only strings.
 - **Field names come from serde.** With no `#[serde(...)]` attributes, that is the Rust field name, without `r#`.
@@ -82,21 +83,55 @@ Each entry in `#[validate(...)]` is one rule, and the derive turns it into a con
 
 ## Collecting deserialization
 
-> Planned; the details settle when it's built.
+> Being built. This is the design it's built to; the sections above describe what's in place.
 
-- `#[derive(Deserialize)]` emits a hidden twin, `__AnnotatedUnvalidated{Name}`, deriving serde's `Deserialize`. It carries the struct's and fields' naming attributes (`rename_all`, `rename`, `alias`, `deny_unknown_fields`, `expecting`). Each required field becomes `Option<T>`, and each optional field keeps its `Option<T>` with `#[serde(default)]`. Other serde attributes are refused with an error naming the accepted ones, until each is supported deliberately.
-- From the twin, it reports every missing field as `Problem::Missing` (code `missing`), runs every rule on the fields present, and builds the struct only when nothing failed.
-- `annotated::from_deserializer` returns `Result<T, DeserializeError<D::Error>>`: either the format's own error (syntax, or a type error when not collecting them) or `Violations`. `DeserializeError::violations()` answers them as a slice, empty for the format's own error, so a caller reads them without matching. The `json` feature adds `annotated::json::from_str` and `from_slice`.
-- The generated `serde::Deserialize` impl turns `Violations` into `D::Error::custom` with every violation in its message, so plain `serde_json::from_str::<T>` still validates.
-- `#[annotated(collect_type_errors)]` makes each twin field buffer its value into a format-independent content tree first, then deserialize it into the field's type, so a value of the wrong type joins the violations as `Problem::InvalidType`. It costs an allocation per field and needs a self-describing format (JSON, YAML, TOML); without it, the first type error fails the whole deserialization, as serde does.
+### The `Deserialize` trait
+
+```rust
+pub trait Deserialize<'de>: Sized {
+    fn deserialize_at<D: serde::Deserializer<'de>>(
+        deserializer: D,
+        at: &Location<'_>,
+        found: &mut FoundViolations,
+    ) -> Result<Option<Self>, D::Error>;
+}
+```
+
+It mirrors `Validate::validate_into`: the value is read at the location `at`, and every violation in it is pushed into `found`. `Ok(Some(value))` means the value could be built, though rules in it may have broken (they are in `found`); `Ok(None)` means it couldn't, because a field inside is missing or of the wrong type; `Err` is the format's own error (syntax, an unknown field under `deny_unknown_fields`, a duplicate field, or a type error when they aren't collected), which ends deserialization as serde's would. It lives beside serde's trait of the same name the way serde's derive and trait share one: `#[derive(annotated::Deserialize)]` implements it.
+
+The crate implements it for the containers a `nested` or `each(nested)` field can hold, whenever their elements implement it: `Option<T>`, `Box<T>`, `Vec<T>`, `VecDeque<T>`, `Box<[T]>`, `HashMap<K, V, S>` and `BTreeMap<K, V>`. A sequence's element is read at its index, a map's value at its key (`K: serde::Deserialize + Display`), through `DeserializeSeed`s carrying the location. They compose, so `Option<Vec<Address>>` works with no code of its own.
+
+### What `#[derive(Deserialize)]` generates
+
+- **The struct's own serde visitor**: a field identifier matching the serde names and aliases (from `serde_derive_internals`, as the `Validate` derive reads them), `visit_map` and `visit_seq`, and one slot per field. A field without `nested` is read with serde's `Deserialize`. A field with `nested` or `each(nested)`, at any depth, is read through `annotated::Deserialize` with `DeserializeSeed`, at `at.field(name)`, into a `FoundViolations` of its own, so its violations wait for their turn in declaration order. That buffer allocates only if something inside fails.
+- **After the last field, a pass in declaration order.** A field that never came is `Problem::Missing` (code `missing`) at its name, unless it's an `Option`, which is `None` as with serde. A present field runs its rules exactly as `Validate` does, by the same expansion code, reading the slot instead of `self`; at its `nested` rule, the field's buffered violations join `found` and count as its failure. A nested field whose value couldn't be built reports its buffered violations, and its other rules, which need the value, are skipped. Then, if every field could be built, the struct is built and its struct-level rules run, as in `Validate`; if not, they're skipped and `deserialize_at` answers `None`.
+- So, for a complete, well-typed input, collecting deserialization reports exactly what deserializing with serde and then calling `validate()` would, in the same order. Tests pin that equivalence.
+- **`serde::Deserialize`**, through `annotated::from_deserializer`, turning `Violations` into `D::Error::custom` with every violation in its message, so plain `serde_json::from_str::<T>`, or a struct nesting this one through serde, still validates.
+- Attributes: it reads `#[validate(...)]` like the `Validate` derive, `#[annotated(...)]` for its own options, and these `#[serde(...)]` ones: on the struct `rename_all`, `rename`, `deny_unknown_fields` and `expecting`; on a field `rename` and `alias`. Any other serde attribute is refused at compile time with an error naming the accepted ones, until each is supported deliberately. Type parameters are supported, each field type bounded by the trait it is read through; a struct with lifetime parameters is refused, since borrowing needs `#[serde(borrow)]`.
+- Its generated code reaches serde through `annotated::__private::serde`, so users depend on `annotated` alone.
+
+### Entry points and the error
+
+- `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with an empty `FoundViolations`.
+- `DeserializeError<E>` is `#[non_exhaustive]`, either `Format(E)` or `Violations(Violations)`. `violations()` answers them as a slice, empty for the format's own error, so a caller reads them without matching. It implements `Display`, `Debug` and `std::error::Error`.
+- The `json` feature adds `annotated::json::from_str` and `from_slice`, which also refuse trailing characters, as `serde_json::from_str` does.
+
+### Values of the wrong type
+
+Without an opt-in, the first value of the wrong type ends deserialization with the format's error, as serde does: a streaming parser that has refused a value can't skip past it. `#[annotated(collect_type_errors)]` on a struct reads each of its fields in two steps: first into `Content`, a format-independent tree of the value (bool, integers, floats, char, string, bytes, unit, option, sequence, map; borrowing strings and bytes when the format lends them), which accepts any well-formed value, then from that tree into the field's type through `ContentDeserializer`. A failure in the second step leaves the parser past the value, so it becomes `Problem::InvalidType` (code `invalid_type`) at the field and deserialization goes on. `Content` and `ContentDeserializer` are the crate's own, kept private; serde's equivalent is private to serde.
+
+`Problem::InvalidType` has the params `expected`, serde's description of what the type accepts (`u8`, `a string`, `struct Address`), or the type's short name when the error doesn't say, and `found`, the kind of value that came: `boolean`, `integer`, `float`, `character`, `string`, `bytes`, `null`, `sequence` or `map`. It never carries the value itself, so nothing the client sent, a password say, is echoed back. Its message is `must be {expected}, found {found}`. The buffering costs allocations per field, and needs a self-describing format (JSON, YAML, TOML).
+
+### Using it from a web framework
+
+There is no framework crate. `examples/axum` shows the extractor, about thirty lines: it reads the body with `annotated::json::from_slice`, answers a body that isn't JSON as axum's own `Json` does, and answers violations with 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body whose `errors` member lists each violation's JSON Pointer, code, params and message.
 
 ## Crates and features
 
 | Crate | Depends on |
 |---|---|
-| `annotated` | `annotated-derive` (re-exported); optional `serde` (default), `regex` (`pattern`), `unicode-segmentation` (`unicode`), `serde_json` (`json`) |
+| `annotated` | `annotated-derive` (re-exported); `serde` (default feature: the `Deserialize` trait and derive, `from_deserializer`), `regex` (`pattern`), `unicode-segmentation` (`unicode`), `serde_json` (`json`) |
 | `annotated-derive` | `syn`, `quote`, `proc-macro2`, `serde_derive_internals`; optional `regex-syntax` to check patterns at compile time |
-| `annotated-axum` | `annotated` with `json`, `axum` |
 
 ## Tests
 
