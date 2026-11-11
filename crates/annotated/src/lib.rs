@@ -22,6 +22,8 @@ pub mod __private;
 #[cfg(feature = "serde")]
 mod deserialize;
 #[cfg(feature = "serde")]
+mod deserialize_containers;
+#[cfg(feature = "serde")]
 mod deserialize_error;
 mod found_violations;
 mod location;

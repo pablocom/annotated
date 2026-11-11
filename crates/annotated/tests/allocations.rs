@@ -169,6 +169,20 @@ fn deserializing_a_valid_value_allocates_only_its_three_strings() {
 }
 
 #[test]
+fn violations_appended_to_an_empty_report_are_moved_without_allocating() {
+    let root = Location::root();
+    let mut found_in_a_part = FoundViolations::new();
+    found_in_a_part.push(&root.field("name"), Problem::custom("empty_name", "is empty"));
+    let mut found = FoundViolations::new();
+
+    let allocations = allocation_counter::measure(|| {
+        found.append(black_box(&mut found_in_a_part));
+    });
+
+    assert_eq!(allocations.count_total, 0);
+}
+
+#[test]
 fn a_violation_three_segments_deep_allocates_nothing_but_the_report() {
     let team = Team {
         members: vec![Member { name: String::new() }],

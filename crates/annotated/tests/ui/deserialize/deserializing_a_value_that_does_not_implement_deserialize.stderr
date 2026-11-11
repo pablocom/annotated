@@ -10,6 +10,14 @@ help: the trait `Deserialize<'_>` is not implemented for `Address`
 1 | struct Address {
   | ^^^^^^^^^^^^^^
   = note: derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand
+  = help: the following other types implement trait `Deserialize<'de>`:
+            BTreeMap<K, V>
+            Box<T>
+            Box<[T]>
+            HashMap<K, V, S>
+            Option<T>
+            Vec<T>
+            VecDeque<T>
 note: required by a bound in `from_deserializer`
  --> src/deserialize.rs
   |

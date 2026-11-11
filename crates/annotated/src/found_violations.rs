@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::mem;
 
 use crate::{Location, Problem, Violation, Violations};
 
@@ -33,6 +34,19 @@ impl FoundViolations {
         }
     }
 
+    /// No violations yet, gathering them as this report does: every violation, or only the first when this
+    /// report is failing fast.
+    ///
+    /// It keeps the violations found in one part of a value apart, until they join this report with
+    /// [`append`](FoundViolations::append).
+    #[must_use]
+    pub const fn new_alike(&self) -> Self {
+        Self {
+            violations: Vec::new(),
+            is_failing_fast: self.is_failing_fast,
+        }
+    }
+
     /// Whether validation should stop: the report is failing fast and has its violation. A report of every
     /// violation is never finished.
     #[must_use]
@@ -58,6 +72,25 @@ impl FoundViolations {
         }
         self.violations
             .push(Violation::new(at.to_path(), problem).with_message(message));
+    }
+
+    /// Moves the violations in `other` to the end of this report, in their order, leaving `other` empty.
+    ///
+    /// A finished report takes none of them, and a report failing fast only the first. An empty report takes
+    /// them without copying them.
+    pub fn append(&mut self, other: &mut FoundViolations) {
+        if self.is_finished() {
+            other.violations.clear();
+            return;
+        }
+        if self.is_failing_fast {
+            other.violations.truncate(1);
+        }
+        if self.violations.is_empty() {
+            mem::swap(&mut self.violations, &mut other.violations);
+            return;
+        }
+        self.violations.append(&mut other.violations);
     }
 
     /// How many violations were found so far.
@@ -202,6 +235,114 @@ mod tests {
         assert_eq!(
             violations.as_slice(),
             [Violation::new(Path::root().field("name"), reserved_name())]
+        );
+    }
+
+    #[test]
+    fn a_report_started_alike_a_report_failing_fast_fails_fast() {
+        let root = Location::root();
+        let mut found = FoundViolations::failing_fast().new_alike();
+
+        found.push(&root.field("name"), reserved_name());
+
+        assert!(found.is_finished());
+    }
+
+    #[test]
+    fn a_report_started_alike_a_report_of_every_violation_keeps_every_violation() {
+        let root = Location::root();
+        let mut found = FoundViolations::new().new_alike();
+
+        found.push(&root.field("name"), reserved_name());
+        found.push(&root, passwords_differ());
+
+        assert_eq!(found.len(), 2);
+    }
+
+    #[test]
+    fn appended_violations_come_after_those_found_before_in_their_order() {
+        let root = Location::root();
+        let mut found = FoundViolations::new();
+        found.push(&root.field("name"), reserved_name());
+        let mut found_in_a_part = FoundViolations::new();
+        found_in_a_part.push(&root.field("repeatedPassword"), passwords_differ());
+        found_in_a_part.push(&root, passwords_differ());
+
+        found.append(&mut found_in_a_part);
+
+        let violations = found.into_result().unwrap_err();
+        assert_eq!(
+            violations.as_slice(),
+            [
+                Violation::new(Path::root().field("name"), reserved_name()),
+                Violation::new(Path::root().field("repeatedPassword"), passwords_differ()),
+                Violation::new(Path::root(), passwords_differ()),
+            ]
+        );
+    }
+
+    #[test]
+    fn appended_violations_are_kept_by_an_empty_report() {
+        let root = Location::root();
+        let mut found = FoundViolations::new();
+        let mut found_in_a_part = FoundViolations::new();
+        found_in_a_part.push(&root.field("name"), reserved_name());
+
+        found.append(&mut found_in_a_part);
+
+        let violations = found.into_result().unwrap_err();
+        assert_eq!(
+            violations.as_slice(),
+            [Violation::new(Path::root().field("name"), reserved_name())]
+        );
+    }
+
+    #[test]
+    fn appending_violations_leaves_the_report_they_came_from_empty() {
+        let root = Location::root();
+        let mut found = FoundViolations::new();
+        let mut found_in_a_part = FoundViolations::new();
+        found_in_a_part.push(&root.field("name"), reserved_name());
+
+        found.append(&mut found_in_a_part);
+
+        assert!(found_in_a_part.is_empty());
+    }
+
+    #[test]
+    fn a_finished_report_takes_no_appended_violation() {
+        let root = Location::root();
+        let mut found = FoundViolations::failing_fast();
+        found.push(&root.field("name"), reserved_name());
+        let mut found_in_a_part = FoundViolations::failing_fast();
+        found_in_a_part.push(&root.field("repeatedPassword"), passwords_differ());
+
+        found.append(&mut found_in_a_part);
+
+        let violations = found.into_result().unwrap_err();
+        assert_eq!(
+            violations.as_slice(),
+            [Violation::new(Path::root().field("name"), reserved_name())]
+        );
+    }
+
+    #[test]
+    fn a_report_failing_fast_takes_only_the_first_appended_violation() {
+        let root = Location::root();
+        let mut found = FoundViolations::failing_fast();
+        let mut found_in_a_part = FoundViolations::new();
+        found_in_a_part.push(&root.field("repeatedPassword"), passwords_differ());
+        found_in_a_part.push(&root, passwords_differ());
+
+        found.append(&mut found_in_a_part);
+
+        let violations = found.into_result().unwrap_err();
+        assert_eq!(
+            violations.as_slice(),
+            [Violation::new(
+                Path::root().field("repeatedPassword"),
+                passwords_differ()
+            )]
         );
     }
 

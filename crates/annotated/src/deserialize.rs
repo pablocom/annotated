@@ -1,4 +1,7 @@
+use std::marker::PhantomData;
+
 use serde::Deserializer;
+use serde::de::DeserializeSeed;
 
 use crate::{DeserializeError, FoundViolations, Location};
 
@@ -15,6 +18,12 @@ use crate::{DeserializeError, FoundViolations, Location};
 ///   [failing fast](FoundViolations::failing_fast). Either way `found` has a violation saying why.
 /// - `Err` with the format's own error, such as a syntax error, which ends deserialization as it would end
 ///   serde's.
+///
+/// The crate implements it for the containers a nested value is held in, whenever what they hold implements it:
+/// `Option<T>`, `Box<T>`, and `Box<[T]>`, `Vec<T>` and `VecDeque<T>`, whose elements are read at their index, and
+/// `BTreeMap<K, V>` and `HashMap<K, V, S>`, whose values are read at their key. A container is built only when
+/// everything in it is. A map reports its values' violations in the order it goes through them, and a value given
+/// again for a key replaces the one before, with its violations.
 ///
 /// [`from_deserializer`] reads a value from the root and answers it, or every violation found.
 ///
@@ -60,6 +69,36 @@ pub trait Deserialize<'de>: Sized {
         at: &Location<'_>,
         found: &mut FoundViolations,
     ) -> Result<Option<Self>, D::Error>;
+}
+
+/// Reads a `T` found at a location, pushing its violations into a report: the `DeserializeSeed` a collection
+/// reads its elements with.
+pub(crate) struct DeserializeAt<'a, 'l, T> {
+    at: &'a Location<'l>,
+    found: &'a mut FoundViolations,
+    read: PhantomData<fn() -> T>,
+}
+
+impl<'a, 'l, T> DeserializeAt<'a, 'l, T> {
+    /// Reads a `T` found at `at`, pushing its violations into `found`.
+    pub(crate) fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
+    where
+        T: Deserialize<'de>,
+    {
+        Self {
+            at,
+            found,
+            read: PhantomData,
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for DeserializeAt<'_, '_, T> {
+    type Value = Option<T>;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Option<T>, D::Error> {
+        T::deserialize_at(deserializer, self.at, self.found)
+    }
 }
 
 /// Reads a `T` from `deserializer`, collecting every violation in it.
