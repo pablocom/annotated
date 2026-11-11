@@ -76,7 +76,8 @@ To check a value however it was built, derive `Validate` alone: `value.validate(
 |---|---|
 | `annotated` | The `Validate` trait, violations, problems and paths, the built-in rules, and collecting deserialization. Re-exports the derives. |
 | `annotated-derive` | The `Validate` and `Deserialize` derive macros. A derive macro needs a crate of its own. |
-| `annotated-axum` | An axum extractor that answers 422 with every violation. |
+
+To answer violations from a web framework, [`examples/axum`](examples/axum) shows an axum extractor that answers 422 with every violation as RFC 9457 problem details.
 
 ## Minimum supported Rust version
 

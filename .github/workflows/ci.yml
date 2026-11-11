@@ -46,7 +46,8 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features -- ${{ matrix.test-args }}
-      - run: cargo test --workspace -- ${{ matrix.test-args }}
+      # The example turns on annotated's json feature, so leaving it out tests the crates with their default features.
+      - run: cargo test --workspace --exclude annotated-example-axum -- ${{ matrix.test-args }}
 
   docs:
     runs-on: ubuntu-latest

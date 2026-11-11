@@ -1,0 +1,22 @@
+[package]
+name = "annotated-example-axum"
+description = "An axum extractor answering every violation in a JSON body as RFC 9457 problem details"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+annotated = { path = "../../crates/annotated", features = ["json"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+mime = "0.3.18"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tower = { version = "0.5.3", features = ["util"] }
+
+[lints]
+workspace = true
