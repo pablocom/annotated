@@ -279,3 +279,19 @@ fn each_checks_the_value_inside_every_optional_element_of_a_boxed_slice() {
 
     assert_eq!(violations_of(&draft), ["stamps[0]: length"]);
 }
+
+#[derive(Validate)]
+#[validate(report_all)]
+struct Labels {
+    #[validate(each(length(min = 3), prefix = "#"))]
+    tags: Vec<String>,
+}
+
+#[test]
+fn report_all_reports_every_rule_an_element_breaks() {
+    let labels = Labels {
+        tags: vec!["#rust".to_owned(), "a".to_owned()],
+    };
+
+    assert_eq!(violations_of(&labels), ["tags[1]: length", "tags[1]: prefix"]);
+}

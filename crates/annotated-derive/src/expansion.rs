@@ -95,7 +95,7 @@ impl Expansion {
             let checks = rules
                 .iter()
                 .map(|rule| self.rule_check(rule, is_value_optional, value_at));
-            return quote!(#(#checks;)*);
+            return quote!(#(let _ = #checks;)*);
         }
         let passes_every_rule = self.passes_every_rule(rules, is_value_optional, value_at);
         quote!(let _ = #passes_every_rule;)

@@ -107,3 +107,26 @@ fn rules_after_a_valid_nested_struct_are_checked() {
 
     assert_eq!(violations_of(&order), ["pickupPoint: unknown_address"]);
 }
+
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+#[validate(report_all)]
+struct Delivery {
+    #[validate(nested, custom(not_a_known_address))]
+    drop_off: Address,
+}
+
+#[test]
+fn report_all_checks_the_rules_after_a_nested_struct_with_violations() {
+    let delivery = Delivery {
+        drop_off: Address {
+            street: String::new(),
+            ..address()
+        },
+    };
+
+    assert_eq!(
+        violations_of(&delivery),
+        ["dropOff.street: required", "dropOff: unknown_address"]
+    );
+}
