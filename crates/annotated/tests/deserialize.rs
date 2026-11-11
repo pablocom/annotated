@@ -172,6 +172,96 @@ fn a_renamed_field_is_not_read_by_its_rust_name() {
     );
 }
 
+#[derive(serde::Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct Listing {
+    #[validate(required)]
+    title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(length(max = 10))]
+    subtitle: Option<String>,
+}
+
+#[test]
+fn a_struct_serialized_without_its_absent_values_is_read_and_checked_as_usual() {
+    let body = r#"{ "title": "", "subtitle": "Far too long a subtitle" }"#;
+
+    assert_eq!(
+        violations_reading::<Listing>(body),
+        ["title: required", "subtitle: length"]
+    );
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a field to `serialize_with` by reference"
+)]
+fn nights_in_words<S: serde::Serializer>(nights: &u8, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&format!("{nights} nights"))
+}
+
+#[derive(serde::Serialize, Deserialize, Debug)]
+#[serde(rename_all(serialize = "UPPERCASE"), bound(serialize = ""))]
+struct Booking {
+    #[serde(rename(serialize = "guest"), skip_serializing_if = "String::is_empty")]
+    #[validate(required)]
+    guest_name: String,
+    #[serde(serialize_with = "nights_in_words")]
+    #[validate(range(min = 1))]
+    nights: u8,
+    #[serde(skip_serializing)]
+    #[validate(length(max = 20))]
+    #[allow(dead_code)]
+    note: Option<String>,
+}
+
+#[test]
+fn attributes_that_only_change_serializing_leave_a_struct_read_and_checked_as_usual() {
+    let body = r#"{ "guest_name": "", "nights": 0, "note": "Late arrival, after midnight" }"#;
+
+    assert_eq!(
+        violations_reading::<Booking>(body),
+        ["guest_name: required", "nights: range", "note: length"]
+    );
+}
+
+#[derive(serde::Serialize, Deserialize, Debug, Clone)]
+#[serde(into = "ReservationCode")]
+struct Reservation {
+    #[validate(length(min = 6))]
+    code: String,
+}
+
+#[derive(serde::Serialize)]
+struct ReservationCode(String);
+
+impl From<Reservation> for ReservationCode {
+    fn from(reservation: Reservation) -> Self {
+        Self(reservation.code)
+    }
+}
+
+#[test]
+fn a_struct_serialized_into_another_type_is_read_and_checked_as_usual() {
+    assert_eq!(
+        violations_reading::<Reservation>(r#"{ "code": "AB1" }"#),
+        ["code: length"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+struct Guest {
+    #[serde(rename(serialize = "who", deserialize = "guest"))]
+    #[validate(required)]
+    #[allow(dead_code)]
+    name: String,
+}
+
+#[test]
+fn a_field_renamed_apart_for_serializing_and_deserializing_is_read_by_its_deserializing_name() {
+    assert_eq!(violations_reading::<Guest>(r#"{ "guest": "" }"#), ["guest: required"]);
+}
+
 #[derive(Deserialize, Debug)]
 struct Expense {
     #[validate(required)]

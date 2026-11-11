@@ -1,5 +1,5 @@
 use syn::punctuated::Punctuated;
-use syn::{Attribute, DeriveInput, Error, GenericParam, Meta, Token};
+use syn::{Attribute, DeriveInput, Error, GenericParam, Meta, MetaNameValue, Token};
 
 use crate::serde_names::SerdeStruct;
 use crate::validated_struct::{FieldRule, ValidatedStruct, nested_rules_in};
@@ -15,14 +15,22 @@ struct AcceptedSerdeAttributes {
 }
 
 const ON_A_STRUCT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
-    names: &["rename_all", "rename", "deny_unknown_fields", "expecting"],
+    names: &["rename_all", "rename", "deny_unknown_fields", "expecting", "into"],
     refusal: "with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, \
-              `deny_unknown_fields` and `expecting`",
+              `deny_unknown_fields`, `expecting` and those that only change serializing",
 };
 
 const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
-    names: &["rename", "alias"],
-    refusal: "with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename` and `alias`",
+    names: &[
+        "rename",
+        "alias",
+        "skip_serializing",
+        "skip_serializing_if",
+        "serialize_with",
+        "getter",
+    ],
+    refusal: "with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias` and those that only \
+              change serializing",
 };
 
 impl<'a> DeserializedStruct<'a> {
@@ -72,16 +80,29 @@ fn refuse_serde_attributes_other_than(accepted: &AcceptedSerdeAttributes, attrib
     for attribute in attributes_named("serde", attributes) {
         let serde_attributes = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         let refused = serde_attributes.iter().find(|serde_attribute| {
-            !accepted
+            let is_accepted = accepted
                 .names
                 .iter()
-                .any(|accepted_name| serde_attribute.path().is_ident(accepted_name))
+                .any(|accepted_name| serde_attribute.path().is_ident(accepted_name));
+            !is_accepted && !is_bound_for_serializing_only(serde_attribute)
         });
         if let Some(refused) = refused {
             return Err(Error::new_spanned(refused.path(), accepted.refusal));
         }
     }
     Ok(())
+}
+
+fn is_bound_for_serializing_only(serde_attribute: &Meta) -> bool {
+    let Meta::List(bound) = serde_attribute else {
+        return false;
+    };
+    if !bound.path.is_ident("bound") {
+        return false;
+    }
+    bound
+        .parse_args_with(Punctuated::<MetaNameValue, Token![,]>::parse_terminated)
+        .is_ok_and(|bounds| bounds.iter().all(|bound| bound.path.is_ident("serialize")))
 }
 
 fn attributes_named<'a>(name: &'a str, attributes: &'a [Attribute]) -> impl Iterator<Item = &'a Attribute> {

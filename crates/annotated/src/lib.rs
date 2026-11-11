@@ -145,8 +145,11 @@ pub use annotated_derive::Validate;
 ///
 /// The struct is read as serde's derive would read it, by the names it gives the struct and its fields. It
 /// takes these `#[serde(...)]` attributes: `rename_all`, `rename`, `deny_unknown_fields` and `expecting` on
-/// the struct, and `rename` and `alias` on a field. Any other is refused at compile time, as is a struct with
-/// lifetime parameters. `#[annotated(...)]` takes no options yet. Unknown fields are ignored, unless the struct
+/// the struct, and `rename` and `alias` on a field. It accepts and ignores those that only change serializing:
+/// `into` and `bound(serialize = "...")` on the struct, and `skip_serializing`, `skip_serializing_if`,
+/// `serialize_with`, `getter` and `bound(serialize = "...")` on a field, so the struct can derive serde's
+/// `Serialize` too; of a `rename` or `rename_all` given apart for serializing and deserializing, the deserializing
+/// one names what is read. Any other is refused at compile time, as is a struct with lifetime parameters. `#[annotated(...)]` takes no options yet. Unknown fields are ignored, unless the struct
 /// denies them, and a field given twice, an unknown field denied or a value of the wrong type is the format's
 /// error, which ends deserialization.
 ///

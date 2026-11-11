@@ -13,4 +13,28 @@ struct NewTeam {
     name: String,
 }
 
+#[derive(Deserialize)]
+#[serde(bound(serialize = "T: Clone", deserialize = "T: Clone"))]
+struct Page<T> {
+    items: Vec<T>,
+}
+
+#[derive(Deserialize)]
+#[serde(bound = "T: Clone")]
+struct Shelf<T> {
+    items: Vec<T>,
+}
+
+#[derive(Deserialize)]
+struct Invoice {
+    #[serde(skip_serializing, deserialize_with = "read_total")]
+    total: u32,
+}
+
+#[derive(Deserialize)]
+struct Receipt {
+    #[serde(getter = "Receipt::total")]
+    total: u32,
+}
+
 fn main() {}
