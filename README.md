@@ -25,16 +25,16 @@ let violations = annotated::json::from_str::<NewMember>(r#"{ "fullName": "  ", "
 
 > **Status:** under construction. Nothing is on crates.io yet, and the API above is where it's heading, not what's there today.
 
-The idea comes from .NET's [DataAnnotations](https://learn.microsoft.com/dotnet/api/system.componentmodel.dataannotations): rules sit on the fields they guard, and validating a model gives you every error, keyed by member. Rust has fine validation crates, [validator](https://crates.io/crates/validator) and [garde](https://crates.io/crates/garde), but they run after serde has succeeded, so a missing field or a value of the wrong type stops deserialization before any rule is checked, one error at a time. `annotated` reports them together.
+Rules sit on the fields they guard, and validating a value gives you every error, keyed by where it happened. Rust has fine validation crates, [validator](https://crates.io/crates/validator) and [garde](https://crates.io/crates/garde), but they run after serde has succeeded, so a missing field or a value of the wrong type stops deserialization before any rule is checked, one error at a time. `annotated` reports them together.
 
 ## Principles
 
 - **Every problem at once.** A client fixing a request learns about all of it in one answer, not one field per round trip.
 - **serde decides the names.** Fields are reported by the name serde reads them by, under any `rename_all`, `rename` or `alias`, worked out by the same code serde's derive uses. The crate never invents a naming scheme of its own.
 - **The format is yours.** The library works with any serde format and reports paths as segments (field, index, key). Rendering them, as a JSON Pointer or a dotted path, is a choice its user makes.
-- **Problems are data.** Each one has a stable code and its parameters for code that translates or reacts to it, an English message for people, and a per-rule `message` override, like DataAnnotations' `ErrorMessage`.
+- **Problems are data.** Each one has a stable code and its parameters for code that translates or reacts to it, an English message for people, and a per-rule `message` override.
 - **Nothing to pay on the success path.** Validating a valid value allocates nothing. Paths are built only when something fails, rules are plain functions the compiler inlines, and a regular expression compiles once.
-- **Open for your rules.** Built-in rules are ordinary functions, and yours sit beside them: on a field with `custom(...)`, or on the whole struct, like `IValidatableObject`.
+- **Open for your rules.** Built-in rules are ordinary functions, and yours sit beside them: on a field with `custom(...)`, or on the whole struct.
 - **Rules are pure.** A rule looks only at the value. Anything that needs I/O, like "is this email already taken", belongs to your application, after validation.
 
 ## Terms
