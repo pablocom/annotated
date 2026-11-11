@@ -31,6 +31,12 @@ pub enum Problem {
         /// What the length was counted in.
         unit: LengthUnit,
     },
+    /// A value is out of bounds: `range`, code `range`, with the params `min` and `max` it has.
+    #[non_exhaustive]
+    Range {
+        /// The values accepted, rendered with [`Display`].
+        bounds: Bounds<String>,
+    },
     /// A problem reported by a rule of your own, made with [`Problem::custom`].
     #[non_exhaustive]
     Custom {
@@ -166,6 +172,7 @@ impl Problem {
         match self {
             Self::Required => "required",
             Self::Length { .. } => "length",
+            Self::Range { .. } => "range",
             Self::Custom { code, .. } => code,
         }
     }
@@ -185,6 +192,7 @@ impl Problem {
                 params.push(("unit", unit.name().to_owned()));
                 params
             }
+            Self::Range { bounds } => bounds.params(),
             Self::Custom { params, .. } => params.clone(),
         }
     }
@@ -203,6 +211,7 @@ impl Display for Problem {
                     }
                 }
             }
+            Self::Range { bounds } => write!(formatter, "must be {bounds}"),
             Self::Custom { message, .. } => formatter.write_str(message),
         }
     }
@@ -242,6 +251,55 @@ mod tests {
         assert_eq!(
             problem.params(),
             [("name", "admin".to_owned()), ("reserved_names", "3".to_owned()),]
+        );
+    }
+
+    fn range_problem(bounds: Bounds<String>) -> Problem {
+        Problem::Range { bounds }
+    }
+
+    #[test]
+    fn a_value_out_of_range_is_known_as_range() {
+        assert_eq!(range_problem(Bounds::AtLeast("18".to_owned())).code(), "range");
+    }
+
+    #[test]
+    fn a_value_below_its_only_bound_reads_as_its_min() {
+        assert_eq!(
+            range_problem(Bounds::AtLeast("18".to_owned())).to_string(),
+            "must be at least 18"
+        );
+    }
+
+    #[test]
+    fn a_value_above_its_only_bound_reads_as_its_max() {
+        assert_eq!(
+            range_problem(Bounds::AtMost("120".to_owned())).to_string(),
+            "must be at most 120"
+        );
+    }
+
+    #[test]
+    fn a_value_out_of_two_bounds_reads_as_both() {
+        assert_eq!(
+            range_problem(Bounds::Between {
+                min: "18".to_owned(),
+                max: "120".to_owned()
+            })
+            .to_string(),
+            "must be between 18 and 120"
+        );
+    }
+
+    #[test]
+    fn a_range_s_params_are_its_bounds() {
+        assert_eq!(
+            range_problem(Bounds::Between {
+                min: "18".to_owned(),
+                max: "120".to_owned()
+            })
+            .params(),
+            [("min", "18".to_owned()), ("max", "120".to_owned())]
         );
     }
 

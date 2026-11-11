@@ -8,7 +8,9 @@
 //! own types once those implement them.
 
 mod length;
+mod range;
 mod required;
 
 pub use length::{HasLength, Length, StringLength, length};
+pub use range::{Range, range};
 pub use required::{Presence, Required, required};
