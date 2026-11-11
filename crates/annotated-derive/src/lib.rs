@@ -1,6 +1,7 @@
 //! The derive macros of [`annotated`](https://docs.rs/annotated), which re-exports and documents them.
 
 mod expansion;
+mod pattern;
 mod serde_names;
 mod validated_struct;
 mod written_rule;

@@ -1,3 +1,6 @@
+#[cfg(feature = "regex")]
+pub use regex::Regex;
+
 use crate::{FoundViolations, Location, Problem};
 
 pub fn passes(

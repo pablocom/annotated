@@ -11,6 +11,8 @@ mod custom;
 mod email;
 mod ip;
 mod length;
+#[cfg(feature = "regex")]
+mod pattern;
 mod range;
 mod required;
 mod text;
@@ -21,6 +23,8 @@ pub use custom::{Custom, custom};
 pub use email::{Email, email};
 pub use ip::{Ip, ip};
 pub use length::{HasLength, Length, StringLength, length};
+#[cfg(feature = "regex")]
+pub use pattern::{Pattern, pattern};
 pub use range::{Range, range};
 pub use required::{Presence, Required, required};
 pub use text::{Contains, Prefix, Suffix, contains, prefix, suffix};

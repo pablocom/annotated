@@ -52,6 +52,12 @@ pub enum Problem {
         /// The IP version accepted, 4 or 6, or `None` for both.
         version: Option<u8>,
     },
+    /// A string doesn't match a regular expression: `pattern`, code `pattern`, with the param `pattern`.
+    #[non_exhaustive]
+    Pattern {
+        /// The regular expression it must match.
+        pattern: &'static str,
+    },
     /// A string doesn't contain a text: `contains`, code `contains`, with the param `text`.
     #[non_exhaustive]
     Contains {
@@ -217,6 +223,7 @@ impl Problem {
             Self::Email => "email",
             Self::Url { .. } => "url",
             Self::Ip { .. } => "ip",
+            Self::Pattern { .. } => "pattern",
             Self::Contains { .. } => "contains",
             Self::Prefix { .. } => "prefix",
             Self::Suffix { .. } => "suffix",
@@ -242,6 +249,7 @@ impl Problem {
             Self::Required | Self::Email => Vec::new(),
             Self::Url { schemes } => vec![("schemes", schemes.join(", "))],
             Self::Ip { version } => version.iter().map(|version| ("version", version.to_string())).collect(),
+            Self::Pattern { pattern } => vec![("pattern", (*pattern).to_owned())],
             Self::Contains { text } => vec![("text", (*text).to_owned())],
             Self::Prefix { prefix } => vec![("prefix", (*prefix).to_owned())],
             Self::Suffix { suffix } => vec![("suffix", (*suffix).to_owned())],
@@ -268,6 +276,7 @@ impl Display for Problem {
             Self::Url { schemes } => write!(formatter, "must be a URL using {}", either_of(schemes)),
             Self::Ip { version: None } => formatter.write_str("must be an IP address"),
             Self::Ip { version: Some(version) } => write!(formatter, "must be an IPv{version} address"),
+            Self::Pattern { pattern } => write!(formatter, "must match the pattern {pattern}"),
             Self::Contains { text } => write!(formatter, "must contain {text:?}"),
             Self::Prefix { prefix } => write!(formatter, "must start with {prefix:?}"),
             Self::Suffix { suffix } => write!(formatter, "must end with {suffix:?}"),
@@ -426,6 +435,27 @@ mod tests {
     #[test]
     fn an_ip_of_any_version_has_no_params() {
         assert_eq!(Problem::Ip { version: None }.params(), []);
+    }
+
+    #[test]
+    fn a_string_not_matching_a_pattern_is_known_as_pattern() {
+        assert_eq!(Problem::Pattern { pattern: r"^\d{5}$" }.code(), "pattern");
+    }
+
+    #[test]
+    fn a_string_not_matching_a_pattern_reads_as_the_pattern() {
+        assert_eq!(
+            Problem::Pattern { pattern: r"^\d{5}$" }.to_string(),
+            r"must match the pattern ^\d{5}$"
+        );
+    }
+
+    #[test]
+    fn a_pattern_s_param_is_its_regular_expression() {
+        assert_eq!(
+            Problem::Pattern { pattern: r"^\d{5}$" }.params(),
+            [("pattern", r"^\d{5}$".to_owned())]
+        );
     }
 
     #[test]

@@ -13,9 +13,13 @@ categories = ["data-structures", "encoding", "rust-patterns"]
 [lib]
 proc-macro = true
 
+[features]
+regex = ["dep:regex-syntax"]
+
 [dependencies]
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
+regex-syntax = { version = "0.8.11", optional = true }
 serde_derive_internals = "0.30.0"
 syn = { version = "3.0.10", features = ["full"] }
 

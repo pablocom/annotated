@@ -171,3 +171,48 @@ fn custom_checks_a_field_with_your_function() {
 
     assert_eq!(violations_of(&product), ["slug: reserved_slug"]);
 }
+
+#[cfg(feature = "regex")]
+#[derive(Validate)]
+struct Address {
+    #[validate(pattern = r"^\d{5}$")]
+    postal_code: String,
+    #[validate(pattern(r"^[A-Z]{2}$", message = "must be a two-letter country code"))]
+    country: String,
+}
+
+#[cfg(feature = "regex")]
+fn address() -> Address {
+    Address {
+        postal_code: "28013".to_owned(),
+        country: "ES".to_owned(),
+    }
+}
+
+#[cfg(feature = "regex")]
+#[test]
+fn pattern_checks_that_a_field_matches_its_regular_expression() {
+    let address = Address {
+        postal_code: "2801".to_owned(),
+        ..address()
+    };
+
+    assert_eq!(
+        address.validate().unwrap_err().to_string(),
+        r"postal_code: must match the pattern ^\d{5}$"
+    );
+}
+
+#[cfg(feature = "regex")]
+#[test]
+fn pattern_takes_its_regular_expression_in_parentheses_too() {
+    let address = Address {
+        country: "Spain".to_owned(),
+        ..address()
+    };
+
+    assert_eq!(
+        address.validate().unwrap_err().to_string(),
+        "country: must be a two-letter country code"
+    );
+}

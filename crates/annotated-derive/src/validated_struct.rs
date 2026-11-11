@@ -3,8 +3,8 @@ use quote::{ToTokens, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, Ident, Lit, Path, Type};
 
-use crate::serde_names;
 use crate::written_rule::{NamedArgument, WrittenRule, validate_attributes, written_rules};
+use crate::{pattern, serde_names};
 
 pub struct ValidatedStruct<'a> {
     pub input: &'a DeriveInput,
@@ -102,6 +102,14 @@ impl FieldRule {
             None => written.path.to_token_stream(),
         };
         let constructor_value = &written.value;
+        if written.path.is_ident("pattern") {
+            return Ok(Self {
+                rule: pattern::pattern_rule(&written, span)?,
+                is_required: false,
+                message: written.message,
+                span,
+            });
+        }
         let builder_calls = written
             .builder_arguments
             .iter()

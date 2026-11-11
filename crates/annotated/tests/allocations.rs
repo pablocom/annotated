@@ -68,3 +68,25 @@ fn validating_a_valid_value_by_its_derived_rules_allocates_nothing() {
 
     assert_eq!(allocations.count_total, 0);
 }
+
+#[cfg(feature = "regex")]
+#[derive(Validate)]
+struct Address {
+    #[validate(pattern = r"^\d{5}$")]
+    postal_code: String,
+}
+
+#[cfg(feature = "regex")]
+#[test]
+fn a_pattern_is_compiled_once_and_validating_by_it_again_allocates_nothing() {
+    let address = Address {
+        postal_code: "28013".to_owned(),
+    };
+    let _ = address.validate();
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = black_box(address.validate());
+    });
+
+    assert_eq!(allocations.count_total, 0);
+}

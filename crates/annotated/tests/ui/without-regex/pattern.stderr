@@ -1,0 +1,5 @@
+error: the `pattern` rule needs the `regex` feature of `annotated`
+ --> tests/ui/without-regex/pattern.rs:5:16
+  |
+5 |     #[validate(pattern = r"^\d{5}$")]
+  |                ^^^^^^^

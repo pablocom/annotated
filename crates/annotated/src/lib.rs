@@ -48,7 +48,8 @@ pub use validate::Validate;
 /// builder method `max` with `50`: `annotated::rules::length().max(50)`. `message = "..."` in a rule's
 /// arguments replaces its problem's message, with `{param}` placeholders filled from the problem's
 /// parameters. `length` takes `unit = "chars"`, `"bytes"` or, with the `unicode` feature, `"graphemes"`, and
-/// refuses a unit on a collection.
+/// refuses a unit on a collection. `pattern`, with the `regex` feature, takes its regular expression as a
+/// string literal, refuses one that doesn't parse, and compiles it once.
 ///
 /// - Every field is checked, and the first rule a field breaks stops that field's other rules.
 ///   `#[validate(report_all)]` on the struct reports every rule a field breaks instead.

@@ -1,0 +1,11 @@
+error: `pattern` takes its regular expression as a string literal: `pattern = r"..."`
+ --> tests/ui/regex/pattern_that_is_not_a_literal.rs:7:16
+  |
+7 |     #[validate(pattern = POSTAL_CODE)]
+  |                ^^^^^^^
+
+error: `pattern` takes its regular expression as a string literal: `pattern = r"..."`
+  --> tests/ui/regex/pattern_that_is_not_a_literal.rs:13:16
+   |
+13 |     #[validate(pattern(expression = r"^\d{5}$"))]
+   |                ^^^^^^^

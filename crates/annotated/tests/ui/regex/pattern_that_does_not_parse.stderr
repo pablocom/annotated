@@ -1,0 +1,9 @@
+error: `pattern` can't parse this regular expression:
+       regex parse error:
+           ^\d{5$
+              ^^
+       error: unclosed counted repetition
+ --> tests/ui/regex/pattern_that_does_not_parse.rs:5:26
+  |
+5 |     #[validate(pattern = r"^\d{5$")]
+  |                          ^^^^^^^^^
