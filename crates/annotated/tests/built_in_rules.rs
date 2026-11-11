@@ -49,12 +49,18 @@ struct Contact {
     email: String,
     #[validate(ip)]
     server: Option<String>,
+    #[validate(ipv4)]
+    gateway: Option<String>,
+    #[validate(ipv6)]
+    resolver: Option<String>,
 }
 
 fn contact() -> Contact {
     Contact {
         email: "alex@example.com".to_owned(),
         server: None,
+        gateway: None,
+        resolver: None,
     }
 }
 
@@ -76,6 +82,32 @@ fn ip_checks_that_a_field_is_an_ip_address() {
     };
 
     assert_eq!(violations_of(&contact), ["server: ip"]);
+}
+
+#[test]
+fn ipv4_checks_that_a_field_is_an_ipv4_address() {
+    let contact = Contact {
+        gateway: Some("2001:db8::1".to_owned()),
+        ..contact()
+    };
+
+    assert_eq!(
+        contact.validate().unwrap_err().to_string(),
+        "gateway: must be an IPv4 address"
+    );
+}
+
+#[test]
+fn ipv6_checks_that_a_field_is_an_ipv6_address() {
+    let contact = Contact {
+        resolver: Some("192.0.2.1".to_owned()),
+        ..contact()
+    };
+
+    assert_eq!(
+        contact.validate().unwrap_err().to_string(),
+        "resolver: must be an IPv6 address"
+    );
 }
 
 #[cfg(feature = "url")]

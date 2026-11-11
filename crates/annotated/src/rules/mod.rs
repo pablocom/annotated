@@ -23,7 +23,7 @@ mod url;
 pub use custom::{Custom, custom};
 pub use elements::HasElements;
 pub use email::{Email, email};
-pub use ip::{Ip, ip};
+pub use ip::{Ip, ip, ipv4, ipv6};
 pub use length::{HasLength, Length, StringLength, length};
 #[cfg(feature = "regex")]
 pub use pattern::{Pattern, pattern};

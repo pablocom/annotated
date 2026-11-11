@@ -46,10 +46,11 @@ pub enum Problem {
         /// The schemes accepted.
         schemes: &'static [&'static str],
     },
-    /// A string isn't an IP address: `ip`, code `ip`, with the param `version` when only one is accepted.
+    /// A string isn't an IP address: `ip`, `ipv4` or `ipv6`, code `ip`, with the param `version`, 4 or 6, when
+    /// only one version is accepted.
     #[non_exhaustive]
     Ip {
-        /// The IP version accepted, 4 or 6, or `None` for both.
+        /// The IP version accepted, 4 or 6, or `None` for either.
         version: Option<u8>,
     },
     /// A string doesn't match a regular expression: `pattern`, code `pattern`, with the param `pattern`.
