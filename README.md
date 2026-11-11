@@ -3,7 +3,7 @@
 Validation for structs that works with serde. You write rules on a struct's fields, and deserializing it reports every problem in one error: broken rules and missing fields together, each at the path of the field it's about.
 
 ```rust
-use annotated::{Deserialize, Validate};
+use annotated::{Deserialize, ParamValue, Path, Problem, Validate};
 
 #[derive(Validate, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,16 +17,32 @@ struct NewMember {
 }
 
 #[test]
+fn a_new_member_deserializes_with_serde_json_like_any_other_type() {
+    let body = r#"{ "fullName": "Alex Doe", "email": "alex@example.com", "age": 30 }"#;
+
+    let new_member = serde_json::from_str::<NewMember>(body).unwrap();
+
+    assert_eq!(new_member.full_name, "Alex Doe");
+}
+
+#[test]
 fn every_problem_with_a_new_member_is_reported_at_once() {
     let body = r#"{ "fullName": "  ", "age": 12 }"#;
 
     let error = annotated::json::from_str::<NewMember>(body).unwrap_err();
 
+    let [blank_name, missing_email, too_young] = error.violations() else {
+        panic!("expected three violations, got {error:?}");
+    };
+    assert_eq!(blank_name.path(), &Path::root().field("fullName"));
+    assert_eq!(blank_name.problem(), &Problem::Required);
+    assert_eq!(missing_email.path(), &Path::root().field("email"));
+    assert_eq!(missing_email.problem(), &Problem::Missing);
+    assert_eq!(too_young.path(), &Path::root().field("age"));
+    assert_eq!(too_young.problem().code(), "range");
     assert_eq!(
-        error.to_string(),
-        "fullName: is required\n\
-         email: is missing\n\
-         age: must be between 18 and 120",
+        too_young.problem().params(),
+        [("min", ParamValue::Integer(18)), ("max", ParamValue::Integer(120))],
     );
 }
 ```
@@ -38,6 +54,8 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 [validator](https://crates.io/crates/validator) and [garde](https://crates.io/crates/garde) check a struct after serde has built it. When a field is missing or has the wrong type, serde stops at that first error, and no rule runs.
 
 `annotated` validates as part of deserializing. Derive `annotated::Deserialize` where you'd derive `serde::Deserialize`: the struct still implements `serde::Deserialize` and works anywhere serde does, but a missing field becomes one more violation instead of the end of deserialization. Values of the wrong type join them when a struct opts in with `#[annotated(collect_type_errors)]`.
+
+`serde_json::from_str`, as in the first test, refuses a value that breaks its rules too, with every violation in its error's message: a serde error carries a message, not data. To read the violations one by one, as in the second test, deserialize through `annotated::json::from_str` or `from_slice`, which come with the crate's `json` feature, or through `annotated::from_deserializer` for any other format.
 
 To check a value however it was built, derive `Validate` alone: `value.validate()` reports every broken rule, whether serde built the value or not.
 

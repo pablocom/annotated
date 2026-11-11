@@ -85,8 +85,8 @@ Each entry in `#[validate(...)]` is one rule, and the derive turns it into a con
 > Planned; the details settle when it's built.
 
 - `#[derive(Deserialize)]` emits a hidden twin, `__AnnotatedUnvalidated{Name}`, deriving serde's `Deserialize`. It carries the struct's and fields' naming attributes (`rename_all`, `rename`, `alias`, `deny_unknown_fields`, `expecting`). Each required field becomes `Option<T>`, and each optional field keeps its `Option<T>` with `#[serde(default)]`. Other serde attributes are refused with an error naming the accepted ones, until each is supported deliberately.
-- From the twin, it reports every missing field, runs every rule on the fields present, and builds the struct only when nothing failed.
-- `annotated::from_deserializer` returns `Result<T, DeserializeError<D::Error>>`: either the format's own error (syntax, or a type error when not collecting them) or `Violations`. The `json` feature adds `annotated::json::from_str` and `from_slice`.
+- From the twin, it reports every missing field as `Problem::Missing` (code `missing`), runs every rule on the fields present, and builds the struct only when nothing failed.
+- `annotated::from_deserializer` returns `Result<T, DeserializeError<D::Error>>`: either the format's own error (syntax, or a type error when not collecting them) or `Violations`. `DeserializeError::violations()` answers them as a slice, empty for the format's own error, so a caller reads them without matching. The `json` feature adds `annotated::json::from_str` and `from_slice`.
 - The generated `serde::Deserialize` impl turns `Violations` into `D::Error::custom` with every violation in its message, so plain `serde_json::from_str::<T>` still validates.
 - `#[annotated(collect_type_errors)]` makes each twin field buffer its value into a format-independent content tree first, then deserialize it into the field's type, so a value of the wrong type joins the violations as `Problem::InvalidType`. It costs an allocation per field and needs a self-describing format (JSON, YAML, TOML); without it, the first type error fails the whole deserialization, as serde does.
 
