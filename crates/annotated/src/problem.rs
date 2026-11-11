@@ -25,6 +25,8 @@ use crate::ParamValue;
 pub enum Problem {
     /// A required value is missing: `required`, code `required`.
     Required,
+    /// A field is absent from the input: reported by collecting deserialization, code `missing`.
+    Missing,
     /// A length is out of bounds: `length`, code `length`, with the params `min` and `max` it has, `equal`
     /// when they are the same, and `unit`.
     #[non_exhaustive]
@@ -222,6 +224,7 @@ impl Problem {
     pub fn code(&self) -> &str {
         match self {
             Self::Required => "required",
+            Self::Missing => "missing",
             Self::Length { .. } => "length",
             Self::Range { .. } => "range",
             Self::Email => "email",
@@ -252,7 +255,7 @@ impl Problem {
                 params
             }
             Self::Range { bounds } => bounds.params(),
-            Self::Required | Self::Email | Self::Ip | Self::Ipv4 | Self::Ipv6 => Vec::new(),
+            Self::Required | Self::Missing | Self::Email | Self::Ip | Self::Ipv4 | Self::Ipv6 => Vec::new(),
             Self::Url { schemes } => vec![("schemes", ParamValue::from(schemes.join(", ")))],
             Self::Pattern { pattern } => vec![("pattern", ParamValue::text(pattern))],
             Self::Contains { text } => vec![("text", ParamValue::text(text))],
@@ -267,6 +270,7 @@ impl Display for Problem {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Required => formatter.write_str("is required"),
+            Self::Missing => formatter.write_str("is missing"),
             Self::Length { bounds, unit } => {
                 let counted_in = unit.counted_in(*bounds.farthest());
                 match unit {
@@ -549,6 +553,21 @@ mod tests {
         let problem = Problem::Required.with_param("name", "admin");
 
         assert_eq!(problem.params(), []);
+    }
+
+    #[test]
+    fn a_missing_field_is_known_as_missing() {
+        assert_eq!(Problem::Missing.code(), "missing");
+    }
+
+    #[test]
+    fn a_missing_field_reads_as_missing() {
+        assert_eq!(Problem::Missing.to_string(), "is missing");
+    }
+
+    #[test]
+    fn a_missing_field_has_no_params() {
+        assert_eq!(Problem::Missing.params(), []);
     }
 
     #[test]
