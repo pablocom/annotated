@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::{Problem, Rule};
 
-/// The rule that a value is present, like .NET's `[Required]`: an `Option` is `Some`, a string is neither
-/// empty nor only whitespace, and a collection is not empty.
+/// The rule that a value is present: an `Option` is `Some`, a string is neither empty nor only whitespace,
+/// and a collection is not empty.
 ///
 /// It checks anything that implements [`Required`]. On an `Option` field, `#[derive(Validate)]` checks the
 /// `Option` itself with it, while every other rule checks the value inside.
