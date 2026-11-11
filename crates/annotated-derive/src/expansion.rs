@@ -105,7 +105,7 @@ impl Expansion {
         let checks = rules
             .iter()
             .map(|rule| self.rule_check(rule, is_value_optional, value_at));
-        quote!(#(#checks)&&*)
+        quote!((#(#checks)&&*))
     }
 
     fn rule_check(&self, rule: &FieldRule, is_value_optional: bool, value_at: &TokenStream) -> TokenStream {

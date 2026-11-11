@@ -67,6 +67,32 @@ fn a_struct_level_rule_at_a_field_is_skipped_when_the_field_breaks_its_own_rules
     assert_eq!(violations_of(&new_password), ["repeatedPassword: required"]);
 }
 
+fn account_passwords_match(new_account: &NewAccount) -> Result<(), Problem> {
+    if new_account.repeated_password != new_account.password {
+        return Err(Problem::custom("passwords_differ", "must match the password"));
+    }
+    Ok(())
+}
+
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+#[validate(custom(account_passwords_match, field = repeated_password))]
+struct NewAccount {
+    password: String,
+    #[validate(required, length(min = 8))]
+    repeated_password: String,
+}
+
+#[test]
+fn a_struct_level_rule_at_a_field_is_skipped_when_the_field_breaks_a_later_rule_of_its_own() {
+    let new_account = NewAccount {
+        password: "correct horse battery staple".to_owned(),
+        repeated_password: "horse".to_owned(),
+    };
+
+    assert_eq!(violations_of(&new_account), ["repeatedPassword: length"]);
+}
+
 fn last_night_follows_the_first(stay: &Stay) -> Result<(), Problem> {
     if stay.last_night < stay.first_night {
         return Err(Problem::custom("ends_before_it_starts", "must end after it starts"));
