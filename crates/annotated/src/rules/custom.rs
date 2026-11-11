@@ -34,6 +34,7 @@ pub struct Custom<F, V: ?Sized> {
     checked: PhantomData<fn(&V)>,
 }
 
+#[diagnostic::do_not_recommend]
 impl<T, V, F> Rule<T> for Custom<F, V>
 where
     T: Borrow<V> + ?Sized,

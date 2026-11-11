@@ -42,6 +42,7 @@ impl<T> Range<T> {
     }
 }
 
+#[diagnostic::do_not_recommend]
 impl<T: PartialOrd + Display> Rule<T> for Range<T> {
     fn check(&self, value: &T) -> Result<(), Problem> {
         let is_high_enough = self.min.as_ref().is_none_or(|min| value >= min);

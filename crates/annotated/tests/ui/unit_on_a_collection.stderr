@@ -8,24 +8,10 @@ error[E0277]: the rule `StringLength` can't check a value of type `Vec<String>`
 help: the following other types implement trait `Rule<T>`
  --> src/rules/length.rs
   |
-  |   impl<T: HasLength + ?Sized> Rule<T> for Length {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `annotated::rules::Length`
-  |
- ::: src/rules/custom.rs
-  |
-  | / impl<T, V, F> Rule<T> for Custom<F, V>
-  | | where
-  | |     T: Borrow<V> + ?Sized,
-  | |     V: ?Sized,
-  | |     F: Fn(&V) -> Result<(), Problem>,
-  | |_____________________________________^ `annotated::rules::Custom<F, V>`
+  | impl<T: HasLength + ?Sized> Rule<T> for Length {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `annotated::rules::Length`
   |
  ::: src/rules/required.rs
   |
-  |   impl<T: Required + ?Sized> Rule<T> for Presence {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Presence`
-  |
- ::: src/rules/range.rs
-  |
-  |   impl<T: PartialOrd + Display> Rule<T> for Range<T> {
-  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `annotated::rules::Range<T>`
+  | impl<T: Required + ?Sized> Rule<T> for Presence {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Presence`
