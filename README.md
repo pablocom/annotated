@@ -17,15 +17,6 @@ struct NewMember {
 }
 
 #[test]
-fn a_new_member_deserializes_with_serde_json_like_any_other_type() {
-    let body = r#"{ "fullName": "Alex Doe", "email": "alex@example.com", "age": 30 }"#;
-
-    let new_member = serde_json::from_str::<NewMember>(body).unwrap();
-
-    assert_eq!(new_member.full_name, "Alex Doe");
-}
-
-#[test]
 fn every_problem_with_a_new_member_is_reported_at_once() {
     let body = r#"{ "fullName": "  ", "age": 12 }"#;
 
@@ -55,7 +46,7 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 
 `annotated` validates as part of deserializing. Derive `annotated::Deserialize` where you'd derive `serde::Deserialize`: the struct still implements `serde::Deserialize` and works anywhere serde does, but a missing field becomes one more violation instead of the end of deserialization. Values of the wrong type join them when a struct opts in with `#[annotated(collect_type_errors)]`.
 
-`serde_json::from_str`, as in the first test, refuses a value that breaks its rules too, with every violation in its error's message: a serde error carries a message, not data. To read the violations one by one, as in the second test, deserialize through `annotated::json::from_str` or `from_slice`, which come with the crate's `json` feature, or through `annotated::from_deserializer` for any other format.
+`serde_json::from_str` refuses a value that breaks its rules too, with every violation in its error's message: a serde error carries a message, not data. To read the violations one by one, as in the test above, deserialize through `annotated::json::from_str` or `from_slice`, which come with the crate's `json` feature, or through `annotated::from_deserializer` for any other format.
 
 To check a value however it was built, derive `Validate` alone: `value.validate()` reports every broken rule, whether serde built the value or not.
 
