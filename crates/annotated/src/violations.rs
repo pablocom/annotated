@@ -7,7 +7,7 @@ use crate::Violation;
 /// Every violation found in one validation: the error type. It is never empty.
 ///
 /// It iterates over its violations in the order they were found, and reads as one violation per line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Violations {
     violations: Vec<Violation>,
 }

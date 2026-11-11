@@ -20,7 +20,7 @@ Violations ──1..*── Violation ──── Path ──0..*── PathSeg
 
 - `Violations` is the error type. It is never empty, implements `std::error::Error` and `Display` (one violation per line), and iterates over `Violation`s in the order they were found: fields in declaration order, then struct-level rules.
 - A `Violation` has a `Path`, a `Problem` and an optional message override. `message()` answers the override, with `{param}` placeholders filled from the problem's parameters, or the problem's English message.
-- `Problem` is `#[non_exhaustive]`, so adding a built-in problem is not a breaking change. Every variant has a stable snake_case `code()` and named `params()`, for code that translates messages or reacts to them. `Problem::custom(code, message)` is how user rules report, with `.with_param(name, value)`.
+- `Problem` is `#[non_exhaustive]`, so adding a built-in problem is not a breaking change. Every variant has a stable snake_case `code()` and named `params()`, for code that translates messages or reacts to them. A param is a `ParamValue`: an integer (`i128`, so every primitive integer fits exactly), a float or a text, so a translator picks a plural form or compares a bound without parsing, and a message reads it as it renders. `Problem::custom(code, message)` is how user rules report, with `.with_param(name, value)` taking a number or a text.
 - A `Path` is a list of segments: a field (`&'static str`, serde's name), an element's index, or a map's key (rendered with `Display`). It renders as a dotted path (`members[1].name`, with a key in brackets like an index: `labels[en]`) through `Display`, and as an RFC 6901 JSON Pointer through `json_pointer()` (`/members/1/name`). The root path is empty: a struct-level violation has it.
 
 ## Nothing to pay on the success path
@@ -42,7 +42,7 @@ pub trait Rule<T: ?Sized> {
 }
 ```
 
-Built-in rules are generic over small capability traits, not over concrete types: `length` checks anything with a length (`str`, `String`, `Cow<str>`, `Vec`, slices, sets, maps), `email` and `url` anything that is `AsRef<str>`, `range` anything `PartialOrd` and `Display`. So they work on `Box<str>`, `Arc<str>` or a user's own string type without changes.
+Built-in rules are generic over small capability traits, not over concrete types: `length` checks anything with a length (`str`, `String`, `Cow<str>`, `Vec`, slices, sets, maps), `email` and `url` anything that is `AsRef<str>`, `range` anything `PartialOrd` and `Display`. So they work on `Box<str>`, `Arc<str>` or a user's own string type without changes. `range` reports its bounds as numbers when the type checked is a primitive number type, told apart at run time once a value is out of range, and as text rendered with `Display` for any other type, so it needs no capability trait of its own.
 
 ### How `#[validate(...)]` turns into code
 

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Write};
 
-use crate::{Path, Problem};
+use crate::{ParamValue, Path, Problem};
 
 /// One broken rule, at the path where it happened.
 ///
@@ -13,7 +13,7 @@ use crate::{Path, Problem};
 ///
 /// assert_eq!(violation.to_string(), "name: admin is taken");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Violation {
     path: Path,
     problem: Problem,
@@ -63,7 +63,7 @@ impl Violation {
     }
 }
 
-fn fill_placeholders(message: &str, params: &[(&'static str, String)]) -> String {
+fn fill_placeholders(message: &str, params: &[(&'static str, ParamValue)]) -> String {
     let mut filled = String::with_capacity(message.len());
     let mut rest = message;
     while let Some(next_character) = rest.chars().next() {
@@ -74,7 +74,7 @@ fn fill_placeholders(message: &str, params: &[(&'static str, String)]) -> String
             filled.push('}');
             after
         } else if let Some((value, after)) = param_placeholder_at_start_of(rest, params) {
-            filled.push_str(value);
+            write!(filled, "{value}").expect("a String takes any text");
             after
         } else {
             filled.push(next_character);
@@ -86,8 +86,8 @@ fn fill_placeholders(message: &str, params: &[(&'static str, String)]) -> String
 
 fn param_placeholder_at_start_of<'text, 'params>(
     text: &'text str,
-    params: &'params [(&'static str, String)],
-) -> Option<(&'params str, &'text str)> {
+    params: &'params [(&'static str, ParamValue)],
+) -> Option<(&'params ParamValue, &'text str)> {
     let (name, after) = text.strip_prefix('{')?.split_once('}')?;
     let (_, value) = params.iter().find(|(param_name, _)| *param_name == name)?;
     Some((value, after))
@@ -129,6 +129,14 @@ mod tests {
         let violation = Violation::new(Path::root().field("name"), reserved_name()).with_message("{name} is taken");
 
         assert_eq!(violation.message(), "admin is taken");
+    }
+
+    #[test]
+    fn a_placeholder_of_a_number_param_is_filled_with_the_number() {
+        let too_many_guests = Problem::custom("too_many_guests", "has too many guests").with_param("max", 8);
+        let violation = Violation::new(Path::root().field("guests"), too_many_guests).with_message("{max} at most");
+
+        assert_eq!(violation.message(), "8 at most");
     }
 
     #[test]

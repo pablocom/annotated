@@ -12,6 +12,7 @@ pub mod __private;
 
 mod found_violations;
 mod location;
+mod param_value;
 mod path;
 mod problem;
 mod rule;
@@ -21,6 +22,7 @@ mod violations;
 
 pub use found_violations::FoundViolations;
 pub use location::Location;
+pub use param_value::ParamValue;
 pub use path::{Path, PathSegment};
 pub use problem::{Bounds, LengthUnit, Problem};
 pub use rule::Rule;

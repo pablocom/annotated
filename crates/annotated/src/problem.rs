@@ -1,9 +1,12 @@
 use std::borrow::Cow;
 use std::fmt::{self, Display};
 
+use crate::ParamValue;
+
 /// What kind of violation happened: a stable code, its named parameters and an English message.
 ///
-/// Code that translates messages or reacts to a violation reads [`Problem::code`] and [`Problem::params`];
+/// Code that translates messages or reacts to a violation reads [`Problem::code`] and [`Problem::params`], each
+/// param a [`ParamValue`], a number or a text;
 /// people read its [`Display`], the English message. New kinds of problem may be added without a breaking
 /// change, so a `match` on it needs a wildcard arm.
 ///
@@ -17,7 +20,7 @@ use std::fmt::{self, Display};
 /// assert_eq!(problem.code(), "reserved_name");
 /// assert_eq!(problem.to_string(), "is reserved");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Problem {
     /// A required value is missing: `required`, code `required`.
@@ -34,8 +37,9 @@ pub enum Problem {
     /// A value is out of bounds: `range`, code `range`, with the params `min` and `max` it has.
     #[non_exhaustive]
     Range {
-        /// The values accepted, rendered with [`Display`].
-        bounds: Bounds<String>,
+        /// The values accepted: numbers when the value checked is of a primitive number type, or else text,
+        /// rendered with [`Display`].
+        bounds: Bounds<ParamValue>,
     },
     /// A string isn't an email address: `email`, code `email`.
     Email,
@@ -85,7 +89,7 @@ pub enum Problem {
         /// The English message for people.
         message: Cow<'static, str>,
         /// The named parameters, in the order they were added.
-        params: Vec<(&'static str, String)>,
+        params: Vec<(&'static str, ParamValue)>,
     },
 }
 
@@ -132,12 +136,12 @@ impl<T> Bounds<T> {
     }
 }
 
-impl<T: Display> Bounds<T> {
-    fn params(&self) -> Vec<(&'static str, String)> {
+impl<T: Clone + Into<ParamValue>> Bounds<T> {
+    fn params(&self) -> Vec<(&'static str, ParamValue)> {
         match self {
-            Self::AtLeast(min) => vec![("min", min.to_string())],
-            Self::AtMost(max) => vec![("max", max.to_string())],
-            Self::Between { min, max } => vec![("min", min.to_string()), ("max", max.to_string())],
+            Self::AtLeast(min) => vec![("min", min.clone().into())],
+            Self::AtMost(max) => vec![("max", max.clone().into())],
+            Self::Between { min, max } => vec![("min", min.clone().into()), ("max", max.clone().into())],
         }
     }
 }
@@ -201,15 +205,15 @@ impl Problem {
         }
     }
 
-    /// This problem with the named parameter `name` added, rendered with [`Display`], for messages to quote
-    /// and code to read.
+    /// This problem with the named parameter `name` added, for messages to quote and code to read: a number,
+    /// like `50` or `0.5`, or a text, like `"admin"`.
     ///
     /// Only a [custom](Problem::custom) problem takes parameters; a built-in problem's parameters are fixed,
     /// and it is returned unchanged.
     #[must_use]
-    pub fn with_param(mut self, name: &'static str, value: impl Display) -> Self {
+    pub fn with_param(mut self, name: &'static str, value: impl Into<ParamValue>) -> Self {
         if let Self::Custom { params, .. } = &mut self {
-            params.push((name, value.to_string()));
+            params.push((name, value.into()));
         }
         self
     }
@@ -232,28 +236,31 @@ impl Problem {
         }
     }
 
-    /// The named parameters of this problem, such as a length's `max`.
+    /// The named parameters of this problem, such as a length's `max`, each a number or a text.
     #[must_use]
-    pub fn params(&self) -> Vec<(&'static str, String)> {
+    pub fn params(&self) -> Vec<(&'static str, ParamValue)> {
         match self {
             Self::Length { bounds, unit } => {
                 let mut params = bounds.params();
                 if let Bounds::Between { min, max } = bounds
                     && min == max
                 {
-                    params.push(("equal", min.to_string()));
+                    params.push(("equal", ParamValue::from(*min)));
                 }
-                params.push(("unit", unit.name().to_owned()));
+                params.push(("unit", ParamValue::text(unit.name())));
                 params
             }
             Self::Range { bounds } => bounds.params(),
             Self::Required | Self::Email => Vec::new(),
-            Self::Url { schemes } => vec![("schemes", schemes.join(", "))],
-            Self::Ip { version } => version.iter().map(|version| ("version", version.to_string())).collect(),
-            Self::Pattern { pattern } => vec![("pattern", (*pattern).to_owned())],
-            Self::Contains { text } => vec![("text", (*text).to_owned())],
-            Self::Prefix { prefix } => vec![("prefix", (*prefix).to_owned())],
-            Self::Suffix { suffix } => vec![("suffix", (*suffix).to_owned())],
+            Self::Url { schemes } => vec![("schemes", ParamValue::from(schemes.join(", ")))],
+            Self::Ip { version } => version
+                .iter()
+                .map(|version| ("version", ParamValue::from(*version)))
+                .collect(),
+            Self::Pattern { pattern } => vec![("pattern", ParamValue::text(pattern))],
+            Self::Contains { text } => vec![("text", ParamValue::text(text))],
+            Self::Prefix { prefix } => vec![("prefix", ParamValue::text(prefix))],
+            Self::Suffix { suffix } => vec![("suffix", ParamValue::text(suffix))],
             Self::Custom { params, .. } => params.clone(),
         }
     }
@@ -319,23 +326,33 @@ mod tests {
 
         assert_eq!(
             problem.params(),
-            [("name", "admin".to_owned()), ("reserved_names", "3".to_owned()),]
+            [
+                ("name", ParamValue::Text("admin".into())),
+                ("reserved_names", ParamValue::Integer(3)),
+            ]
         );
     }
 
-    fn range_problem(bounds: Bounds<String>) -> Problem {
+    #[test]
+    fn a_custom_problem_takes_a_float_param() {
+        let problem = Problem::custom("too_risky", "is too risky").with_param("max_ratio", 0.5);
+
+        assert_eq!(problem.params(), [("max_ratio", ParamValue::Float(0.5))]);
+    }
+
+    fn range_problem(bounds: Bounds<ParamValue>) -> Problem {
         Problem::Range { bounds }
     }
 
     #[test]
     fn a_value_out_of_range_is_known_as_range() {
-        assert_eq!(range_problem(Bounds::AtLeast("18".to_owned())).code(), "range");
+        assert_eq!(range_problem(Bounds::AtLeast(ParamValue::Integer(18))).code(), "range");
     }
 
     #[test]
     fn a_value_below_its_only_bound_reads_as_its_min() {
         assert_eq!(
-            range_problem(Bounds::AtLeast("18".to_owned())).to_string(),
+            range_problem(Bounds::AtLeast(ParamValue::Integer(18))).to_string(),
             "must be at least 18"
         );
     }
@@ -343,8 +360,8 @@ mod tests {
     #[test]
     fn a_value_above_its_only_bound_reads_as_its_max() {
         assert_eq!(
-            range_problem(Bounds::AtMost("120".to_owned())).to_string(),
-            "must be at most 120"
+            range_problem(Bounds::AtMost(ParamValue::Float(0.5))).to_string(),
+            "must be at most 0.5"
         );
     }
 
@@ -352,8 +369,8 @@ mod tests {
     fn a_value_out_of_two_bounds_reads_as_both() {
         assert_eq!(
             range_problem(Bounds::Between {
-                min: "18".to_owned(),
-                max: "120".to_owned()
+                min: ParamValue::Integer(18),
+                max: ParamValue::Integer(120)
             })
             .to_string(),
             "must be between 18 and 120"
@@ -364,11 +381,11 @@ mod tests {
     fn a_range_s_params_are_its_bounds() {
         assert_eq!(
             range_problem(Bounds::Between {
-                min: "18".to_owned(),
-                max: "120".to_owned()
+                min: ParamValue::Integer(18),
+                max: ParamValue::Integer(120)
             })
             .params(),
-            [("min", "18".to_owned()), ("max", "120".to_owned())]
+            [("min", ParamValue::Integer(18)), ("max", ParamValue::Integer(120))]
         );
     }
 
@@ -410,7 +427,7 @@ mod tests {
             schemes: &["http", "https"],
         };
 
-        assert_eq!(problem.params(), [("schemes", "http, https".to_owned())]);
+        assert_eq!(problem.params(), [("schemes", ParamValue::Text("http, https".into()))]);
     }
 
     #[test]
@@ -430,7 +447,10 @@ mod tests {
 
     #[test]
     fn an_ip_s_params_are_the_version_accepted() {
-        assert_eq!(Problem::Ip { version: Some(4) }.params(), [("version", "4".to_owned())]);
+        assert_eq!(
+            Problem::Ip { version: Some(4) }.params(),
+            [("version", ParamValue::Integer(4))]
+        );
     }
 
     #[test]
@@ -455,7 +475,7 @@ mod tests {
     fn a_pattern_s_param_is_its_regular_expression() {
         assert_eq!(
             Problem::Pattern { pattern: r"^\d{5}$" }.params(),
-            [("pattern", r"^\d{5}$".to_owned())]
+            [("pattern", ParamValue::Text(r"^\d{5}$".into()))]
         );
     }
 
@@ -471,7 +491,10 @@ mod tests {
 
     #[test]
     fn a_contains_param_is_its_text() {
-        assert_eq!(Problem::Contains { text: "@" }.params(), [("text", "@".to_owned())]);
+        assert_eq!(
+            Problem::Contains { text: "@" }.params(),
+            [("text", ParamValue::Text("@".into()))]
+        );
     }
 
     #[test]
@@ -491,7 +514,7 @@ mod tests {
     fn a_prefix_param_is_its_prefix() {
         assert_eq!(
             Problem::Prefix { prefix: "SKU-" }.params(),
-            [("prefix", "SKU-".to_owned())]
+            [("prefix", ParamValue::Text("SKU-".into()))]
         );
     }
 
@@ -512,7 +535,7 @@ mod tests {
     fn a_suffix_param_is_its_suffix() {
         assert_eq!(
             Problem::Suffix { suffix: ".pdf" }.params(),
-            [("suffix", ".pdf".to_owned())]
+            [("suffix", ParamValue::Text(".pdf".into()))]
         );
     }
 
@@ -612,9 +635,9 @@ mod tests {
         assert_eq!(
             problem.params(),
             [
-                ("min", "1".to_owned()),
-                ("max", "50".to_owned()),
-                ("unit", "bytes".to_owned()),
+                ("min", ParamValue::Integer(1)),
+                ("max", ParamValue::Integer(50)),
+                ("unit", ParamValue::Text("bytes".into())),
             ]
         );
     }
@@ -625,7 +648,10 @@ mod tests {
 
         assert_eq!(
             problem.params(),
-            [("max", "50".to_owned()), ("unit", "chars".to_owned()),]
+            [
+                ("max", ParamValue::Integer(50)),
+                ("unit", ParamValue::Text("chars".into()))
+            ]
         );
     }
 
@@ -636,10 +662,10 @@ mod tests {
         assert_eq!(
             problem.params(),
             [
-                ("min", "5".to_owned()),
-                ("max", "5".to_owned()),
-                ("equal", "5".to_owned()),
-                ("unit", "elements".to_owned()),
+                ("min", ParamValue::Integer(5)),
+                ("max", ParamValue::Integer(5)),
+                ("equal", ParamValue::Integer(5)),
+                ("unit", ParamValue::Text("elements".into())),
             ]
         );
     }
