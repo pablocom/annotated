@@ -722,6 +722,38 @@ fn a_well_typed_body_breaking_no_rule_is_valid_as_without_collect_type_errors() 
     );
 }
 
+#[derive(serde::Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ShelfId(u32);
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct Shelves {
+    #[validate(length(max = 2))]
+    #[allow(dead_code)]
+    stock_by_shelf: BTreeMap<u32, String>,
+    #[allow(dead_code)]
+    labels: BTreeMap<ShelfId, bool>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ShelvesStoppingAtATypeError {
+    #[validate(length(max = 2))]
+    #[allow(dead_code)]
+    stock_by_shelf: BTreeMap<u32, String>,
+    #[allow(dead_code)]
+    labels: BTreeMap<ShelfId, bool>,
+}
+
+#[test]
+fn a_well_typed_map_keyed_by_numbers_written_as_strings_is_read_as_without_collect_type_errors() {
+    let body = r#"{ "stock_by_shelf": { "1": "rice", "2": "beans", "3": "lentils" }, "labels": { "1": true } }"#;
+
+    assert_eq!(
+        violations_reading::<Shelves>(body),
+        violations_reading::<ShelvesStoppingAtATypeError>(body)
+    );
+}
+
 fn on_the_map(street: &str) -> Result<(), Problem> {
     if street.starts_with("Calle Falsa") {
         return Err(Problem::custom("not_on_the_map", "isn't on the map"));

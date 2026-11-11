@@ -86,12 +86,13 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
     fn entries(
         entries: Vec<(Content<'de>, Content<'de>)>,
         is_human_readable: bool,
-    ) -> MapDeserializer<'de, impl Iterator<Item = (Self, Self)>, E> {
-        MapDeserializer::new(
-            entries
-                .into_iter()
-                .map(move |(key, value)| (Self::new(key, is_human_readable), Self::new(value, is_human_readable))),
-        )
+    ) -> MapDeserializer<'de, impl Iterator<Item = (MapKeyDeserializer<'de, E>, Self)>, E> {
+        MapDeserializer::new(entries.into_iter().map(move |(key, value)| {
+            let key = MapKeyDeserializer {
+                key: Self::new(key, is_human_readable),
+            };
+            (key, Self::new(value, is_human_readable))
+        }))
     }
 }
 
@@ -343,6 +344,127 @@ impl<'de, E: de::Error> IntoDeserializer<'de, E> for ContentDeserializer<'de, E>
     }
 }
 
+/// Reads a map's key, taking an integer or a boolean written as a string, as JSON writes every key and `serde_json`
+/// reads it.
+struct MapKeyDeserializer<'de, E> {
+    key: ContentDeserializer<'de, E>,
+}
+
+impl<'de, E> MapKeyDeserializer<'de, E> {
+    fn written_as(self, read_from_text: fn(&str) -> Option<Content<'de>>) -> ContentDeserializer<'de, E> {
+        let ContentDeserializer {
+            content,
+            is_human_readable,
+            ..
+        } = self.key;
+        let read = match &content {
+            Content::Str(text) => read_from_text(text),
+            Content::String(text) => read_from_text(text),
+            _ => None,
+        };
+        ContentDeserializer::new(read.unwrap_or(content), is_human_readable)
+    }
+}
+
+fn integer_written_in<'de>(text: &str) -> Option<Content<'de>> {
+    if !text.starts_with(|first: char| first.is_ascii_digit() || first == '-') {
+        return None;
+    }
+    text.parse()
+        .map(Content::U64)
+        .or_else(|_| text.parse().map(Content::I64))
+        .or_else(|_| text.parse().map(Content::U128))
+        .or_else(|_| text.parse().map(Content::I128))
+        .ok()
+}
+
+fn boolean_written_in<'de>(text: &str) -> Option<Content<'de>> {
+    match text {
+        "true" => Some(Content::Bool(true)),
+        "false" => Some(Content::Bool(false)),
+        _ => None,
+    }
+}
+
+macro_rules! read_as_written {
+    ($($method:ident: $read_from_text:ident),* $(,)?) => {
+        $(
+            fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
+                self.written_as($read_from_text).$method(visitor)
+            }
+        )*
+    };
+}
+
+macro_rules! read_as_it_came {
+    ($($method:ident($($argument:ident: $argument_type:ty),*)),* $(,)?) => {
+        $(
+            fn $method<V: Visitor<'de>>(self, $($argument: $argument_type,)* visitor: V) -> Result<V::Value, E> {
+                self.key.$method($($argument,)* visitor)
+            }
+        )*
+    };
+}
+
+impl<'de, E: de::Error> Deserializer<'de> for MapKeyDeserializer<'de, E> {
+    type Error = E;
+
+    read_as_written! {
+        deserialize_i8: integer_written_in,
+        deserialize_i16: integer_written_in,
+        deserialize_i32: integer_written_in,
+        deserialize_i64: integer_written_in,
+        deserialize_i128: integer_written_in,
+        deserialize_u8: integer_written_in,
+        deserialize_u16: integer_written_in,
+        deserialize_u32: integer_written_in,
+        deserialize_u64: integer_written_in,
+        deserialize_u128: integer_written_in,
+        deserialize_bool: boolean_written_in,
+    }
+
+    read_as_it_came! {
+        deserialize_any(),
+        deserialize_f32(),
+        deserialize_f64(),
+        deserialize_char(),
+        deserialize_str(),
+        deserialize_string(),
+        deserialize_bytes(),
+        deserialize_byte_buf(),
+        deserialize_unit(),
+        deserialize_unit_struct(name: &'static str),
+        deserialize_seq(),
+        deserialize_tuple(length: usize),
+        deserialize_tuple_struct(name: &'static str, length: usize),
+        deserialize_map(),
+        deserialize_struct(name: &'static str, fields: &'static [&'static str]),
+        deserialize_enum(name: &'static str, variants: &'static [&'static str]),
+        deserialize_identifier(),
+        deserialize_ignored_any(),
+    }
+
+    fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
+        visitor.visit_some(self)
+    }
+
+    fn deserialize_newtype_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, E> {
+        visitor.visit_newtype_struct(self)
+    }
+
+    fn is_human_readable(&self) -> bool {
+        self.key.is_human_readable
+    }
+}
+
+impl<'de, E: de::Error> IntoDeserializer<'de, E> for MapKeyDeserializer<'de, E> {
+    type Deserializer = Self;
+
+    fn into_deserializer(self) -> Self {
+        self
+    }
+}
+
 /// Why a [`Content`] couldn't be read as a type: what the type expects and the kind of value found, when serde
 /// says. It never holds the value, nor a message that might quote it.
 #[derive(Debug, PartialEq, Eq)]
@@ -422,6 +544,9 @@ mod tests {
     #[derive(Deserialize, Debug, PartialEq)]
     struct Meters(u32);
 
+    #[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    struct ShelfId(u32);
+
     #[derive(Deserialize, Debug, PartialEq)]
     struct Nothing;
 
@@ -441,7 +566,7 @@ mod tests {
         Moved { to: String },
     }
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     struct HumanReadability(bool);
 
     impl<'de> Deserialize<'de> for HumanReadability {
@@ -776,6 +901,89 @@ mod tests {
     }
 
     #[test]
+    fn a_map_key_written_as_a_string_is_read_as_the_integer_its_type_asks_for() {
+        let entries = Content::Map(vec![
+            (Content::Str("1"), Content::U8(1)),
+            (Content::String("-2".to_owned()), Content::U8(2)),
+        ]);
+
+        assert_eq!(
+            read::<BTreeMap<i32, u8>>(entries),
+            Ok(BTreeMap::from([(1, 1), (-2, 2)]))
+        );
+    }
+
+    #[test]
+    fn a_map_key_written_as_a_string_is_read_as_a_128_bit_integer_beyond_64_bits() {
+        let largest = Content::Map(vec![(
+            Content::Str("340282366920938463463374607431768211455"),
+            Content::U8(1),
+        )]);
+        let smallest = Content::Map(vec![(
+            Content::Str("-170141183460469231731687303715884105728"),
+            Content::U8(1),
+        )]);
+
+        assert_eq!(
+            (
+                read::<BTreeMap<u128, u8>>(largest),
+                read::<BTreeMap<i128, u8>>(smallest)
+            ),
+            (
+                Ok(BTreeMap::from([(u128::MAX, 1)])),
+                Ok(BTreeMap::from([(i128::MIN, 1)]))
+            )
+        );
+    }
+
+    #[test]
+    fn a_map_key_written_as_a_string_is_read_as_the_boolean_its_type_asks_for() {
+        let entries = Content::Map(vec![(Content::Str("true"), Content::U8(1))]);
+
+        assert_eq!(read::<BTreeMap<bool, u8>>(entries), Ok(BTreeMap::from([(true, 1)])));
+    }
+
+    #[test]
+    fn a_map_key_written_as_a_string_is_read_through_a_newtype_or_an_option() {
+        let shelves = || Content::Map(vec![(Content::Str("3"), Content::U8(1))]);
+
+        assert_eq!(
+            (
+                read::<BTreeMap<ShelfId, u8>>(shelves()),
+                read::<BTreeMap<Option<u32>, u8>>(shelves())
+            ),
+            (
+                Ok(BTreeMap::from([(ShelfId(3), 1)])),
+                Ok(BTreeMap::from([(Some(3), 1)]))
+            )
+        );
+    }
+
+    #[test]
+    fn a_map_key_written_as_a_string_that_is_not_an_integer_is_refused_as_a_string() {
+        let entries = Content::Map(vec![(Content::Str("+3"), Content::U8(1))]);
+
+        assert_eq!(
+            read::<BTreeMap<u32, u8>>(entries),
+            Err(wrong_type("u32", ValueKind::String))
+        );
+    }
+
+    #[test]
+    fn a_map_key_is_read_as_it_came_when_its_type_asks_for_what_came() {
+        let integer_key = Content::Map(vec![(Content::U64(3), Content::U8(1))]);
+        let string_key = Content::Map(vec![(Content::Str("3"), Content::U8(1))]);
+
+        assert_eq!(
+            (
+                read::<BTreeMap<u32, u8>>(integer_key),
+                read::<BTreeMap<String, u8>>(string_key)
+            ),
+            (Ok(BTreeMap::from([(3, 1)])), Ok(BTreeMap::from([("3".to_owned(), 1)])))
+        );
+    }
+
+    #[test]
     fn a_sequence_is_refused_as_a_map() {
         assert_eq!(
             read::<BTreeMap<String, u8>>(Content::Seq(Vec::new())),
@@ -935,6 +1143,17 @@ mod tests {
         assert_eq!(
             Vec::<HumanReadability>::deserialize(deserializer),
             Ok(vec![HumanReadability(false)])
+        );
+    }
+
+    #[test]
+    fn the_format_s_human_readability_is_answered_for_a_map_s_keys() {
+        let entries = Content::Map(vec![(Content::Str("key"), Content::U8(1))]);
+        let deserializer = ContentDeserializer::<WrongType>::new(entries, false);
+
+        assert_eq!(
+            BTreeMap::<HumanReadability, u8>::deserialize(deserializer),
+            Ok(BTreeMap::from([(HumanReadability(false), 1)]))
         );
     }
 
