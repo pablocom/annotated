@@ -12,10 +12,12 @@ categories = ["data-structures", "encoding", "rust-patterns"]
 
 [features]
 unicode = ["dep:unicode-segmentation"]
+url = ["dep:url"]
 
 [dependencies]
 annotated-derive = { version = "=0.1.0", path = "../annotated-derive" }
 unicode-segmentation = { version = "1.13.3", optional = true }
+url = { version = "2.5.8", optional = true }
 
 [dev-dependencies]
 allocation-counter = "0.8.1"

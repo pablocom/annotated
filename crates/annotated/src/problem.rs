@@ -37,6 +37,21 @@ pub enum Problem {
         /// The values accepted, rendered with [`Display`].
         bounds: Bounds<String>,
     },
+    /// A string isn't an email address: `email`, code `email`.
+    Email,
+    /// A string isn't a URL of an accepted scheme: `url`, code `url`, with the param `schemes`, comma
+    /// separated.
+    #[non_exhaustive]
+    Url {
+        /// The schemes accepted.
+        schemes: &'static [&'static str],
+    },
+    /// A string isn't an IP address: `ip`, code `ip`, with the param `version` when only one is accepted.
+    #[non_exhaustive]
+    Ip {
+        /// The IP version accepted, 4 or 6, or `None` for both.
+        version: Option<u8>,
+    },
     /// A problem reported by a rule of your own, made with [`Problem::custom`].
     #[non_exhaustive]
     Custom {
@@ -65,6 +80,14 @@ pub enum Bounds<T> {
         /// The greatest value accepted.
         max: T,
     },
+}
+
+fn either_of(choices: &[&str]) -> String {
+    match choices {
+        [] => String::new(),
+        [only] => (*only).to_owned(),
+        [all_but_last @ .., last] => format!("{} or {last}", all_but_last.join(", ")),
+    }
 }
 
 impl<T> Bounds<T> {
@@ -173,6 +196,9 @@ impl Problem {
             Self::Required => "required",
             Self::Length { .. } => "length",
             Self::Range { .. } => "range",
+            Self::Email => "email",
+            Self::Url { .. } => "url",
+            Self::Ip { .. } => "ip",
             Self::Custom { code, .. } => code,
         }
     }
@@ -181,7 +207,6 @@ impl Problem {
     #[must_use]
     pub fn params(&self) -> Vec<(&'static str, String)> {
         match self {
-            Self::Required => Vec::new(),
             Self::Length { bounds, unit } => {
                 let mut params = bounds.params();
                 if let Bounds::Between { min, max } = bounds
@@ -193,6 +218,9 @@ impl Problem {
                 params
             }
             Self::Range { bounds } => bounds.params(),
+            Self::Required | Self::Email => Vec::new(),
+            Self::Url { schemes } => vec![("schemes", schemes.join(", "))],
+            Self::Ip { version } => version.iter().map(|version| ("version", version.to_string())).collect(),
             Self::Custom { params, .. } => params.clone(),
         }
     }
@@ -212,6 +240,10 @@ impl Display for Problem {
                 }
             }
             Self::Range { bounds } => write!(formatter, "must be {bounds}"),
+            Self::Email => formatter.write_str("must be an email address"),
+            Self::Url { schemes } => write!(formatter, "must be a URL using {}", either_of(schemes)),
+            Self::Ip { version: None } => formatter.write_str("must be an IP address"),
+            Self::Ip { version: Some(version) } => write!(formatter, "must be an IPv{version} address"),
             Self::Custom { message, .. } => formatter.write_str(message),
         }
     }
@@ -301,6 +333,72 @@ mod tests {
             .params(),
             [("min", "18".to_owned()), ("max", "120".to_owned())]
         );
+    }
+
+    #[test]
+    fn a_string_that_is_not_an_email_address_is_known_as_email() {
+        assert_eq!(Problem::Email.code(), "email");
+    }
+
+    #[test]
+    fn a_string_that_is_not_an_email_address_reads_as_such() {
+        assert_eq!(Problem::Email.to_string(), "must be an email address");
+    }
+
+    #[test]
+    fn a_string_that_is_not_a_url_is_known_as_url() {
+        assert_eq!(Problem::Url { schemes: &["https"] }.code(), "url");
+    }
+
+    #[test]
+    fn a_string_that_is_not_a_url_reads_as_the_schemes_accepted() {
+        let problem = Problem::Url {
+            schemes: &["ftp", "http", "https"],
+        };
+
+        assert_eq!(problem.to_string(), "must be a URL using ftp, http or https");
+    }
+
+    #[test]
+    fn a_string_that_is_not_a_url_of_one_scheme_reads_as_that_scheme() {
+        assert_eq!(
+            Problem::Url { schemes: &["https"] }.to_string(),
+            "must be a URL using https"
+        );
+    }
+
+    #[test]
+    fn a_url_s_params_are_the_schemes_accepted() {
+        let problem = Problem::Url {
+            schemes: &["http", "https"],
+        };
+
+        assert_eq!(problem.params(), [("schemes", "http, https".to_owned())]);
+    }
+
+    #[test]
+    fn a_string_that_is_not_an_ip_address_is_known_as_ip() {
+        assert_eq!(Problem::Ip { version: None }.code(), "ip");
+    }
+
+    #[test]
+    fn a_string_that_is_not_an_ip_address_reads_as_such() {
+        assert_eq!(Problem::Ip { version: None }.to_string(), "must be an IP address");
+    }
+
+    #[test]
+    fn a_string_that_is_not_an_ip_address_of_one_version_reads_as_that_version() {
+        assert_eq!(Problem::Ip { version: Some(6) }.to_string(), "must be an IPv6 address");
+    }
+
+    #[test]
+    fn an_ip_s_params_are_the_version_accepted() {
+        assert_eq!(Problem::Ip { version: Some(4) }.params(), [("version", "4".to_owned())]);
+    }
+
+    #[test]
+    fn an_ip_of_any_version_has_no_params() {
+        assert_eq!(Problem::Ip { version: None }.params(), []);
     }
 
     #[test]
