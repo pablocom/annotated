@@ -20,6 +20,12 @@ pub mod rules;
 pub mod __private;
 
 #[cfg(feature = "serde")]
+mod collecting_type_errors;
+#[cfg(feature = "serde")]
+mod content;
+#[cfg(feature = "serde")]
+mod content_deserializer;
+#[cfg(feature = "serde")]
 mod deserialize;
 #[cfg(feature = "serde")]
 mod deserialize_containers;

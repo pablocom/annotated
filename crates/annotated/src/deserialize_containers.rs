@@ -303,7 +303,7 @@ impl<K: Eq + Hash, S: BuildHasher + Default> ViolationsByKey<K, S> {
 
 // serde's own cap on the room a size hint reserves: the hint is the input's word, so trusting it whole would let
 // a short input ask for any amount of memory.
-fn room_for<Element>(size_hint: Option<usize>) -> usize {
+pub(crate) fn room_for<Element>(size_hint: Option<usize>) -> usize {
     const MOST_BYTES_RESERVED: usize = 1024 * 1024;
     match size_of::<Element>() {
         0 => 0,

@@ -6,6 +6,8 @@ pub use serde;
 use crate::{FoundViolations, Location, Problem, Violation};
 
 #[cfg(feature = "serde")]
+pub use crate::collecting_type_errors::{CollectingTypeErrorsAt, NestedCollectingTypeErrorsAt};
+#[cfg(feature = "serde")]
 pub use crate::deserialize::DeserializeAt;
 
 // Out of line and cold, so a rule that passes costs one branch: the benchmarks' order of 100 lines validates in
