@@ -21,7 +21,7 @@ Violations ──1..*── Violation ──── Path ──0..*── PathSeg
 - `Violations` is the error type. It is never empty, implements `std::error::Error` and `Display` (one violation per line), and iterates over `Violation`s in the order they were found: fields in declaration order, then struct-level rules.
 - A `Violation` has a `Path`, a `Problem` and an optional message override. `message()` answers the override, with `{param}` placeholders filled from the problem's parameters, or the problem's English message.
 - `Problem` is `#[non_exhaustive]`, so adding a built-in problem is not a breaking change. Every variant has a stable snake_case `code()` and named `params()`, for code that translates messages or reacts to them. `Problem::custom(code, message)` is how user rules report, with `.with_param(name, value)`.
-- A `Path` is a list of segments: a field (`&'static str`, serde's name), an element's index, or a map's key (rendered with `Display`). It renders as a dotted path (`members[1].name`) through `Display`, and as an RFC 6901 JSON Pointer through `json_pointer()` (`/members/1/name`). The root path is empty: a struct-level violation has it.
+- A `Path` is a list of segments: a field (`&'static str`, serde's name), an element's index, or a map's key (rendered with `Display`). It renders as a dotted path (`members[1].name`, with a key in brackets like an index: `labels[en]`) through `Display`, and as an RFC 6901 JSON Pointer through `json_pointer()` (`/members/1/name`). The root path is empty: a struct-level violation has it.
 
 ## Nothing to pay on the success path
 
