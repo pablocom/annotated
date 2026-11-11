@@ -7,6 +7,7 @@ use crate::validated_struct::{FieldRule, ValidatedStruct, nested_rules_in};
 pub struct DeserializedStruct<'a> {
     pub validated: ValidatedStruct<'a>,
     pub serde: SerdeStruct,
+    pub collects_type_errors: bool,
 }
 
 struct AcceptedSerdeAttributes {
@@ -37,15 +38,19 @@ impl<'a> DeserializedStruct<'a> {
     pub fn from_input(input: &'a DeriveInput) -> syn::Result<Self> {
         let validated = ValidatedStruct::from_input(input, "Deserialize")?;
         refuse_lifetime_parameters(input)?;
-        refuse_options(&input.attrs)?;
+        let collects_type_errors = collects_type_errors(&input.attrs)?;
         refuse_serde_attributes_other_than(&ON_A_STRUCT, &input.attrs)?;
         for field in &validated.fields {
-            refuse_options(field.attributes)?;
+            refuse_options_on_a_field(field.attributes)?;
             refuse_serde_attributes_other_than(&ON_A_FIELD, field.attributes)?;
             refuse_nested_more_than_once(&field.rules)?;
         }
         let serde = SerdeStruct::from_input(input)?;
-        Ok(Self { validated, serde })
+        Ok(Self {
+            validated,
+            serde,
+            collects_type_errors,
+        })
     }
 }
 
@@ -63,17 +68,41 @@ fn refuse_lifetime_parameters(input: &DeriveInput) -> syn::Result<()> {
     ))
 }
 
-fn refuse_options(attributes: &[Attribute]) -> syn::Result<()> {
-    for attribute in attributes_named("annotated", attributes) {
-        let options = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
-        if let Some(option) = options.first() {
-            return Err(Error::new_spanned(
-                option.path(),
-                "`#[annotated(...)]` takes no options yet",
-            ));
+fn collects_type_errors(attributes: &[Attribute]) -> syn::Result<bool> {
+    let mut collects_type_errors = false;
+    for option in options_in(attributes)? {
+        match option {
+            Meta::Path(path) if path.is_ident("collect_type_errors") => collects_type_errors = true,
+            with_a_value if with_a_value.path().is_ident("collect_type_errors") => {
+                return Err(Error::new_spanned(with_a_value, "`collect_type_errors` takes no value"));
+            }
+            unknown => {
+                return Err(Error::new_spanned(
+                    unknown.path(),
+                    "`#[annotated(...)]` takes one option, `collect_type_errors`",
+                ));
+            }
         }
     }
-    Ok(())
+    Ok(collects_type_errors)
+}
+
+fn refuse_options_on_a_field(attributes: &[Attribute]) -> syn::Result<()> {
+    let Some(option) = options_in(attributes)?.into_iter().next() else {
+        return Ok(());
+    };
+    Err(Error::new_spanned(
+        option.path(),
+        "`#[annotated(...)]` takes no options on a field: `collect_type_errors` goes on the struct",
+    ))
+}
+
+fn options_in(attributes: &[Attribute]) -> syn::Result<Vec<Meta>> {
+    let mut options = Vec::new();
+    for attribute in attributes_named("annotated", attributes) {
+        options.extend(attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?);
+    }
+    Ok(options)
 }
 
 fn refuse_serde_attributes_other_than(accepted: &AcceptedSerdeAttributes, attributes: &[Attribute]) -> syn::Result<()> {

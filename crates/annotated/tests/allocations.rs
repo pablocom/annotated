@@ -1,5 +1,5 @@
-//! Validating a valid value allocates nothing, deserializing one allocates only what its fields hold, and finding
-//! a violation allocates little.
+//! Validating a valid value allocates nothing, deserializing one allocates only what its fields hold, even when it
+//! collects type errors, and finding a violation allocates little.
 
 use std::hint::black_box;
 
@@ -163,6 +163,46 @@ fn deserializing_a_valid_value_allocates_only_its_three_strings() {
     let allocations = allocation_counter::measure(|| {
         let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
         let _ = black_box(annotated::from_deserializer::<SignUp, _>(&mut deserializer));
+    });
+
+    assert_eq!(allocations.count_total, 3);
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct SignUpCollectingTypeErrors {
+    #[validate(required, length(max = 50))]
+    full_name: String,
+    #[validate(length(min = 2))]
+    nickname: Option<String>,
+    #[validate(email)]
+    email: String,
+    #[validate(range(min = 18))]
+    age: u8,
+    plan: Plan,
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+enum Plan {
+    Free,
+    Family,
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_a_valid_value_collecting_type_errors_borrows_what_it_buffers_and_allocates_only_its_three_strings() {
+    let body =
+        r#"{ "fullName": "Alex Morgan", "nickname": "Al", "email": "alex@example.com", "age": 30, "plan": "Family" }"#;
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(annotated::from_deserializer::<SignUpCollectingTypeErrors, _>(
+            &mut deserializer,
+        ));
     });
 
     assert_eq!(allocations.count_total, 3);

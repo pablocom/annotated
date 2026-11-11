@@ -155,9 +155,10 @@ pub use annotated_derive::Validate;
 /// `into` and `bound(serialize = "...")` on the struct, and `skip_serializing`, `skip_serializing_if`,
 /// `serialize_with`, `getter` and `bound(serialize = "...")` on a field, so the struct can derive serde's
 /// `Serialize` too; of a `rename` or `rename_all` given apart for serializing and deserializing, the deserializing
-/// one names what is read. Any other is refused at compile time, as is a struct with lifetime parameters. `#[annotated(...)]` takes no options yet. Unknown fields are ignored, unless the struct
-/// denies them, and a field given twice, an unknown field denied or a value of the wrong type is the format's
-/// error, which ends deserialization.
+/// one names what is read. Any other is refused at compile time, as is a struct with lifetime parameters. Unknown
+/// fields are ignored, unless the struct denies them, and a field given twice, an unknown field denied or a value of
+/// the wrong type is the format's error, which ends deserialization, unless the struct collects values of the wrong
+/// type with `#[annotated(collect_type_errors)]`.
 ///
 /// Once the input is read to its end, every field is checked in the order the struct declares them:
 ///
@@ -198,6 +199,34 @@ pub use annotated_derive::Validate;
 /// let error = annotated::from_deserializer::<Route, _>(&mut body).unwrap_err();
 ///
 /// assert_eq!(error.to_string(), "stops[0].postalCode: is missing\nstops[1].street: is required");
+/// ```
+///
+/// `#[annotated(collect_type_errors)]` on the struct reads each field in two steps, first into a buffer holding any
+/// well-formed value, then from the buffer as the field's type, so a value of the wrong type is one more violation,
+/// [`Problem::InvalidType`] at the field, and deserialization goes on. Its `expected` param is what serde says the
+/// type expects (`u8`, `a string`, `struct Address`), or the type's name when serde doesn't say, as when the type
+/// refuses the value with a message of its own; its `found` param is the kind of value that came (`string`,
+/// `integer`, `null`, …), never the value itself. A value of the wrong type is checked by no other rule, and the
+/// struct-level rules are skipped, as when a field is missing. A nested struct that collects them too reports those
+/// inside it at their full paths. The buffer borrows the strings and bytes the format lends, and needs a
+/// self-describing format, such as JSON.
+///
+/// ```
+/// use annotated::Deserialize;
+///
+/// #[derive(Deserialize, Debug)]
+/// #[annotated(collect_type_errors)]
+/// struct NewMember {
+///     #[validate(email)]
+///     email: String,
+///     #[validate(range(min = 18))]
+///     age: u8,
+/// }
+///
+/// let mut body = serde_json::Deserializer::from_str(r#"{ "email": "lucia", "age": "twelve" }"#);
+/// let error = annotated::from_deserializer::<NewMember, _>(&mut body).unwrap_err();
+///
+/// assert_eq!(error.to_string(), "email: must be an email address\nage: must be u8, found string");
 /// ```
 ///
 /// [`from_deserializer_fail_fast`] answers only the first violation: the first that [`from_deserializer`]

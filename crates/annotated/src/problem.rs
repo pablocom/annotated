@@ -27,8 +27,8 @@ pub enum Problem {
     Required,
     /// A field is absent from the input: reported by collecting deserialization, code `missing`.
     Missing,
-    /// A value is of the wrong type for its field: reported by collecting deserialization, code `invalid_type`,
-    /// with the params `expected` and `found`.
+    /// A value is of the wrong type for its field: reported by collecting deserialization of a struct with
+    /// `#[annotated(collect_type_errors)]`, code `invalid_type`, with the params `expected` and `found`.
     #[non_exhaustive]
     InvalidType {
         /// What the field's type accepts, as serde describes it (`u8`, `a string`, `struct Address`), or the

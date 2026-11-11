@@ -12,9 +12,11 @@ use crate::{Violation, Violations};
 #[non_exhaustive]
 pub enum DeserializeError<E> {
     /// The format's own error, which ends deserialization as it ends serde's: input that isn't well formed, an
-    /// unknown field under `#[serde(deny_unknown_fields)]`, a field given twice or a value of the wrong type.
+    /// unknown field under `#[serde(deny_unknown_fields)]`, a field given twice or a value of the wrong type, unless
+    /// the struct collects those with `#[annotated(collect_type_errors)]`.
     Format(E),
-    /// Every violation found in the value, missing fields and broken rules, in the order found.
+    /// Every violation found in the value, missing fields, broken rules and values of the wrong type when they are
+    /// collected, in the order found.
     Violations(Violations),
 }
 

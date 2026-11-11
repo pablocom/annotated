@@ -146,7 +146,7 @@ impl<'a> ValidatedField<'a> {
     }
 }
 
-fn option_content(checked_type: &Type) -> Option<&Type> {
+pub fn option_content(checked_type: &Type) -> Option<&Type> {
     content_of("Option", checked_type)
 }
 

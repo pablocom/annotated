@@ -1,11 +1,12 @@
 use proc_macro2::{Literal, Span, TokenStream, TokenTree};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
+use syn::ext::IdentExt;
 use syn::spanned::Spanned;
-use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, parse_quote};
+use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, Type, parse_quote};
 
 use crate::deserialized_struct::DeserializedStruct;
 use crate::expansion::{Expansion, validity_of};
-use crate::validated_struct::ValidatedField;
+use crate::validated_struct::{ValidatedField, option_content};
 
 pub fn deserialize_impl(deserialized_struct: &DeserializedStruct) -> TokenStream {
     DeserializeExpansion::new(deserialized_struct).deserialize_impl()
@@ -298,9 +299,9 @@ impl<'a> DeserializeExpansion<'a> {
         let Expansion { found, .. } = &self.rules;
         let elements = self.fields().iter().map(|field| {
             let slot = slot_of(field);
-            let slot_type = slot_type_of(field);
+            let slot_type = self.slot_type_of(field);
             let field_type = field.field_type;
-            if !field.has_nested_values() {
+            if !self.is_read_with_violations(field) {
                 return quote! {
                     let #slot: #slot_type = #serde::de::SeqAccess::next_element::<#field_type>(&mut #seq)?;
                 };
@@ -319,7 +320,7 @@ impl<'a> DeserializeExpansion<'a> {
             }
         });
         let slots = self.fields().iter().map(slot_of);
-        let read_violations = self.fields_with_nested_values().map(read_violations_of);
+        let read_violations = self.fields_read_with_violations().map(read_violations_of);
         quote! {
             #[inline]
             fn visit_seq<__A: #serde::de::SeqAccess<'de>>(
@@ -337,13 +338,29 @@ impl<'a> DeserializeExpansion<'a> {
         let field_type = field.field_type;
         let name = &field.name;
         let read_violations = read_violations_of(field);
+        let at_the_field = quote!(&self.#at.field(#name));
+        if !self.deserialized_struct.collects_type_errors {
+            return quote_spanned! {field_type.span()=>
+                ::annotated::__private::DeserializeAt::<#field_type>::new(#at_the_field, &mut #read_violations)
+            };
+        }
+        let type_name = type_name_of(field_type);
+        let seed = if field.has_nested_values() {
+            quote!(NestedCollectingTypeErrorsAt)
+        } else {
+            quote!(CollectingTypeErrorsAt)
+        };
         quote_spanned! {field_type.span()=>
-            ::annotated::__private::DeserializeAt::<#field_type>::new(&self.#at.field(#name), &mut #read_violations)
+            ::annotated::__private::#seed::<#field_type>::new(#type_name, #at_the_field, &mut #read_violations)
         }
     }
 
-    fn fields_with_nested_values(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
-        self.fields().iter().filter(|field| field.has_nested_values())
+    fn is_read_with_violations(&self, field: &ValidatedField) -> bool {
+        field.has_nested_values() || self.deserialized_struct.collects_type_errors
+    }
+
+    fn fields_read_with_violations(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
+        self.fields().iter().filter(|field| self.is_read_with_violations(field))
     }
 
     fn visit_map(&self) -> TokenStream {
@@ -351,13 +368,13 @@ impl<'a> DeserializeExpansion<'a> {
         let Expansion { found, .. } = &self.rules;
         let fields = self.fields();
         let slots = fields.iter().map(slot_of);
-        let slot_types = fields.iter().map(slot_type_of);
+        let slot_types = fields.iter().map(|field| self.slot_type_of(field));
         let field_arms = fields.iter().enumerate().map(|(index, field)| {
             let variant = format_ident!("Field{index}");
             let slot = slot_of(field);
             let field_type = field.field_type;
             let name = &field.name;
-            let value = if field.has_nested_values() {
+            let value = if self.is_read_with_violations(field) {
                 let reading_with_its_violations = self.reading_with_its_violations(field);
                 quote_spanned! {field_type.span()=>
                     ::annotated::__private::serde::de::MapAccess::next_value_seed(
@@ -387,7 +404,7 @@ impl<'a> DeserializeExpansion<'a> {
             }
         });
         let read_slots = fields.iter().map(slot_of);
-        let read_violations: Vec<_> = self.fields_with_nested_values().map(read_violations_of).collect();
+        let read_violations: Vec<_> = self.fields_read_with_violations().map(read_violations_of).collect();
         quote! {
             #[inline]
             fn visit_map<__A: #serde::de::MapAccess<'de>>(
@@ -426,12 +443,12 @@ impl<'a> DeserializeExpansion<'a> {
         let (_, type_generics, _) = input.generics.split_for_impl();
         let fields = self.fields();
         let slots = fields.iter().map(slot_of);
-        let slot_types = fields.iter().map(slot_type_of);
-        let read_violations = self.fields_with_nested_values().map(read_violations_of);
+        let slot_types = fields.iter().map(|field| self.slot_type_of(field));
+        let read_violations = self.fields_read_with_violations().map(read_violations_of);
         let read_violations_types = self
-            .fields_with_nested_values()
+            .fields_read_with_violations()
             .map(|_| quote!(::annotated::FoundViolations));
-        let values_of_slots = fields.iter().map(value_of_slot);
+        let values_of_slots = fields.iter().map(|field| self.value_of_slot(field));
         let validities = self.fields_keeping_their_validity().map(validity_of);
         let field_checks = self.field_checks();
         let build = self.build();
@@ -486,7 +503,7 @@ impl<'a> DeserializeExpansion<'a> {
             .enumerate()
             .map(|(index, field)| {
                 let keeps_validity = self.rules.keeps_validity_of(validated_struct, index);
-                if field.is_optional && !field.has_nested_values() {
+                if field.is_optional && !self.is_read_with_violations(field) {
                     let slot = slot_of(field);
                     let value_of_field = quote!(&#slot);
                     if keeps_validity {
@@ -509,14 +526,18 @@ impl<'a> DeserializeExpansion<'a> {
             not_built,
             missing,
         } = self.slot_states(field);
-        if field.rules.is_empty() {
+        if field.rules.is_empty() && !self.is_read_with_violations(field) {
             return quote! {
                 if ::core::option::Option::is_none(&#slot) {
                     #missing
                 }
             };
         }
-        let checks = self.rules_of(field).field_rule_checks(field);
+        let checks = if field.rules.is_empty() {
+            TokenStream::new()
+        } else {
+            self.rules_of(field).field_rule_checks(field)
+        };
         let waiting_for_the_elements = waiting_for_the_elements(field);
         let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built }));
         let missing_arm = (!field.is_optional).then(|| quote!(::core::option::Option::None => { #missing }));
@@ -565,10 +586,10 @@ impl<'a> DeserializeExpansion<'a> {
             not_built,
             missing,
         } = self.slot_states(field);
-        let (built, passes_every_rule) = if field.rules.is_empty() {
-            (quote!(::core::option::Option::Some(_)), quote!(true))
+        let passes_every_rule = if field.rules.is_empty() {
+            quote!(true)
         } else {
-            (built, self.rules_of(field).field_passes_every_rule(field))
+            self.rules_of(field).field_passes_every_rule(field)
         };
         let waiting_for_the_elements = waiting_for_the_elements(field);
         let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built false }));
@@ -593,10 +614,14 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn slot_states(&self, field: &ValidatedField) -> SlotStates {
-        let value = &self.rules.value;
+        let value = if field.rules.is_empty() {
+            quote!(_)
+        } else {
+            self.rules.value.to_token_stream()
+        };
         let found = &self.rules.found;
         let missing = self.missing(field);
-        if !field.has_nested_values() {
+        if !self.is_read_with_violations(field) {
             return SlotStates {
                 built: quote!(::core::option::Option::Some(#value)),
                 not_built: None,
@@ -647,7 +672,7 @@ impl<'a> DeserializeExpansion<'a> {
         let fields = self.fields().iter().map(|field| {
             let member = field.member;
             let slot = slot_of(field);
-            match (field.has_nested_values(), field.is_optional) {
+            match (self.is_read_with_violations(field), field.is_optional) {
                 (false, true) => quote!(#member: #slot),
                 (false, false) | (true, true) => quote!(#member: #slot?),
                 (true, false) => quote!(#member: ::core::option::Option::flatten(#slot)?),
@@ -656,6 +681,28 @@ impl<'a> DeserializeExpansion<'a> {
         let name = &self.input().ident;
         quote! {
             let #deserialized = #name { #(#fields,)* };
+        }
+    }
+
+    fn slot_type_of(&self, field: &ValidatedField) -> TokenStream {
+        let field_type = field.field_type;
+        if self.is_read_with_violations(field) {
+            return quote!(::core::option::Option<::core::option::Option<#field_type>>);
+        }
+        quote!(::core::option::Option<#field_type>)
+    }
+
+    fn value_of_slot(&self, field: &ValidatedField) -> TokenStream {
+        let slot = slot_of(field);
+        match (self.is_read_with_violations(field), field.is_optional) {
+            (_, false) => TokenStream::new(),
+            (false, true) => quote!(let #slot = ::core::option::Option::flatten(#slot);),
+            (true, true) => quote! {
+                let #slot = ::core::option::Option::unwrap_or(
+                    #slot,
+                    ::core::option::Option::Some(::core::option::Option::None),
+                );
+            },
         }
     }
 }
@@ -677,28 +724,6 @@ fn slot_of(field: &ValidatedField) -> Ident {
     format_ident!("{}_slot", field.member, span = Span::mixed_site())
 }
 
-fn slot_type_of(field: &ValidatedField) -> TokenStream {
-    let field_type = field.field_type;
-    if field.has_nested_values() {
-        return quote!(::core::option::Option<::core::option::Option<#field_type>>);
-    }
-    quote!(::core::option::Option<#field_type>)
-}
-
-fn value_of_slot(field: &ValidatedField) -> TokenStream {
-    let slot = slot_of(field);
-    match (field.has_nested_values(), field.is_optional) {
-        (_, false) => TokenStream::new(),
-        (false, true) => quote!(let #slot = ::core::option::Option::flatten(#slot);),
-        (true, true) => quote! {
-            let #slot = ::core::option::Option::unwrap_or(
-                #slot,
-                ::core::option::Option::Some(::core::option::Option::None),
-            );
-        },
-    }
-}
-
 fn waiting_for_the_elements(field: &ValidatedField) -> TokenStream {
     if !field.joins_nested_violations_element_by_element() {
         return TokenStream::new();
@@ -706,6 +731,23 @@ fn waiting_for_the_elements(field: &ValidatedField) -> TokenStream {
     let read_violations = read_violations_of(field);
     quote! {
         let mut #read_violations = ::annotated::__private::ElementViolations::new(#read_violations);
+    }
+}
+
+fn type_name_of(field_type: &Type) -> String {
+    if let Some(content) = option_content(field_type) {
+        return type_name_of(content);
+    }
+    match field_type {
+        Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .map_or_else(String::new, |last_segment| last_segment.ident.unraw().to_string()),
+        Type::Group(group) => type_name_of(&group.elem),
+        Type::Paren(parenthesized) => type_name_of(&parenthesized.elem),
+        Type::Reference(reference) => type_name_of(&reference.elem),
+        other => other.to_token_stream().to_string(),
     }
 }
 
