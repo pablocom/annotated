@@ -10,10 +10,18 @@ readme = "../../README.md"
 keywords = ["validation", "validate", "serde", "derive", "annotations"]
 categories = ["data-structures", "encoding", "rust-patterns"]
 
+[features]
+unicode = ["dep:unicode-segmentation"]
+
 [dependencies]
+unicode-segmentation = { version = "1.13.3", optional = true }
 
 [dev-dependencies]
 allocation-counter = "0.8.1"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
