@@ -40,10 +40,10 @@ pub enum Problem {
     /// A string isn't an email address: `email`, code `email`.
     Email,
     /// A string isn't a URL of an accepted scheme: `url`, code `url`, with the param `schemes`, comma
-    /// separated.
+    /// separated: `http, https, ftp` unless the rule was given others.
     #[non_exhaustive]
     Url {
-        /// The schemes accepted.
+        /// The schemes accepted: `http`, `https` and `ftp`, or those the rule was given.
         schemes: &'static [&'static str],
     },
     /// A string isn't an IP address: `ip`, `ipv4` or `ipv6`, code `ip`, with the param `version`, 4 or 6, when

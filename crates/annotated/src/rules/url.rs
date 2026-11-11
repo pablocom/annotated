@@ -3,20 +3,22 @@ use std::cell::Cell;
 use crate::{Problem, Rule};
 
 /// The rule that a string is an absolute URL, valid by the [WHATWG URL Standard](https://url.spec.whatwg.org/),
-/// whose scheme is `http` or `https`, or one of those [`Url::schemes`] sets.
+/// whose scheme is `http`, `https` or `ftp`, or one of those [`Url::schemes`] sets.
 ///
 /// It checks anything that is `AsRef<str>`, exactly as written: surrounding whitespace breaks it.
 ///
 /// ```
 /// use annotated::{Rule, rules};
 ///
-/// assert_eq!(rules::url().check("https://example.com/projects/1"), Ok(()));
-/// assert_eq!(rules::url().schemes(&["ftp"]).check("ftp://example.com/report.pdf"), Ok(()));
+/// assert_eq!(rules::url().check("ftp://example.com/report.pdf"), Ok(()));
+///
+/// let not_https = rules::url().schemes(&["https"]).check("http://example.com").unwrap_err();
+/// assert_eq!(not_https.to_string(), "must be a URL using https");
 /// ```
 #[must_use]
 pub const fn url() -> Url {
     Url {
-        schemes: &["http", "https"],
+        schemes: &["http", "https", "ftp"],
     }
 }
 
@@ -27,7 +29,7 @@ pub struct Url {
 }
 
 impl Url {
-    /// The rule accepting URLs of these `schemes` instead of `http` and `https`: `schemes = &["ftp"]`.
+    /// The rule accepting URLs of these `schemes` instead of `http`, `https` and `ftp`: `schemes = &["https"]`.
     #[must_use]
     pub const fn schemes(self, schemes: &'static [&'static str]) -> Self {
         Self { schemes }
@@ -58,6 +60,12 @@ fn valid_url(text: &str) -> Option<url::Url> {
 mod tests {
     use super::*;
 
+    fn not_a_url() -> Result<(), Problem> {
+        Err(Problem::Url {
+            schemes: &["http", "https", "ftp"],
+        })
+    }
+
     fn not_a_url_of(schemes: &'static [&'static str]) -> Result<(), Problem> {
         Err(Problem::Url { schemes })
     }
@@ -73,8 +81,13 @@ mod tests {
     }
 
     #[test]
+    fn an_ftp_url_follows_the_rule() {
+        assert_eq!(url().check("ftp://example.com/report.pdf"), Ok(()));
+    }
+
+    #[test]
     fn a_url_of_another_scheme_breaks_the_rule() {
-        assert_eq!(url().check("ftp://example.com"), not_a_url_of(&["http", "https"]));
+        assert_eq!(url().check("mailto:alex@example.com"), not_a_url());
     }
 
     #[test]
@@ -83,38 +96,40 @@ mod tests {
     }
 
     #[test]
-    fn schemes_set_replace_http_and_https() {
+    fn schemes_set_replace_the_default_ones() {
         assert_eq!(
-            url().schemes(&["ftp"]).check("https://example.com"),
-            not_a_url_of(&["ftp"])
+            url().schemes(&["https"]).check("http://example.com"),
+            not_a_url_of(&["https"])
         );
     }
 
     #[test]
     fn a_relative_url_breaks_the_rule() {
-        assert_eq!(url().check("/projects/1"), not_a_url_of(&["http", "https"]));
+        assert_eq!(url().check("/projects/1"), not_a_url());
+    }
+
+    #[test]
+    fn a_scheme_alone_breaks_the_rule() {
+        assert_eq!(url().check("http://"), not_a_url());
     }
 
     #[test]
     fn a_url_with_a_syntax_error_by_the_url_standard_breaks_the_rule() {
-        assert_eq!(url().check("https:example.com"), not_a_url_of(&["http", "https"]));
+        assert_eq!(url().check("https:example.com"), not_a_url());
     }
 
     #[test]
     fn a_url_with_a_space_breaks_the_rule() {
-        assert_eq!(url().check("https://example.com/a b"), not_a_url_of(&["http", "https"]));
+        assert_eq!(url().check("https://example.com/a b"), not_a_url());
     }
 
     #[test]
     fn a_url_with_credentials_breaks_the_rule() {
-        assert_eq!(
-            url().check("https://alex:secret@example.com"),
-            not_a_url_of(&["http", "https"])
-        );
+        assert_eq!(url().check("https://alex:secret@example.com"), not_a_url());
     }
 
     #[test]
     fn surrounding_whitespace_breaks_the_rule() {
-        assert_eq!(url().check(" https://example.com"), not_a_url_of(&["http", "https"]));
+        assert_eq!(url().check(" https://example.com"), not_a_url());
     }
 }
