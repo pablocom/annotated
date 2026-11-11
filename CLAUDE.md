@@ -8,6 +8,7 @@ How we work in this repository. [README](README.md) says what the library promis
 - Small functions at one level of abstraction; guard clauses over nesting; types over runtime checks.
 - Keep it simple. Reach for a pattern only when the problem in front of you needs it. Trade clarity for speed only on a measured hot path, behind a clear name.
 - Comments almost never: only for what the code can't say (an external constraint, a measured trade-off, a surprising invariant). No commented-out code, no change narration.
+- Depend on the latest released versions of crates and GitHub Actions. Look them up (`cargo search`, crates.io, the action's releases) each time you add or touch one; never go by memory or the local cache.
 - Every public item has a doc comment saying what it means and promises (`missing_docs` enforces it). A doc example is a test: the shortest real use.
 
 ## Tests
