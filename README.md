@@ -1,6 +1,6 @@
 # annotated
 
-Validation for Rust structs that works with serde. You write rules on a struct's fields, and deserializing it reports every problem in one error: broken rules and missing fields together, each at the path of the field it's about.
+Validation for structs that works with serde. You write rules on a struct's fields, and deserializing it reports every problem in one error: broken rules and missing fields together, each at the path of the field it's about.
 
 ```rust
 use annotated::{Deserialize, Validate};

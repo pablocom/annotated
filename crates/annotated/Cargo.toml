@@ -1,6 +1,6 @@
 [package]
 name = "annotated"
-description = "Validation for Rust structs that works with serde: every broken rule and missing field in one error"
+description = "Validation for structs that works with serde: every broken rule and missing field in one error"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

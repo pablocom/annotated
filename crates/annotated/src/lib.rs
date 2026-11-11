@@ -1,4 +1,4 @@
-//! Validation for Rust structs: write rules on their fields, and get every problem back at once.
+//! Validation for structs: write rules on their fields, and get every problem back at once.
 //!
 //! A value is checked with [`Validate::validate`], which answers `Ok(())` or every [`Violation`] found,
 //! each a [`Problem`] at the [`Path`] where it happened. Fields are reported by the names serde reads them by.
