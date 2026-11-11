@@ -7,8 +7,9 @@ use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField,
 struct Expansion {
     at: Ident,
     found: Ident,
-    field_at: Ident,
+    element_at: Ident,
     value: Ident,
+    problem: Ident,
     found_before: Ident,
     is_reporting_all: bool,
 }
@@ -46,8 +47,9 @@ impl Expansion {
         Self {
             at: local("at"),
             found: local("found"),
-            field_at: local("field_at"),
+            element_at: local("element_at"),
             value: local("value"),
+            problem: local("problem"),
             found_before: local("found_before"),
             is_reporting_all,
         }
@@ -57,8 +59,8 @@ impl Expansion {
         if field.rules.is_empty() {
             return TokenStream::new();
         }
-        let checks = self.checks(&field.rules, field.is_optional);
-        self.at_field(field, &checks)
+        let checks = self.checks(&field.rules, field.is_optional, &self.field_location(field));
+        self.with_value_of(field, &checks)
     }
 
     fn field_validity(&self, field: &ValidatedField) -> TokenStream {
@@ -66,48 +68,55 @@ impl Expansion {
         if field.rules.is_empty() {
             return quote!(let #is_valid = true;);
         }
-        let passes_every_rule = self.passes_every_rule(&field.rules, field.is_optional);
-        let checks = self.at_field(field, &passes_every_rule);
+        let passes_every_rule = self.passes_every_rule(&field.rules, field.is_optional, &self.field_location(field));
+        let checks = self.with_value_of(field, &passes_every_rule);
         quote!(let #is_valid = #checks;)
     }
 
-    fn at_field(&self, field: &ValidatedField, checks: &TokenStream) -> TokenStream {
-        let Self {
-            at, field_at, value, ..
-        } = self;
-        let ValidatedField { member, name, .. } = field;
+    fn with_value_of(&self, field: &ValidatedField, checks: &TokenStream) -> TokenStream {
+        let value = &self.value;
+        let member = field.member;
         quote! {
             {
-                let #field_at = #at.field(#name);
                 let #value = &self.#member;
                 #checks
             }
         }
     }
 
-    fn checks(&self, rules: &[FieldRule], is_value_optional: bool) -> TokenStream {
+    fn field_location(&self, field: &ValidatedField) -> TokenStream {
+        let at = &self.at;
+        let name = &field.name;
+        quote!(&#at.field(#name))
+    }
+
+    fn checks(&self, rules: &[FieldRule], is_value_optional: bool, value_at: &TokenStream) -> TokenStream {
         if self.is_reporting_all {
-            let checks = rules.iter().map(|rule| self.rule_check(rule, is_value_optional));
+            let checks = rules
+                .iter()
+                .map(|rule| self.rule_check(rule, is_value_optional, value_at));
             return quote!(#(#checks;)*);
         }
-        let passes_every_rule = self.passes_every_rule(rules, is_value_optional);
+        let passes_every_rule = self.passes_every_rule(rules, is_value_optional, value_at);
         quote!(let _ = #passes_every_rule;)
     }
 
-    fn passes_every_rule(&self, rules: &[FieldRule], is_value_optional: bool) -> TokenStream {
-        let checks = rules.iter().map(|rule| self.rule_check(rule, is_value_optional));
+    fn passes_every_rule(&self, rules: &[FieldRule], is_value_optional: bool, value_at: &TokenStream) -> TokenStream {
+        let checks = rules
+            .iter()
+            .map(|rule| self.rule_check(rule, is_value_optional, value_at));
         quote!(#(#checks)&&*)
     }
 
-    fn rule_check(&self, rule: &FieldRule, is_value_optional: bool) -> TokenStream {
+    fn rule_check(&self, rule: &FieldRule, is_value_optional: bool, value_at: &TokenStream) -> TokenStream {
         let check = match rule {
-            FieldRule::Check(check) => self.value_check(check),
-            FieldRule::Nested { span } => self.nested_check(*span),
+            FieldRule::Check(check) => self.value_check(check, value_at),
+            FieldRule::Nested { span } => self.nested_check(*span, value_at),
             FieldRule::Each {
                 element_rules,
                 are_elements_optional,
                 span,
-            } => self.each_check(element_rules, *are_elements_optional, *span),
+            } => self.each_check(element_rules, *are_elements_optional, *span, value_at),
         };
         let checks_the_option_itself = matches!(rule, FieldRule::Check(RuleCheck { is_required: true, .. }));
         if !is_value_optional || checks_the_option_itself {
@@ -122,10 +131,9 @@ impl Expansion {
         }
     }
 
-    fn nested_check(&self, span: Span) -> TokenStream {
+    fn nested_check(&self, span: Span, value_at: &TokenStream) -> TokenStream {
         let Self {
             found,
-            field_at,
             value,
             found_before,
             ..
@@ -133,25 +141,31 @@ impl Expansion {
         quote_spanned! {span=>
             {
                 let #found_before = #found.len();
-                ::annotated::Validate::validate_into(#value, &#field_at, #found);
+                ::annotated::Validate::validate_into(#value, #value_at, #found);
                 #found.len() == #found_before
             }
         }
     }
 
-    fn each_check(&self, element_rules: &[FieldRule], are_elements_optional: bool, span: Span) -> TokenStream {
+    fn each_check(
+        &self,
+        element_rules: &[FieldRule],
+        are_elements_optional: bool,
+        span: Span,
+        value_at: &TokenStream,
+    ) -> TokenStream {
         let Self {
             found,
-            field_at,
+            element_at,
             value,
             found_before,
             ..
         } = self;
-        let element_checks = self.checks(element_rules, are_elements_optional);
+        let element_checks = self.checks(element_rules, are_elements_optional, &quote!(#element_at));
         quote_spanned! {span=>
             {
                 let #found_before = #found.len();
-                ::annotated::rules::HasElements::for_each_element(#value, &#field_at, |#value, #field_at| {
+                ::annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
                     #element_checks
                 });
                 #found.len() == #found_before
@@ -159,16 +173,32 @@ impl Expansion {
         }
     }
 
-    fn value_check(&self, check: &RuleCheck) -> TokenStream {
-        let Self {
-            found, field_at, value, ..
-        } = self;
+    fn value_check(&self, check: &RuleCheck, value_at: &TokenStream) -> TokenStream {
         let RuleCheck {
             rule, message, span, ..
         } = check;
-        let message = message_override(message.as_ref());
-        quote_spanned! {*span=>
-            ::annotated::__private::passes(::annotated::Rule::check(&#rule, #value), &#field_at, #found, #message)
+        let value = &self.value;
+        let outcome = quote_spanned!(*span=> ::annotated::Rule::check(&#rule, #value));
+        self.passes_or_records(&outcome, value_at, message.as_ref(), *span)
+    }
+
+    fn passes_or_records(
+        &self,
+        outcome: &TokenStream,
+        reported_at: &TokenStream,
+        message: Option<&Expr>,
+        span: Span,
+    ) -> TokenStream {
+        let Self { found, problem, .. } = self;
+        let message = message_override(message);
+        quote_spanned! {span=>
+            match #outcome {
+                ::core::result::Result::Ok(()) => true,
+                ::core::result::Result::Err(#problem) => {
+                    ::annotated::__private::record_violation(#found, #reported_at, #problem, #message);
+                    false
+                }
+            }
         }
     }
 
@@ -192,19 +222,12 @@ impl Expansion {
     }
 
     fn struct_rule_passes(&self, check: &StructCheck, reported_at: &TokenStream) -> TokenStream {
-        let found = &self.found;
         let StructCheck {
             check, message, span, ..
         } = check;
-        let message = message_override(message.as_ref());
-        quote_spanned! {*span=>
-            ::annotated::__private::passes(
-                ::annotated::Rule::check(&::annotated::rules::custom::<Self, _>(#check), self),
-                #reported_at,
-                #found,
-                #message,
-            )
-        }
+        let outcome =
+            quote_spanned!(*span=> ::annotated::Rule::check(&::annotated::rules::custom::<Self, _>(#check), self));
+        self.passes_or_records(&outcome, reported_at, message.as_ref(), *span)
     }
 }
 
