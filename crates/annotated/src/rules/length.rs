@@ -33,24 +33,40 @@ pub struct Length {
     bounds: LengthBounds,
 }
 
-/// Checks the length of a string in `char`s; made by [`Length::in_chars`].
+/// Checks the length of a string in a unit asked for: `char`s, UTF-8 bytes or grapheme clusters; made by
+/// [`Length::in_chars`], [`Length::in_bytes`] or `Length::in_graphemes`. It refuses to check a collection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LengthInChars {
+pub struct StringLength {
     bounds: LengthBounds,
+    unit: StringUnit,
 }
 
-/// Checks the length of a string in UTF-8 bytes; made by [`Length::in_bytes`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LengthInBytes {
-    bounds: LengthBounds,
+enum StringUnit {
+    Chars,
+    Bytes,
+    #[cfg(feature = "unicode")]
+    Graphemes,
 }
 
-/// Checks the length of a string in grapheme clusters, what a person sees as one character; made by
-/// [`Length::in_graphemes`].
-#[cfg(feature = "unicode")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LengthInGraphemes {
-    bounds: LengthBounds,
+impl StringUnit {
+    fn count(self, text: &str) -> usize {
+        match self {
+            Self::Chars => text.chars().count(),
+            Self::Bytes => text.len(),
+            #[cfg(feature = "unicode")]
+            Self::Graphemes => unicode_segmentation::UnicodeSegmentation::graphemes(text, true).count(),
+        }
+    }
+
+    fn length_unit(self) -> LengthUnit {
+        match self {
+            Self::Chars => LengthUnit::Chars,
+            Self::Bytes => LengthUnit::Bytes,
+            #[cfg(feature = "unicode")]
+            Self::Graphemes => LengthUnit::Graphemes,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,61 +95,80 @@ impl LengthBounds {
     }
 }
 
-macro_rules! length_bounds {
-    ($rule:ident) => {
-        impl $rule {
-            /// The rule with `min` as the shortest length it accepts.
-            #[must_use]
-            pub const fn min(self, min: usize) -> Self {
-                Self {
-                    bounds: self.bounds.with_min(min),
-                }
-            }
-
-            /// The rule with `max` as the longest length it accepts.
-            #[must_use]
-            pub const fn max(self, max: usize) -> Self {
-                Self {
-                    bounds: self.bounds.with_max(max),
-                }
-            }
-
-            /// The rule accepting only the length `equal`.
-            #[must_use]
-            pub const fn equal(self, equal: usize) -> Self {
-                Self {
-                    bounds: self.bounds.with_min(equal).with_max(equal),
-                }
-            }
-        }
-    };
-}
-
-length_bounds!(Length);
-length_bounds!(LengthInChars);
-length_bounds!(LengthInBytes);
-#[cfg(feature = "unicode")]
-length_bounds!(LengthInGraphemes);
-
 impl Length {
+    /// The rule with `min` as the shortest length it accepts.
+    #[must_use]
+    pub const fn min(self, min: usize) -> Self {
+        Self {
+            bounds: self.bounds.with_min(min),
+        }
+    }
+
+    /// The rule with `max` as the longest length it accepts.
+    #[must_use]
+    pub const fn max(self, max: usize) -> Self {
+        Self {
+            bounds: self.bounds.with_max(max),
+        }
+    }
+
+    /// The rule accepting only the length `equal`.
+    #[must_use]
+    pub const fn equal(self, equal: usize) -> Self {
+        self.min(equal).max(equal)
+    }
+
     /// The rule counting a string's `char`s, and refusing to check a collection.
     #[must_use]
-    pub const fn in_chars(self) -> LengthInChars {
-        LengthInChars { bounds: self.bounds }
+    pub const fn in_chars(self) -> StringLength {
+        self.counting(StringUnit::Chars)
     }
 
     /// The rule counting a string's UTF-8 bytes, and refusing to check a collection.
     #[must_use]
-    pub const fn in_bytes(self) -> LengthInBytes {
-        LengthInBytes { bounds: self.bounds }
+    pub const fn in_bytes(self) -> StringLength {
+        self.counting(StringUnit::Bytes)
     }
 
     /// The rule counting a string's grapheme clusters, what a person sees as one character, and refusing to
     /// check a collection.
     #[cfg(feature = "unicode")]
     #[must_use]
-    pub const fn in_graphemes(self) -> LengthInGraphemes {
-        LengthInGraphemes { bounds: self.bounds }
+    pub const fn in_graphemes(self) -> StringLength {
+        self.counting(StringUnit::Graphemes)
+    }
+
+    const fn counting(self, unit: StringUnit) -> StringLength {
+        StringLength {
+            bounds: self.bounds,
+            unit,
+        }
+    }
+}
+
+impl StringLength {
+    /// The rule with `min` as the shortest length it accepts.
+    #[must_use]
+    pub const fn min(self, min: usize) -> Self {
+        Self {
+            bounds: self.bounds.with_min(min),
+            ..self
+        }
+    }
+
+    /// The rule with `max` as the longest length it accepts.
+    #[must_use]
+    pub const fn max(self, max: usize) -> Self {
+        Self {
+            bounds: self.bounds.with_max(max),
+            ..self
+        }
+    }
+
+    /// The rule accepting only the length `equal`.
+    #[must_use]
+    pub const fn equal(self, equal: usize) -> Self {
+        self.min(equal).max(equal)
     }
 }
 
@@ -143,23 +178,10 @@ impl<T: HasLength + ?Sized> Rule<T> for Length {
     }
 }
 
-impl<T: AsRef<str> + ?Sized> Rule<T> for LengthInChars {
+impl<T: AsRef<str> + ?Sized> Rule<T> for StringLength {
     fn check(&self, value: &T) -> Result<(), Problem> {
-        self.bounds.check(value.as_ref().chars().count(), LengthUnit::Chars)
-    }
-}
-
-impl<T: AsRef<str> + ?Sized> Rule<T> for LengthInBytes {
-    fn check(&self, value: &T) -> Result<(), Problem> {
-        self.bounds.check(value.as_ref().len(), LengthUnit::Bytes)
-    }
-}
-
-#[cfg(feature = "unicode")]
-impl<T: AsRef<str> + ?Sized> Rule<T> for LengthInGraphemes {
-    fn check(&self, value: &T) -> Result<(), Problem> {
-        let graphemes = unicode_segmentation::UnicodeSegmentation::graphemes(value.as_ref(), true);
-        self.bounds.check(graphemes.count(), LengthUnit::Graphemes)
+        self.bounds
+            .check(self.unit.count(value.as_ref()), self.unit.length_unit())
     }
 }
 

@@ -19,7 +19,7 @@ mod violations;
 pub use found_violations::FoundViolations;
 pub use location::Location;
 pub use path::{Path, PathSegment};
-pub use problem::{Bounds, LengthUnit, ParamValue, Problem};
+pub use problem::{Bounds, LengthUnit, Problem};
 pub use rule::Rule;
 pub use validate::Validate;
 pub use violation::Violation;

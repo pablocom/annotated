@@ -10,7 +10,5 @@
 mod length;
 mod required;
 
-#[cfg(feature = "unicode")]
-pub use length::LengthInGraphemes;
-pub use length::{HasLength, Length, LengthInBytes, LengthInChars, length};
+pub use length::{HasLength, Length, StringLength, length};
 pub use required::{Presence, Required, required};

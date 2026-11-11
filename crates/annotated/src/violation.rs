@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::{self, Display};
 
-use crate::{ParamValue, Path, Problem};
+use crate::{Path, Problem};
 
 /// One broken rule, at the path where it happened.
 ///
@@ -63,7 +63,7 @@ impl Violation {
     }
 }
 
-fn fill_placeholders(message: &str, params: &[(&'static str, ParamValue)]) -> String {
+fn fill_placeholders(message: &str, params: &[(&'static str, String)]) -> String {
     let mut filled = String::with_capacity(message.len());
     let mut rest = message;
     while let Some(next_character) = rest.chars().next() {
@@ -74,7 +74,7 @@ fn fill_placeholders(message: &str, params: &[(&'static str, ParamValue)]) -> St
             filled.push('}');
             after
         } else if let Some((value, after)) = param_placeholder_at_start_of(rest, params) {
-            filled.push_str(&value.to_string());
+            filled.push_str(value);
             after
         } else {
             filled.push(next_character);
@@ -86,8 +86,8 @@ fn fill_placeholders(message: &str, params: &[(&'static str, ParamValue)]) -> St
 
 fn param_placeholder_at_start_of<'text, 'params>(
     text: &'text str,
-    params: &'params [(&'static str, ParamValue)],
-) -> Option<(&'params ParamValue, &'text str)> {
+    params: &'params [(&'static str, String)],
+) -> Option<(&'params str, &'text str)> {
     let (name, after) = text.strip_prefix('{')?.split_once('}')?;
     let (_, value) = params.iter().find(|(param_name, _)| *param_name == name)?;
     Some((value, after))

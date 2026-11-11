@@ -39,7 +39,7 @@ pub enum Problem {
         /// The English message for people.
         message: Cow<'static, str>,
         /// The named parameters, in the order they were added.
-        params: Vec<(&'static str, ParamValue)>,
+        params: Vec<(&'static str, String)>,
     },
 }
 
@@ -78,12 +78,12 @@ impl<T> Bounds<T> {
     }
 }
 
-impl<T: Clone + Into<ParamValue>> Bounds<T> {
-    fn params(&self) -> Vec<(&'static str, ParamValue)> {
+impl<T: Display> Bounds<T> {
+    fn params(&self) -> Vec<(&'static str, String)> {
         match self {
-            Self::AtLeast(min) => vec![("min", min.clone().into())],
-            Self::AtMost(max) => vec![("max", max.clone().into())],
-            Self::Between { min, max } => vec![("min", min.clone().into()), ("max", max.clone().into())],
+            Self::AtLeast(min) => vec![("min", min.to_string())],
+            Self::AtMost(max) => vec![("max", max.to_string())],
+            Self::Between { min, max } => vec![("min", min.to_string()), ("max", max.to_string())],
         }
     }
 }
@@ -136,16 +136,6 @@ impl LengthUnit {
     }
 }
 
-/// The value of one of a [`Problem`]'s named parameters.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ParamValue {
-    /// A whole number, like a length's maximum.
-    Integer(i128),
-    /// Text, like a value rendered with [`Display`].
-    Text(Cow<'static, str>),
-}
-
 impl Problem {
     /// A problem of a rule of your own, known by the stable `code` and explained to people by `message`.
     #[must_use]
@@ -157,14 +147,15 @@ impl Problem {
         }
     }
 
-    /// This problem with the named parameter `name` added, for messages to quote and code to read.
+    /// This problem with the named parameter `name` added, rendered with [`Display`], for messages to quote
+    /// and code to read.
     ///
     /// Only a [custom](Problem::custom) problem takes parameters; a built-in problem's parameters are fixed,
     /// and it is returned unchanged.
     #[must_use]
-    pub fn with_param(mut self, name: &'static str, value: impl Into<ParamValue>) -> Self {
+    pub fn with_param(mut self, name: &'static str, value: impl Display) -> Self {
         if let Self::Custom { params, .. } = &mut self {
-            params.push((name, value.into()));
+            params.push((name, value.to_string()));
         }
         self
     }
@@ -181,7 +172,7 @@ impl Problem {
 
     /// The named parameters of this problem, such as a length's `max`.
     #[must_use]
-    pub fn params(&self) -> Vec<(&'static str, ParamValue)> {
+    pub fn params(&self) -> Vec<(&'static str, String)> {
         match self {
             Self::Required => Vec::new(),
             Self::Length { bounds, unit } => {
@@ -189,9 +180,9 @@ impl Problem {
                 if let Bounds::Between { min, max } = bounds
                     && min == max
                 {
-                    params.push(("equal", ParamValue::from(*min)));
+                    params.push(("equal", min.to_string()));
                 }
-                params.push(("unit", ParamValue::from(unit.name())));
+                params.push(("unit", unit.name().to_owned()));
                 params
             }
             Self::Custom { params, .. } => params.clone(),
@@ -214,47 +205,6 @@ impl Display for Problem {
             }
             Self::Custom { message, .. } => formatter.write_str(message),
         }
-    }
-}
-
-impl Display for ParamValue {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Integer(integer) => write!(formatter, "{integer}"),
-            Self::Text(text) => formatter.write_str(text),
-        }
-    }
-}
-
-macro_rules! integer_param_values {
-    ($($integer:ty),*) => {
-        $(
-            impl From<$integer> for ParamValue {
-                fn from(value: $integer) -> Self {
-                    Self::Integer(i128::try_from(value).expect("every integer of 64 bits or fewer fits in an i128"))
-                }
-            }
-        )*
-    };
-}
-
-integer_param_values!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
-
-impl From<&'static str> for ParamValue {
-    fn from(text: &'static str) -> Self {
-        Self::Text(Cow::Borrowed(text))
-    }
-}
-
-impl From<String> for ParamValue {
-    fn from(text: String) -> Self {
-        Self::Text(Cow::Owned(text))
-    }
-}
-
-impl From<Cow<'static, str>> for ParamValue {
-    fn from(text: Cow<'static, str>) -> Self {
-        Self::Text(text)
     }
 }
 
@@ -291,10 +241,7 @@ mod tests {
 
         assert_eq!(
             problem.params(),
-            [
-                ("name", ParamValue::Text(Cow::Borrowed("admin"))),
-                ("reserved_names", ParamValue::Integer(3)),
-            ]
+            [("name", "admin".to_owned()), ("reserved_names", "3".to_owned()),]
         );
     }
 
@@ -394,9 +341,9 @@ mod tests {
         assert_eq!(
             problem.params(),
             [
-                ("min", ParamValue::Integer(1)),
-                ("max", ParamValue::Integer(50)),
-                ("unit", ParamValue::Text(Cow::Borrowed("bytes"))),
+                ("min", "1".to_owned()),
+                ("max", "50".to_owned()),
+                ("unit", "bytes".to_owned()),
             ]
         );
     }
@@ -407,10 +354,7 @@ mod tests {
 
         assert_eq!(
             problem.params(),
-            [
-                ("max", ParamValue::Integer(50)),
-                ("unit", ParamValue::Text(Cow::Borrowed("chars"))),
-            ]
+            [("max", "50".to_owned()), ("unit", "chars".to_owned()),]
         );
     }
 
@@ -421,34 +365,11 @@ mod tests {
         assert_eq!(
             problem.params(),
             [
-                ("min", ParamValue::Integer(5)),
-                ("max", ParamValue::Integer(5)),
-                ("equal", ParamValue::Integer(5)),
-                ("unit", ParamValue::Text(Cow::Borrowed("elements"))),
+                ("min", "5".to_owned()),
+                ("max", "5".to_owned()),
+                ("equal", "5".to_owned()),
+                ("unit", "elements".to_owned()),
             ]
         );
-    }
-
-    #[test]
-    fn a_whole_number_is_an_integer_param() {
-        assert_eq!(ParamValue::from(-7_i64), ParamValue::Integer(-7));
-    }
-
-    #[test]
-    fn an_owned_string_is_a_text_param() {
-        assert_eq!(
-            ParamValue::from("admin".to_owned()),
-            ParamValue::Text(Cow::Borrowed("admin"))
-        );
-    }
-
-    #[test]
-    fn an_integer_param_reads_as_its_number() {
-        assert_eq!(ParamValue::Integer(50).to_string(), "50");
-    }
-
-    #[test]
-    fn a_text_param_reads_as_its_text() {
-        assert_eq!(ParamValue::Text(Cow::Borrowed("admin")).to_string(), "admin");
     }
 }
