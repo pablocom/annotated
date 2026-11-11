@@ -1,12 +1,30 @@
 # annotated
 
-Directives for working in this repository.
+How we work in this repository. [README](README.md) says what the library promises, [ARCHITECTURE](ARCHITECTURE.md) how it's built. Name things with the README's [terms](README.md#terms).
 
-@.claude/directives/coding-style.md
-@.claude/directives/testing.md
-@.claude/directives/commits.md
+## Code
 
-Name things with the terms in the [README](README.md#terms), in code, docs and conversation.
+- Code explains itself: names say what things mean, not how they're built (`missing_fields`, not `filtered_fields`). Booleans read as questions (`is_optional`). No abbreviations beyond universal ones.
+- Small functions at one level of abstraction; guard clauses over nesting; types over runtime checks.
+- Keep it simple. Reach for a pattern only when the problem in front of you needs it. Trade clarity for speed only on a measured hot path, behind a clear name.
+- Comments almost never: only for what the code can't say (an external constraint, a measured trade-off, a surprising invariant). No commented-out code, no change narration.
+- Every public item has a doc comment saying what it means and promises (`missing_docs` enforces it). A doc example is a test: the shortest real use.
+
+## Tests
+
+- Tests document behaviour. Name them as sentences: `a_blank_name_breaks_the_required_rule`. One behaviour each, arrange / act / assert separated by blank lines, no logic, literal expected values, whole values compared.
+- Test through the public API: the derives from the outside, rules through `Rule::check`.
+- Test first. Watch the test fail on its assertion, not on a compile error (stub first), then make it pass.
+- For code written before its test, break the code on purpose and watch the test fail, then restore it.
+- Every error the derives emit has a `trybuild` compile-fail test under `tests/ui/` pinning its message and span.
+- When reporting work, list the tests you saw fail and why, one line each.
+
+## Commits
+
+- [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`, scope `core`, `derive`, `axum`, `ci`, `docs` or `repo`; imperative, lowercase, no trailing period. Breaking changes take `!` and a `BREAKING CHANGE:` footer. The body says why.
+- No attribution to Claude: no `Co-Authored-By` trailer and no session link.
+- Trunk-based: small, atomic commits straight to `main`, each green on its own, pushed once its checks pass.
+- Every change users can notice gets a line in `CHANGELOG.md` under *Unreleased*, in the same commit. Versions follow SemVer; before 1.0, a breaking change bumps the minor version.
 
 Before each commit, run what CI runs:
 
