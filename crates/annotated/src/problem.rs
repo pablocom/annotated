@@ -27,6 +27,17 @@ pub enum Problem {
     Required,
     /// A field is absent from the input: reported by collecting deserialization, code `missing`.
     Missing,
+    /// A value is of the wrong type for its field: reported by collecting deserialization, code `invalid_type`,
+    /// with the params `expected` and `found`.
+    #[non_exhaustive]
+    InvalidType {
+        /// What the field's type accepts, as serde describes it (`u8`, `a string`, `struct Address`), or the
+        /// type's short name when serde doesn't say.
+        expected: Cow<'static, str>,
+        /// The kind of value that came: `boolean`, `integer`, `float`, `character`, `string`, `bytes`, `null`,
+        /// `sequence` or `map`. Never the value itself, so nothing the input held is repeated back.
+        found: &'static str,
+    },
     /// A length is out of bounds: `length`, code `length`, with the params `min` and `max` it has, `equal`
     /// when they are the same, and `unit`.
     #[non_exhaustive]
@@ -225,6 +236,7 @@ impl Problem {
         match self {
             Self::Required => "required",
             Self::Missing => "missing",
+            Self::InvalidType { .. } => "invalid_type",
             Self::Length { .. } => "length",
             Self::Range { .. } => "range",
             Self::Email => "email",
@@ -255,6 +267,10 @@ impl Problem {
                 params
             }
             Self::Range { bounds } => bounds.params(),
+            Self::InvalidType { expected, found } => vec![
+                ("expected", ParamValue::Text(expected.clone())),
+                ("found", ParamValue::text(found)),
+            ],
             Self::Required | Self::Missing | Self::Email | Self::Ip | Self::Ipv4 | Self::Ipv6 => Vec::new(),
             Self::Url { schemes } => vec![("schemes", ParamValue::from(schemes.join(", ")))],
             Self::Pattern { pattern } => vec![("pattern", ParamValue::text(pattern))],
@@ -271,6 +287,7 @@ impl Display for Problem {
         match self {
             Self::Required => formatter.write_str("is required"),
             Self::Missing => formatter.write_str("is missing"),
+            Self::InvalidType { expected, found } => write!(formatter, "must be {expected}, found {found}"),
             Self::Length { bounds, unit } => {
                 let counted_in = unit.counted_in(*bounds.farthest());
                 match unit {
@@ -568,6 +585,34 @@ mod tests {
     #[test]
     fn a_missing_field_has_no_params() {
         assert_eq!(Problem::Missing.params(), []);
+    }
+
+    fn invalid_type(expected: &'static str, found: &'static str) -> Problem {
+        Problem::InvalidType {
+            expected: Cow::Borrowed(expected),
+            found,
+        }
+    }
+
+    #[test]
+    fn a_value_of_the_wrong_type_is_known_as_invalid_type() {
+        assert_eq!(invalid_type("u8", "string").code(), "invalid_type");
+    }
+
+    #[test]
+    fn a_value_of_the_wrong_type_reads_as_what_it_must_be_and_what_was_found() {
+        assert_eq!(invalid_type("u8", "string").to_string(), "must be u8, found string");
+    }
+
+    #[test]
+    fn a_value_of_the_wrong_type_s_params_are_what_was_expected_and_what_was_found() {
+        assert_eq!(
+            invalid_type("struct Address", "integer").params(),
+            [
+                ("expected", ParamValue::Text("struct Address".into())),
+                ("found", ParamValue::Text("integer".into())),
+            ]
+        );
     }
 
     #[test]
