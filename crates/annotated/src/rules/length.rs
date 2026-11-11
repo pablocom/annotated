@@ -15,9 +15,9 @@ use crate::{Bounds, LengthUnit, Problem, Rule};
 /// ```
 /// use annotated::{Rule, rules};
 ///
-/// assert_eq!(rules::length().max(5).check("Lucía"), Ok(()));
+/// assert_eq!(rules::length().max(5).check("Renée"), Ok(()));
 ///
-/// let too_long_in_bytes = rules::length().max(5).in_bytes().check("Lucía").unwrap_err();
+/// let too_long_in_bytes = rules::length().max(5).in_bytes().check("Renée").unwrap_err();
 /// assert_eq!(too_long_in_bytes.to_string(), "must be at most 5 bytes long");
 /// ```
 #[must_use]
@@ -257,13 +257,13 @@ mod tests {
 
     #[test]
     fn a_string_is_counted_in_chars() {
-        assert_eq!(length().max(5).check("Lucía"), Ok(()));
+        assert_eq!(length().max(5).check("Renée"), Ok(()));
     }
 
     #[test]
     fn a_string_longer_than_the_max_is_too_long() {
         assert_eq!(
-            length().max(5).check("Lucíaa"),
+            length().max(5).check("Renée M"),
             Err(Problem::Length {
                 bounds: Bounds::AtMost(5),
                 unit: LengthUnit::Chars,
@@ -309,7 +309,7 @@ mod tests {
         assert_eq!(
             (
                 length().min(2).max(5).check("Lu"),
-                length().min(2).max(5).check("Lucía")
+                length().min(2).max(5).check("Renée")
             ),
             (Ok(()), Ok(()))
         );
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn a_collection_is_counted_in_elements() {
         assert_eq!(
-            length().max(2).check(&vec!["Lucía", "Marcos", "Ana"]),
+            length().max(2).check(&vec!["Renée", "Sam", "Kai"]),
             Err(Problem::Length {
                 bounds: Bounds::AtMost(2),
                 unit: LengthUnit::Elements,
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn a_map_is_counted_in_entries() {
-        let labels = HashMap::from([("en", "Ledger"), ("es", "Libreta")]);
+        let labels = HashMap::from([("en", "Settings"), ("fr", "Paramètres")]);
 
         assert_eq!(
             length().max(1).check(&labels),
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn a_shared_string_is_counted_like_a_string() {
-        let name: Arc<str> = Arc::from("Lucíaa");
+        let name: Arc<str> = Arc::from("Renée M");
 
         assert_eq!(
             length().max(5).check(&name),
@@ -371,7 +371,7 @@ mod tests {
     #[test]
     fn a_string_can_be_counted_in_bytes() {
         assert_eq!(
-            length().max(5).in_bytes().check("Lucía"),
+            length().max(5).in_bytes().check("Renée"),
             Err(Problem::Length {
                 bounds: Bounds::AtMost(5),
                 unit: LengthUnit::Bytes,
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn a_string_can_be_counted_in_chars_explicitly() {
         assert_eq!(
-            length().max(4).in_chars().check("Lucía"),
+            length().max(4).in_chars().check("Renée"),
             Err(Problem::Length {
                 bounds: Bounds::AtMost(4),
                 unit: LengthUnit::Chars,
@@ -393,7 +393,7 @@ mod tests {
     #[test]
     fn bounds_set_after_the_unit_bound_the_length_the_same() {
         assert_eq!(
-            length().in_bytes().max(5).check("Lucía"),
+            length().in_bytes().max(5).check("Renée"),
             Err(Problem::Length {
                 bounds: Bounds::AtMost(5),
                 unit: LengthUnit::Bytes,
@@ -431,14 +431,14 @@ mod tests {
     #[test]
     fn an_owned_string_is_counted_in_chars() {
         assert_eq!(
-            length().max(4).check(&"Lucía".to_owned()),
+            length().max(4).check(&"Renée".to_owned()),
             at_most(4, LengthUnit::Chars)
         );
     }
 
     #[test]
     fn a_slice_is_counted_in_elements() {
-        let names: &[&str] = &["Lucía", "Marcos"];
+        let names: &[&str] = &["Renée", "Sam"];
 
         assert_eq!(length().max(1).check(names), at_most(1, LengthUnit::Elements));
     }
@@ -446,61 +446,61 @@ mod tests {
     #[test]
     fn an_array_is_counted_in_elements() {
         assert_eq!(
-            length().max(1).check(&["Lucía", "Marcos"]),
+            length().max(1).check(&["Renée", "Sam"]),
             at_most(1, LengthUnit::Elements)
         );
     }
 
     #[test]
     fn a_queue_is_counted_in_elements() {
-        let names = VecDeque::from(["Lucía", "Marcos"]);
+        let names = VecDeque::from(["Renée", "Sam"]);
 
         assert_eq!(length().max(1).check(&names), at_most(1, LengthUnit::Elements));
     }
 
     #[test]
     fn a_hash_set_is_counted_in_elements() {
-        let names = HashSet::from(["Lucía", "Marcos"]);
+        let names = HashSet::from(["Renée", "Sam"]);
 
         assert_eq!(length().max(1).check(&names), at_most(1, LengthUnit::Elements));
     }
 
     #[test]
     fn an_ordered_set_is_counted_in_elements() {
-        let names = BTreeSet::from(["Lucía", "Marcos"]);
+        let names = BTreeSet::from(["Renée", "Sam"]);
 
         assert_eq!(length().max(1).check(&names), at_most(1, LengthUnit::Elements));
     }
 
     #[test]
     fn an_ordered_map_is_counted_in_entries() {
-        let labels = BTreeMap::from([("en", "Ledger"), ("es", "Libreta")]);
+        let labels = BTreeMap::from([("en", "Settings"), ("fr", "Paramètres")]);
 
         assert_eq!(length().max(1).check(&labels), at_most(1, LengthUnit::Elements));
     }
 
     #[test]
     fn a_borrowed_string_is_counted_like_a_string() {
-        assert_eq!(length().max(4).check(&"Lucía"), at_most(4, LengthUnit::Chars));
+        assert_eq!(length().max(4).check(&"Renée"), at_most(4, LengthUnit::Chars));
     }
 
     #[test]
     fn a_boxed_string_is_counted_like_a_string() {
-        let name: Box<str> = Box::from("Lucía");
+        let name: Box<str> = Box::from("Renée");
 
         assert_eq!(length().max(4).check(&name), at_most(4, LengthUnit::Chars));
     }
 
     #[test]
     fn a_reference_counted_string_is_counted_like_a_string() {
-        let name: Rc<str> = Rc::from("Lucía");
+        let name: Rc<str> = Rc::from("Renée");
 
         assert_eq!(length().max(4).check(&name), at_most(4, LengthUnit::Chars));
     }
 
     #[test]
     fn a_copy_on_write_string_is_counted_like_a_string() {
-        let name: Cow<'_, str> = Cow::Borrowed("Lucía");
+        let name: Cow<'_, str> = Cow::Borrowed("Renée");
 
         assert_eq!(length().max(4).check(&name), at_most(4, LengthUnit::Chars));
     }

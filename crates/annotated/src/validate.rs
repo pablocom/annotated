@@ -23,7 +23,7 @@ use crate::{FoundViolations, Location, Violations};
 ///     }
 /// }
 ///
-/// let new_password = NewPassword { password: "Lucia-Garc1a".into(), repeated_password: "lucia".into() };
+/// let new_password = NewPassword { password: "correct horse battery staple".into(), repeated_password: "correct horse".into() };
 ///
 /// let violations = new_password.validate().unwrap_err();
 /// assert_eq!(violations.to_string(), "repeatedPassword: must match the password");

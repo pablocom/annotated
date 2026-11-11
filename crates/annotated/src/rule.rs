@@ -8,7 +8,7 @@ use crate::Problem;
 /// ```
 /// use annotated::{Problem, Rule, rules};
 ///
-/// assert_eq!(rules::required().check("Lucía"), Ok(()));
+/// assert_eq!(rules::required().check("Alex"), Ok(()));
 /// assert_eq!(rules::required().check("   "), Err(Problem::Required));
 /// ```
 #[diagnostic::on_unimplemented(

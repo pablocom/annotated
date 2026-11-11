@@ -143,12 +143,12 @@ mod tests {
 
     #[test]
     fn a_string_with_text_is_present() {
-        assert_eq!(required().check("Lucía"), Ok(()));
+        assert_eq!(required().check("Alex"), Ok(()));
     }
 
     #[test]
     fn a_string_with_text_and_surrounding_whitespace_is_present() {
-        assert_eq!(required().check("  Lucía  "), Ok(()));
+        assert_eq!(required().check("  Renée  "), Ok(()));
     }
 
     #[test]
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn a_collection_with_an_element_is_present() {
-        assert_eq!(required().check(&vec!["Lucía"]), Ok(()));
+        assert_eq!(required().check(&vec!["Alex"]), Ok(()));
     }
 
     #[test]
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn a_map_with_an_entry_is_present() {
-        assert_eq!(required().check(&BTreeMap::from([("en", "Ledger")])), Ok(()));
+        assert_eq!(required().check(&BTreeMap::from([("en", "Settings")])), Ok(()));
     }
 
     #[test]

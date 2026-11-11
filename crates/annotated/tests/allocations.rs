@@ -4,7 +4,7 @@ use std::hint::black_box;
 
 use annotated::{FoundViolations, Location, Problem, Validate};
 
-struct Ledger {
+struct Team {
     members: Vec<Member>,
 }
 
@@ -12,7 +12,7 @@ struct Member {
     name: String,
 }
 
-impl Validate for Ledger {
+impl Validate for Team {
     fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations) {
         let members = at.field("members");
         for (index, member) in self.members.iter().enumerate() {
@@ -31,19 +31,17 @@ impl Validate for Member {
 
 #[test]
 fn validating_a_valid_value_by_hand_allocates_nothing() {
-    let ledger = Ledger {
+    let team = Team {
         members: vec![
             Member {
-                name: "Lucía".to_owned(),
+                name: "Renée".to_owned(),
             },
-            Member {
-                name: "Marcos".to_owned(),
-            },
+            Member { name: "Sam".to_owned() },
         ],
     };
 
     let allocations = allocation_counter::measure(|| {
-        let _ = black_box(ledger.validate());
+        let _ = black_box(team.validate());
     });
 
     assert_eq!(allocations.count_total, 0);
