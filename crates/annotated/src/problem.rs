@@ -50,13 +50,12 @@ pub enum Problem {
         /// The schemes accepted: `http`, `https` and `ftp`, or those the rule was given.
         schemes: &'static [&'static str],
     },
-    /// A string isn't an IP address: `ip`, `ipv4` or `ipv6`, code `ip`, with the param `version`, 4 or 6, when
-    /// only one version is accepted.
-    #[non_exhaustive]
-    Ip {
-        /// The IP version accepted, 4 or 6, or `None` for either.
-        version: Option<u8>,
-    },
+    /// A string isn't an IP address of either version: `ip`, code `ip`.
+    Ip,
+    /// A string isn't an IPv4 address: `ipv4`, code `ipv4`.
+    Ipv4,
+    /// A string isn't an IPv6 address: `ipv6`, code `ipv6`.
+    Ipv6,
     /// A string doesn't match a regular expression: `pattern`, code `pattern`, with the param `pattern`.
     #[non_exhaustive]
     Pattern {
@@ -227,7 +226,9 @@ impl Problem {
             Self::Range { .. } => "range",
             Self::Email => "email",
             Self::Url { .. } => "url",
-            Self::Ip { .. } => "ip",
+            Self::Ip => "ip",
+            Self::Ipv4 => "ipv4",
+            Self::Ipv6 => "ipv6",
             Self::Pattern { .. } => "pattern",
             Self::Contains { .. } => "contains",
             Self::Prefix { .. } => "prefix",
@@ -251,12 +252,8 @@ impl Problem {
                 params
             }
             Self::Range { bounds } => bounds.params(),
-            Self::Required | Self::Email => Vec::new(),
+            Self::Required | Self::Email | Self::Ip | Self::Ipv4 | Self::Ipv6 => Vec::new(),
             Self::Url { schemes } => vec![("schemes", ParamValue::from(schemes.join(", ")))],
-            Self::Ip { version } => version
-                .iter()
-                .map(|version| ("version", ParamValue::from(*version)))
-                .collect(),
             Self::Pattern { pattern } => vec![("pattern", ParamValue::text(pattern))],
             Self::Contains { text } => vec![("text", ParamValue::text(text))],
             Self::Prefix { prefix } => vec![("prefix", ParamValue::text(prefix))],
@@ -282,8 +279,9 @@ impl Display for Problem {
             Self::Range { bounds } => write!(formatter, "must be {bounds}"),
             Self::Email => formatter.write_str("must be an email address"),
             Self::Url { schemes } => write!(formatter, "must be a URL using {}", either_of(schemes)),
-            Self::Ip { version: None } => formatter.write_str("must be an IP address"),
-            Self::Ip { version: Some(version) } => write!(formatter, "must be an IPv{version} address"),
+            Self::Ip => formatter.write_str("must be an IP address"),
+            Self::Ipv4 => formatter.write_str("must be an IPv4 address"),
+            Self::Ipv6 => formatter.write_str("must be an IPv6 address"),
             Self::Pattern { pattern } => write!(formatter, "must match the pattern {pattern}"),
             Self::Contains { text } => write!(formatter, "must contain {text:?}"),
             Self::Prefix { prefix } => write!(formatter, "must start with {prefix:?}"),
@@ -432,30 +430,37 @@ mod tests {
 
     #[test]
     fn a_string_that_is_not_an_ip_address_is_known_as_ip() {
-        assert_eq!(Problem::Ip { version: None }.code(), "ip");
+        assert_eq!(Problem::Ip.code(), "ip");
     }
 
     #[test]
     fn a_string_that_is_not_an_ip_address_reads_as_such() {
-        assert_eq!(Problem::Ip { version: None }.to_string(), "must be an IP address");
+        assert_eq!(Problem::Ip.to_string(), "must be an IP address");
     }
 
     #[test]
-    fn a_string_that_is_not_an_ip_address_of_one_version_reads_as_that_version() {
-        assert_eq!(Problem::Ip { version: Some(6) }.to_string(), "must be an IPv6 address");
+    fn a_string_that_is_not_an_ipv4_address_is_known_as_ipv4() {
+        assert_eq!(Problem::Ipv4.code(), "ipv4");
     }
 
     #[test]
-    fn an_ip_s_params_are_the_version_accepted() {
-        assert_eq!(
-            Problem::Ip { version: Some(4) }.params(),
-            [("version", ParamValue::Integer(4))]
-        );
+    fn a_string_that_is_not_an_ipv4_address_reads_as_such() {
+        assert_eq!(Problem::Ipv4.to_string(), "must be an IPv4 address");
     }
 
     #[test]
-    fn an_ip_of_any_version_has_no_params() {
-        assert_eq!(Problem::Ip { version: None }.params(), []);
+    fn a_string_that_is_not_an_ipv6_address_is_known_as_ipv6() {
+        assert_eq!(Problem::Ipv6.code(), "ipv6");
+    }
+
+    #[test]
+    fn a_string_that_is_not_an_ipv6_address_reads_as_such() {
+        assert_eq!(Problem::Ipv6.to_string(), "must be an IPv6 address");
+    }
+
+    #[test]
+    fn an_ip_address_of_one_version_has_no_params() {
+        assert_eq!(Problem::Ipv4.params(), []);
     }
 
     #[test]

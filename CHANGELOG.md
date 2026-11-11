@@ -12,7 +12,7 @@ Every change users of the crates can notice is listed here. The format follows [
 - The `range` rule: a value no less than `min` and no more than `max`, for anything `PartialOrd` and `Display`, with the bounds' type taken from the field. Bounds of a primitive number type are reported as numbers, and those of any other type as text.
 - The `email` rule: an email address as HTML's `<input type="email">` accepts one, at most 254 bytes.
 - The `url` rule, behind the `url` feature: an absolute URL valid by the WHATWG URL Standard, of the scheme `http`, `https` or `ftp`, or of those set with `schemes`.
-- The `ip`, `ipv4` and `ipv6` rules: an IP address of either version, or only of version 4 or only of version 6.
+- The `ip`, `ipv4` and `ipv6` rules: an IP address of either version, or only of version 4 or only of version 6, each reporting a problem coded by its own name.
 - The `contains`, `prefix` and `suffix` rules: a string containing, starting with or ending with a text.
 - The `custom` rule: any `Fn(&V) -> Result<(), Problem>` of your own, checking any value that borrows as a `V`, so a check of `&str` checks a `String` field. It reports with `Problem::custom`, whose `with_param` takes a number or a text.
 - The `pattern` rule, behind the `regex` feature: a string matching a regular expression. Written in `#[validate(...)]`, the expression is a string literal checked at compile time and compiled once, into a `static` at the field.

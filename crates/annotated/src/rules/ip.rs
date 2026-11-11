@@ -15,7 +15,9 @@ use crate::{Problem, Rule};
 /// ```
 #[must_use]
 pub const fn ip() -> Ip {
-    Ip { version: None }
+    Ip {
+        version: IpVersion::Either,
+    }
 }
 
 /// The rule that a string is an IPv4 address: `192.0.2.1`.
@@ -30,7 +32,7 @@ pub const fn ip() -> Ip {
 /// ```
 #[must_use]
 pub const fn ipv4() -> Ip {
-    Ip { version: Some(4) }
+    Ip { version: IpVersion::V4 }
 }
 
 /// The rule that a string is an IPv6 address: `2001:db8::1`.
@@ -45,28 +47,47 @@ pub const fn ipv4() -> Ip {
 /// ```
 #[must_use]
 pub const fn ipv6() -> Ip {
-    Ip { version: Some(6) }
+    Ip { version: IpVersion::V6 }
 }
 
 /// Checks that a string is an IP address; made by [`ip`], [`ipv4`] or [`ipv6`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ip {
-    version: Option<u8>,
+    version: IpVersion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IpVersion {
+    Either,
+    V4,
+    V6,
+}
+
+impl IpVersion {
+    fn is_address(self, text: &str) -> bool {
+        match self {
+            Self::Either => text.parse::<IpAddr>().is_ok(),
+            Self::V4 => text.parse::<Ipv4Addr>().is_ok(),
+            Self::V6 => text.parse::<Ipv6Addr>().is_ok(),
+        }
+    }
+
+    fn problem(self) -> Problem {
+        match self {
+            Self::Either => Problem::Ip,
+            Self::V4 => Problem::Ipv4,
+            Self::V6 => Problem::Ipv6,
+        }
+    }
 }
 
 #[diagnostic::do_not_recommend]
 impl<T: AsRef<str> + ?Sized> Rule<T> for Ip {
     fn check(&self, value: &T) -> Result<(), Problem> {
-        let text = value.as_ref();
-        let is_ip_address = match self.version {
-            Some(4) => text.parse::<Ipv4Addr>().is_ok(),
-            Some(6) => text.parse::<Ipv6Addr>().is_ok(),
-            _ => text.parse::<IpAddr>().is_ok(),
-        };
-        if is_ip_address {
+        if self.version.is_address(value.as_ref()) {
             return Ok(());
         }
-        Err(Problem::Ip { version: self.version })
+        Err(self.version.problem())
     }
 }
 
@@ -86,7 +107,7 @@ mod tests {
 
     #[test]
     fn a_string_that_is_not_an_ip_address_breaks_the_rule() {
-        assert_eq!(ip().check("192.0.2"), Err(Problem::Ip { version: None }));
+        assert_eq!(ip().check("192.0.2"), Err(Problem::Ip));
     }
 
     #[test]
@@ -96,7 +117,7 @@ mod tests {
 
     #[test]
     fn an_ipv6_address_breaks_the_ipv4_rule() {
-        assert_eq!(ipv4().check("2001:db8::1"), Err(Problem::Ip { version: Some(4) }));
+        assert_eq!(ipv4().check("2001:db8::1"), Err(Problem::Ipv4));
     }
 
     #[test]
@@ -106,6 +127,6 @@ mod tests {
 
     #[test]
     fn an_ipv4_address_breaks_the_ipv6_rule() {
-        assert_eq!(ipv6().check("192.0.2.1"), Err(Problem::Ip { version: Some(6) }));
+        assert_eq!(ipv6().check("192.0.2.1"), Err(Problem::Ipv6));
     }
 }
