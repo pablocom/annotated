@@ -1,4 +1,4 @@
-//! Validating a valid value allocates nothing.
+//! Validating a valid value allocates nothing, and finding a violation allocates little.
 
 use std::hint::black_box;
 
@@ -119,4 +119,17 @@ fn validating_a_valid_value_by_its_struct_level_rules_allocates_nothing() {
     });
 
     assert_eq!(allocations.count_total, 0);
+}
+
+#[test]
+fn a_violation_three_segments_deep_allocates_nothing_but_the_report() {
+    let team = Team {
+        members: vec![Member { name: String::new() }],
+    };
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = black_box(team.validate());
+    });
+
+    assert_eq!(allocations.count_total, 1);
 }

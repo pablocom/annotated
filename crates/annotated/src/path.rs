@@ -1,4 +1,5 @@
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
+use std::hash::{Hash, Hasher};
 
 /// Where in a value a violation happened: the segments leading from the validated value down to it.
 ///
@@ -14,9 +15,19 @@ use std::fmt::{self, Display};
 /// assert_eq!(path.to_string(), "members[1].name");
 /// assert_eq!(path.json_pointer(), "/members/1/name");
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Default)]
 pub struct Path {
-    segments: Vec<PathSegment>,
+    segments: Segments,
+}
+
+#[derive(Clone, Default)]
+enum Segments {
+    #[default]
+    None,
+    One([PathSegment; 1]),
+    Two([PathSegment; 2]),
+    Three([PathSegment; 3]),
+    More(Vec<PathSegment>),
 }
 
 /// One step of a [`Path`].
@@ -35,7 +46,9 @@ impl Path {
     /// The path of the validated value itself, with no segments.
     #[must_use]
     pub const fn root() -> Self {
-        Self { segments: Vec::new() }
+        Self {
+            segments: Segments::None,
+        }
     }
 
     /// This path followed by the field `name`.
@@ -59,13 +72,13 @@ impl Path {
     /// The segments from the root down.
     #[must_use]
     pub fn segments(&self) -> &[PathSegment] {
-        &self.segments
+        self.segments.as_slice()
     }
 
     /// Whether this is the root path, with no segments.
     #[must_use]
     pub fn is_root(&self) -> bool {
-        self.segments.is_empty()
+        matches!(self.segments, Segments::None)
     }
 
     /// The path as an [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer: `/members/1/name`.
@@ -74,26 +87,71 @@ impl Path {
     #[must_use]
     pub fn json_pointer(&self) -> String {
         let mut pointer = String::new();
-        for segment in &self.segments {
+        for segment in self.segments() {
             pointer.push('/');
             pointer.push_str(&segment.to_string().replace('~', "~0").replace('/', "~1"));
         }
         pointer
     }
 
-    pub(crate) fn from_segments(segments: Vec<PathSegment>) -> Self {
-        Self { segments }
+    pub(crate) fn followed_by(self, segment: PathSegment) -> Self {
+        Self {
+            segments: self.segments.followed_by(segment),
+        }
+    }
+}
+
+impl Segments {
+    fn followed_by(self, segment: PathSegment) -> Self {
+        match self {
+            Self::None => Self::One([segment]),
+            Self::One([first]) => Self::Two([first, segment]),
+            Self::Two([first, second]) => Self::Three([first, second, segment]),
+            Self::Three(three) => Self::More(three.into_iter().chain([segment]).collect()),
+            Self::More(mut more) => {
+                more.push(segment);
+                Self::More(more)
+            }
+        }
     }
 
-    fn followed_by(mut self, segment: PathSegment) -> Self {
-        self.segments.push(segment);
-        self
+    fn as_slice(&self) -> &[PathSegment] {
+        match self {
+            Self::None => &[],
+            Self::One(one) => one,
+            Self::Two(two) => two,
+            Self::Three(three) => three,
+            Self::More(more) => more,
+        }
+    }
+}
+
+impl PartialEq for Path {
+    fn eq(&self, other: &Self) -> bool {
+        self.segments() == other.segments()
+    }
+}
+
+impl Eq for Path {}
+
+impl Hash for Path {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.segments().hash(state);
+    }
+}
+
+impl Debug for Path {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Path")
+            .field("segments", &self.segments())
+            .finish()
     }
 }
 
 impl Display for Path {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (position, segment) in self.segments.iter().enumerate() {
+        for (position, segment) in self.segments().iter().enumerate() {
             match segment {
                 PathSegment::Field(name) if position == 0 => formatter.write_str(name)?,
                 PathSegment::Field(name) => write!(formatter, ".{name}")?,
@@ -180,5 +238,27 @@ mod tests {
     #[test]
     fn only_the_path_without_segments_is_the_root() {
         assert_eq!((Path::root().is_root(), Path::root().index(0).is_root()), (true, false));
+    }
+
+    #[test]
+    fn a_path_deeper_than_three_segments_renders_every_segment() {
+        let path = Path::root()
+            .field("orders")
+            .index(0)
+            .field("lines")
+            .index(2)
+            .field("sku");
+
+        assert_eq!(path.to_string(), "orders[0].lines[2].sku");
+    }
+
+    #[test]
+    fn a_path_debugs_as_its_segments() {
+        let path = Path::root().field("members").index(1);
+
+        assert_eq!(
+            format!("{path:?}"),
+            r#"Path { segments: [Field("members"), Index(1)] }"#
+        );
     }
 }

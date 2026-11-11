@@ -58,25 +58,15 @@ impl<'a> Location<'a> {
     /// The owned path from the root down to this location.
     #[must_use]
     pub fn to_path(&self) -> Path {
-        let mut segments = Vec::with_capacity(self.depth());
-        self.push_segments_into(&mut segments);
-        Path::from_segments(segments)
+        match self.parent_and_step {
+            None => Path::root(),
+            Some((parent, step)) => parent.to_path().followed_by(step.to_segment()),
+        }
     }
 
     const fn followed_by(&'a self, step: Step<'a>) -> Self {
         Self {
             parent_and_step: Some((self, step)),
-        }
-    }
-
-    fn depth(&self) -> usize {
-        self.parent_and_step.map_or(0, |(parent, _)| parent.depth() + 1)
-    }
-
-    fn push_segments_into(&self, segments: &mut Vec<PathSegment>) {
-        if let Some((parent, step)) = self.parent_and_step {
-            parent.push_segments_into(segments);
-            segments.push(step.to_segment());
         }
     }
 }
@@ -127,6 +117,28 @@ mod tests {
         assert_eq!(
             path.segments(),
             [PathSegment::Field("labels"), PathSegment::Key("en".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_location_deeper_than_three_steps_becomes_the_path_from_the_root_down_to_it() {
+        let root = Location::root();
+        let orders = root.field("orders");
+        let first_order = orders.index(0);
+        let lines = first_order.field("lines");
+        let third_line = lines.index(2);
+
+        let path = third_line.field("sku").to_path();
+
+        assert_eq!(
+            path.segments(),
+            [
+                PathSegment::Field("orders"),
+                PathSegment::Index(0),
+                PathSegment::Field("lines"),
+                PathSegment::Index(2),
+                PathSegment::Field("sku"),
+            ]
         );
     }
 }
