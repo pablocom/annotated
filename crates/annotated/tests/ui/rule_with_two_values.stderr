@@ -1,0 +1,5 @@
+error: a rule takes one value at most
+  --> tests/ui/rule_with_two_values.rs:11:45
+   |
+11 |     #[validate(house_rules::divisible_by(5, 6))]
+   |                                             ^

@@ -14,10 +14,12 @@ categories = ["data-structures", "encoding", "rust-patterns"]
 unicode = ["dep:unicode-segmentation"]
 
 [dependencies]
+annotated-derive = { version = "=0.1.0", path = "../annotated-derive" }
 unicode-segmentation = { version = "1.13.3", optional = true }
 
 [dev-dependencies]
 allocation-counter = "0.8.1"
+trybuild = "1.0.122"
 
 [package.metadata.docs.rs]
 all-features = true

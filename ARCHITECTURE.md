@@ -66,7 +66,7 @@ Each entry in `#[validate(...)]` is one rule, and the derive turns it into a con
 ### Rules the derive handles itself
 
 - `required` is like .NET's `[Required]`: on an `Option`, it means `Some`; on a string, not empty and not only whitespace; on a collection, not empty. It's an ordinary rule over a `Required` capability trait. What's special is only that, on an `Option` field, it checks the `Option` itself.
-- On an `Option` field, every rule other than `required` checks the value inside, and is skipped when there is none.
+- On an `Option` field, every rule other than `required` checks the value inside, and is skipped when there is none. The derive knows an `Option` field by its type as written: a path ending in `Option<T>`.
 - `nested` validates a field whose type implements `Validate`, with the field's segment added to the location.
 - `each(...)` applies its rules to every element of a collection, with the element's index, or every value of a map, with its key. `each(nested)` validates every element as a struct.
 - A struct-level `#[validate(custom(f))]` takes `Fn(&Self) -> Result<(), Problem>`, like `IValidatableObject`, and reports at the struct's own location; `custom(f, field = repeated_password)` reports at that field instead, by its serde name.
@@ -75,7 +75,7 @@ Each entry in `#[validate(...)]` is one rule, and the derive turns it into a con
 
 - **Every field, first failure per field by default.** Every field is checked. Within one field, rules run in the order written and the first failure stops that field's rules, so a blank value isn't also reported as too short, and cheap rules can guard expensive ones. A struct-level `#[validate(report_all)]` reports every failing rule instead, as DataAnnotations does. Elements under `each` are each checked independently.
 - **Strings are never trimmed.** Rules check the value exactly as the handler will receive it. Only `required` treats whitespace-only as empty.
-- **`length` counts `char`s on strings by default** (Unicode scalar values). `unit = "bytes"` counts UTF-8 bytes. `unit = "graphemes"`, behind the `unicode` feature, counts what a person sees as one character. On collections it counts elements, and `unit` is refused.
+- **`length` counts `char`s on strings by default** (Unicode scalar values). `unit = "bytes"` counts UTF-8 bytes. `unit = "graphemes"`, behind the `unicode` feature, counts what a person sees as one character. On collections it counts elements, and `unit` is refused at compile time: a unit turns `length()` into a `StringLength` rule, which checks only strings.
 - **Field names come from serde.** With no `#[serde(...)]` attributes, that is the Rust field name, without `r#`.
 
 ## Collecting deserialization

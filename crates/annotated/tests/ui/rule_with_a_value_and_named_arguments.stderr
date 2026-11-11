@@ -1,0 +1,5 @@
+error: a rule takes either one value or named arguments, not both
+  --> tests/ui/rule_with_a_value_and_named_arguments.rs:11:45
+   |
+11 |     #[validate(house_rules::divisible_by(5, max = 6))]
+   |                                             ^^^

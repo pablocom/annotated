@@ -46,3 +46,25 @@ fn validating_a_valid_value_by_hand_allocates_nothing() {
 
     assert_eq!(allocations.count_total, 0);
 }
+
+#[derive(Validate)]
+struct NewMember {
+    #[validate(required, length(max = 50))]
+    full_name: String,
+    #[validate(length(min = 2))]
+    nickname: Option<String>,
+}
+
+#[test]
+fn validating_a_valid_value_by_its_derived_rules_allocates_nothing() {
+    let member = NewMember {
+        full_name: "Alex Morgan".to_owned(),
+        nickname: Some("Al".to_owned()),
+    };
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = black_box(member.validate());
+    });
+
+    assert_eq!(allocations.count_total, 0);
+}

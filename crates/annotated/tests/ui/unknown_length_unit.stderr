@@ -1,0 +1,11 @@
+error: `unit` is "chars", "bytes" or "graphemes"
+ --> tests/ui/unknown_length_unit.rs:5:39
+  |
+5 |     #[validate(length(max = 3, unit = "words"))]
+  |                                       ^^^^^^^
+
+error: `unit` is "chars", "bytes" or "graphemes"
+  --> tests/ui/unknown_length_unit.rs:11:39
+   |
+11 |     #[validate(length(max = 3, unit = bytes))]
+   |                                       ^^^^^

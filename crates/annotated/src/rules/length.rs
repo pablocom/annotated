@@ -178,6 +178,7 @@ impl<T: HasLength + ?Sized> Rule<T> for Length {
     }
 }
 
+#[diagnostic::do_not_recommend]
 impl<T: AsRef<str> + ?Sized> Rule<T> for StringLength {
     fn check(&self, value: &T) -> Result<(), Problem> {
         self.bounds

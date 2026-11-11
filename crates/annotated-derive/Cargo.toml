@@ -1,0 +1,23 @@
+[package]
+name = "annotated-derive"
+description = "The derive macros of annotated; use them through the annotated crate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords = ["validation", "validate", "serde", "derive", "annotations"]
+categories = ["data-structures", "encoding", "rust-patterns"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+serde_derive_internals = "0.30.0"
+syn = { version = "3.0.10", features = ["full"] }
+
+[lints]
+workspace = true

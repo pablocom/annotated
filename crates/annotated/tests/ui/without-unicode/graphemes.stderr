@@ -1,0 +1,5 @@
+error[E0599]: no method named `in_graphemes` found for struct `annotated::rules::Length` in the current scope
+ --> tests/ui/without-unicode/graphemes.rs:5:39
+  |
+5 |     #[validate(length(max = 1, unit = "graphemes"))]
+  |                                       ^^^^^^^^^^^ method not found in `annotated::rules::Length`

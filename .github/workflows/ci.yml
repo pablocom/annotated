@@ -34,14 +34,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: [stable, "1.97"]
+        include:
+          - toolchain: stable
+          - toolchain: "1.97"
+            # Compiler output differs between versions, so the compile-fail tests pin stable's only.
+            test-args: --skip compile_errors
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --all-features
+      - run: cargo test --workspace --all-features -- ${{ matrix.test-args }}
+      - run: cargo test --workspace -- ${{ matrix.test-args }}
 
   docs:
     runs-on: ubuntu-latest

@@ -1,0 +1,22 @@
+error[E0277]: `length` can't check a value of type `u8`
+ --> tests/ui/length_of_a_value_without_one.rs:5:16
+  |
+5 |     #[validate(length(max = 3))]
+  |                ------^^^^
+  |                |
+  |                `u8` doesn't implement `annotated::rules::HasLength`
+  |                required by a bound introduced by this call
+  |
+  = help: the trait `HasLength` is not implemented for `u8`
+  = note: implement `annotated::rules::HasLength` for `u8` to say how long a value of it is
+  = help: the following other types implement trait `HasLength`:
+            &T
+            Arc<T>
+            BTreeMap<K, V>
+            BTreeSet<T>
+            Box<T>
+            Cow<'_, T>
+            HashMap<K, V, S>
+            HashSet<T, S>
+          and $N others
+  = note: required for `annotated::rules::Length` to implement `Rule<u8>`
