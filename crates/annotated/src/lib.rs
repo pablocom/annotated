@@ -1,7 +1,7 @@
-//! Annotate structs with validation rules and get every problem at once, missing fields included.
+//! Validation for Rust structs: write rules on their fields, and get every problem back at once.
 //!
 //! A value is checked with [`Validate::validate`], which answers `Ok(())` or every [`Violation`] found,
-//! each a [`Problem`] at the [`Path`] where it happened.
+//! each a [`Problem`] at the [`Path`] where it happened. Fields are reported by the names serde reads them by.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 

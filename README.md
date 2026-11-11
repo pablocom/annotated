@@ -1,6 +1,6 @@
 # annotated
 
-Annotate your Rust structs with validation rules, and get every problem at once: rules broken, fields missing, even values of the wrong type, each at the path where it happened.
+Validation for Rust structs that works with serde. You write rules on a struct's fields, and deserializing it reports every problem in one error: broken rules and missing fields together, each at the path of the field it's about.
 
 ```rust
 use annotated::{Deserialize, Validate};
@@ -16,16 +16,30 @@ struct NewMember {
     age: u8,
 }
 
-// with the `json` feature; any other serde format works through `annotated::from_deserializer`
-let violations = annotated::json::from_str::<NewMember>(r#"{ "fullName": "  ", "age": 12 }"#).unwrap_err();
-// fullName: is required
-// email:    is missing
-// age:      must be between 18 and 120
+#[test]
+fn every_problem_with_a_new_member_is_reported_at_once() {
+    let body = r#"{ "fullName": "  ", "age": 12 }"#;
+
+    let error = annotated::json::from_str::<NewMember>(body).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "fullName: is required\n\
+         email: is missing\n\
+         age: must be between 18 and 120",
+    );
+}
 ```
 
 > **Status:** under construction. Nothing is on crates.io yet, and the API above is where it's heading, not what's there today.
 
-Rules sit on the fields they guard, and validating a value gives you every error, keyed by where it happened. Rust has fine validation crates, [validator](https://crates.io/crates/validator) and [garde](https://crates.io/crates/garde), but they run after serde has succeeded, so a missing field or a value of the wrong type stops deserialization before any rule is checked, one error at a time. `annotated` reports them together.
+## Where it fits
+
+[validator](https://crates.io/crates/validator) and [garde](https://crates.io/crates/garde) check a struct after serde has built it. When a field is missing or has the wrong type, serde stops at that first error, and no rule runs.
+
+`annotated` validates as part of deserializing. Derive `annotated::Deserialize` where you'd derive `serde::Deserialize`: the struct still implements `serde::Deserialize` and works anywhere serde does, but a missing field becomes one more violation instead of the end of deserialization. Values of the wrong type join them when a struct opts in with `#[annotated(collect_type_errors)]`.
+
+To check a value however it was built, derive `Validate` alone: `value.validate()` reports every broken rule, whether serde built the value or not.
 
 ## Principles
 
