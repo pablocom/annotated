@@ -1,6 +1,6 @@
 use proc_macro2::{Literal, Span, TokenStream, TokenTree};
 use quote::{ToTokens, format_ident, quote};
-use syn::{DeriveInput, GenericParam, Generics, Ident, parse_quote};
+use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, parse_quote};
 
 use crate::deserialized_struct::DeserializedStruct;
 use crate::expansion::{Expansion, validity_of};
@@ -20,12 +20,13 @@ struct DeserializeExpansion<'a> {
     seq: Ident,
     key: Ident,
     deserialized: Ident,
+    visitor_lifetime: Lifetime,
 }
 
 impl<'a> DeserializeExpansion<'a> {
     fn new(deserialized_struct: &'a DeserializedStruct<'a>) -> Self {
         let local = |name| Ident::new(name, Span::mixed_site());
-        let not_built = quote!(return ::core::result::Result::Ok(::core::option::Option::None));
+        let not_built = quote!(return ::core::option::Option::None);
         Self {
             deserialized_struct,
             rules: Expansion::new(deserialized_struct.validated.is_reporting_all, not_built),
@@ -36,6 +37,7 @@ impl<'a> DeserializeExpansion<'a> {
             seq: local("seq"),
             key: local("key"),
             deserialized: local("deserialized"),
+            visitor_lifetime: Lifetime::new("'__visitor", Span::call_site()),
         }
     }
 
@@ -49,10 +51,7 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn deserialize_impl(&self) -> TokenStream {
         let Self {
-            serde,
-            deserializer,
-            deserialized,
-            ..
+            serde, deserializer, ..
         } = self;
         let Expansion { at, found, .. } = &self.rules;
         let input = self.input();
@@ -60,14 +59,10 @@ impl<'a> DeserializeExpansion<'a> {
         let generics = self.generics_reading_fields();
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         let (_, type_generics, _) = input.generics.split_for_impl();
+        let turbofish = type_generics.as_turbofish();
+        let struct_name = &self.deserialized_struct.serde.name;
         let field_identifier = self.field_identifier();
         let visitor = self.visitor();
-        let read_fields = self.read_fields();
-        let field_checks = self.field_checks();
-        let build = self.build();
-        let struct_checks = self
-            .rules
-            .struct_checks(&self.deserialized_struct.validated, &quote!(&#deserialized));
         quote! {
             impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
@@ -77,11 +72,16 @@ impl<'a> DeserializeExpansion<'a> {
                 ) -> ::core::result::Result<::core::option::Option<Self>, __D::Error> {
                     #field_identifier
                     #visitor
-                    #read_fields
-                    #(#field_checks)*
-                    #build
-                    #(#struct_checks)*
-                    ::core::result::Result::Ok(::core::option::Option::Some(#deserialized))
+                    #serde::Deserializer::deserialize_struct(
+                        #deserializer,
+                        #struct_name,
+                        __FIELDS,
+                        __Visitor #turbofish {
+                            #at,
+                            #found,
+                            marker: ::core::marker::PhantomData,
+                        },
+                    )
                 }
             }
 
@@ -217,13 +217,21 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn visitor(&self) -> TokenStream {
-        let Self { serde, formatter, .. } = self;
+        let Self {
+            serde,
+            formatter,
+            visitor_lifetime,
+            ..
+        } = self;
+        let Expansion { at, found, .. } = &self.rules;
         let input = self.input();
         let name = &input.ident;
-        let (struct_generics, type_generics, struct_where_clause) = input.generics.split_for_impl();
-        let generics = self.generics_reading_fields();
-        let (impl_generics, _, where_clause) = generics.split_for_impl();
-        let field_types = self.fields().iter().map(|field| field.field_type);
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let visitor_generics = with_lifetime(&input.generics, visitor_lifetime);
+        let (visitor_definition_generics, visitor_type_generics, visitor_where_clause) =
+            visitor_generics.split_for_impl();
+        let generics_reading_fields = with_lifetime(&self.generics_reading_fields(), visitor_lifetime);
+        let (impl_generics, _, where_clause) = generics_reading_fields.split_for_impl();
         let expecting = self
             .deserialized_struct
             .serde
@@ -232,6 +240,7 @@ impl<'a> DeserializeExpansion<'a> {
             .unwrap_or_else(|| format!("struct {name}"));
         let visit_seq = self.visit_seq();
         let visit_map = self.visit_map();
+        let checked_value = self.checked_value();
         let names_read = self
             .deserialized_struct
             .serde
@@ -241,12 +250,14 @@ impl<'a> DeserializeExpansion<'a> {
         quote! {
             const __FIELDS: &[&str] = &[#(#names_read),*];
 
-            struct __Visitor #struct_generics #struct_where_clause {
+            struct __Visitor #visitor_definition_generics #visitor_where_clause {
+                #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
+                #found: &#visitor_lifetime mut ::annotated::FoundViolations,
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
-            impl #impl_generics #serde::de::Visitor<'de> for __Visitor #type_generics #where_clause {
-                type Value = (#(::core::option::Option<#field_types>,)*);
+            impl #impl_generics #serde::de::Visitor<'de> for __Visitor #visitor_type_generics #where_clause {
+                type Value = ::core::option::Option<#name #type_generics>;
 
                 fn expecting(&self, #formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                     ::core::fmt::Formatter::write_str(#formatter, #expecting)
@@ -256,13 +267,16 @@ impl<'a> DeserializeExpansion<'a> {
 
                 #visit_map
             }
+
+            impl #visitor_definition_generics __Visitor #visitor_type_generics #visitor_where_clause {
+                #checked_value
+            }
         }
     }
 
     fn visit_seq(&self) -> TokenStream {
         let Self { serde, seq, .. } = self;
-        let fields = self.fields();
-        let elements = fields.iter().map(|field| {
+        let elements = self.fields().iter().map(|field| {
             let slot = slot_of(field);
             let field_type = field.field_type;
             quote! {
@@ -270,14 +284,14 @@ impl<'a> DeserializeExpansion<'a> {
                     #serde::de::SeqAccess::next_element::<#field_type>(&mut #seq)?;
             }
         });
-        let slots = fields.iter().map(slot_of);
+        let slots = self.fields().iter().map(slot_of);
         quote! {
             fn visit_seq<__A: #serde::de::SeqAccess<'de>>(
                 self,
                 mut #seq: __A,
             ) -> ::core::result::Result<Self::Value, __A::Error> {
                 #(#elements)*
-                ::core::result::Result::Ok((#(#slots,)*))
+                ::core::result::Result::Ok(self.checked_value((#(#slots,)*)))
             }
         }
     }
@@ -327,29 +341,45 @@ impl<'a> DeserializeExpansion<'a> {
                         #unknown_field_arm
                     }
                 }
-                ::core::result::Result::Ok((#(#read_slots,)*))
+                ::core::result::Result::Ok(self.checked_value((#(#read_slots,)*)))
             }
         }
     }
 
-    fn read_fields(&self) -> TokenStream {
-        let Self {
-            serde, deserializer, ..
-        } = self;
-        let (_, type_generics, _) = self.input().generics.split_for_impl();
-        let turbofish = type_generics.as_turbofish();
-        let struct_name = &self.deserialized_struct.serde.name;
+    // Always inlined into `visit_map` and `visit_seq`: left a call taking every slot, reading a valid 8-field body
+    // without LTO ran 7987 instructions against 7918, and `serde_json::from_str` then `validate()` 7977. Emitting the
+    // checks in each instead would compile every `pattern` twice.
+    fn checked_value(&self) -> TokenStream {
+        let deserialized = &self.deserialized;
+        let Expansion { at, found, .. } = &self.rules;
+        let input = self.input();
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
         let fields = self.fields();
         let slots = fields.iter().map(slot_of);
+        let field_types = fields.iter().map(|field| field.field_type);
         let optional_slots = fields.iter().filter(|field| field.is_optional).map(slot_of);
+        let field_checks = self.field_checks();
+        let build = self.build();
+        let struct_checks = self.rules.struct_checks(
+            &self.deserialized_struct.validated,
+            &quote!(&#deserialized),
+            &quote!(#name #type_generics),
+        );
         quote! {
-            let (#(#slots,)*) = #serde::Deserializer::deserialize_struct(
-                #deserializer,
-                #struct_name,
-                __FIELDS,
-                __Visitor #turbofish { marker: ::core::marker::PhantomData },
-            )?;
-            #(let #optional_slots = ::core::option::Option::flatten(#optional_slots);)*
+            #[inline(always)]
+            fn checked_value(
+                self,
+                (#(#slots,)*): (#(::core::option::Option<#field_types>,)*),
+            ) -> ::core::option::Option<#name #type_generics> {
+                let #at = self.#at;
+                let #found = self.#found;
+                #(let #optional_slots = ::core::option::Option::flatten(#optional_slots);)*
+                #(#field_checks)*
+                #build
+                #(#struct_checks)*
+                ::core::option::Option::Some(#deserialized)
+            }
         }
     }
 
@@ -438,20 +468,17 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn build(&self) -> TokenStream {
         let deserialized = &self.deserialized;
-        let fields = self.fields();
-        let present_slots: Vec<_> = fields.iter().filter(|field| !field.is_optional).map(slot_of).collect();
-        let members = fields.iter().map(|field| field.member);
-        let slots = fields.iter().map(slot_of);
-        let present_values = (!present_slots.is_empty()).then(|| {
-            quote! {
-                let (#(::core::option::Option::Some(#present_slots),)*) = (#(#present_slots,)*) else {
-                    return ::core::result::Result::Ok(::core::option::Option::None);
-                };
+        let fields = self.fields().iter().map(|field| {
+            let member = field.member;
+            let slot = slot_of(field);
+            if field.is_optional {
+                return quote!(#member: #slot);
             }
+            quote!(#member: #slot?)
         });
+        let name = &self.input().ident;
         quote! {
-            #present_values
-            let #deserialized = Self { #(#members: #slots,)* };
+            let #deserialized = #name { #(#fields,)* };
         }
     }
 }
@@ -465,6 +492,19 @@ struct UnknownField {
 
 fn slot_of(field: &ValidatedField) -> Ident {
     format_ident!("{}_slot", field.member, span = Span::mixed_site())
+}
+
+fn with_lifetime(generics: &Generics, lifetime: &Lifetime) -> Generics {
+    let mut generics = generics.clone();
+    let position = generics
+        .params
+        .iter()
+        .take_while(|parameter| matches!(parameter, GenericParam::Lifetime(_)))
+        .count();
+    generics
+        .params
+        .insert(position, GenericParam::Lifetime(LifetimeParam::new(lifetime.clone())));
+    generics
 }
 
 fn type_and_const_parameters(generics: &Generics) -> Vec<&Ident> {

@@ -1,4 +1,4 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Group, Span, TokenStream, TokenTree};
 use quote::{format_ident, quote, quote_spanned};
 use syn::{Expr, Ident};
 
@@ -27,7 +27,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
         }
         expansion.field_checks(field, &value_of_field)
     });
-    let struct_checks = expansion.struct_checks(validated_struct, &quote!(self));
+    let struct_checks = expansion.struct_checks(validated_struct, &quote!(self), &quote!(Self));
     let input = validated_struct.input;
     let name = &input.ident;
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
@@ -244,12 +244,21 @@ impl Expansion {
         }
     }
 
-    pub fn struct_checks(&self, validated_struct: &ValidatedStruct, checked: &TokenStream) -> Vec<TokenStream> {
+    pub fn struct_checks(
+        &self,
+        validated_struct: &ValidatedStruct,
+        checked: &TokenStream,
+        checked_type: &TokenStream,
+    ) -> Vec<TokenStream> {
+        let checked = CheckedStruct {
+            value: checked,
+            value_type: checked_type,
+        };
         validated_struct
             .struct_checks
             .iter()
             .enumerate()
-            .map(|(position, check)| self.struct_check(validated_struct, position, check, checked))
+            .map(|(position, check)| self.struct_check(validated_struct, position, check, &checked))
             .collect()
     }
 
@@ -258,7 +267,7 @@ impl Expansion {
         validated_struct: &ValidatedStruct,
         position: usize,
         check: &StructCheck,
-        checked: &TokenStream,
+        checked: &CheckedStruct,
     ) -> TokenStream {
         let at = &self.at;
         let Some(field_index) = check.field else {
@@ -278,18 +287,47 @@ impl Expansion {
         quote!(let _ = #is_valid && #passes;)
     }
 
-    fn struct_rule_passes(&self, check: &StructCheck, checked: &TokenStream, reported_at: &TokenStream) -> TokenStream {
+    fn struct_rule_passes(
+        &self,
+        check: &StructCheck,
+        checked: &CheckedStruct,
+        reported_at: &TokenStream,
+    ) -> TokenStream {
         let StructCheck {
             check, message, span, ..
         } = check;
-        let outcome =
-            quote_spanned!(*span=> ::annotated::Rule::check(&::annotated::rules::custom::<Self, _>(#check), #checked));
+        let CheckedStruct { value, value_type } = checked;
+        let value_type = spanned(value_type, *span);
+        let outcome = quote_spanned!(*span=>
+            ::annotated::Rule::check(&::annotated::rules::custom::<#value_type, _>(#check), #value)
+        );
         self.passes_or_records(&outcome, reported_at, message.as_ref(), *span)
     }
 }
 
+struct CheckedStruct<'a> {
+    value: &'a TokenStream,
+    value_type: &'a TokenStream,
+}
+
 pub fn validity_of(field: &ValidatedField) -> Ident {
     format_ident!("{}_is_valid", field.member, span = Span::mixed_site())
+}
+
+fn spanned(tokens: &TokenStream, span: Span) -> TokenStream {
+    tokens
+        .clone()
+        .into_iter()
+        .map(|mut token| {
+            if let TokenTree::Group(group) = &token {
+                let mut respanned_group = Group::new(group.delimiter(), spanned(&group.stream(), span));
+                respanned_group.set_span(span);
+                return TokenTree::Group(respanned_group);
+            }
+            token.set_span(span);
+            token
+        })
+        .collect()
 }
 
 fn message_override(message: Option<&Expr>) -> TokenStream {

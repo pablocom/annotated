@@ -71,8 +71,16 @@ fn read_whole_document<'de, R: Read<'de>, T: Deserialize<'de>>(
     mut found: FoundViolations,
 ) -> Result<T, DeserializeError<serde_json::Error>> {
     let mut deserializer = serde_json::Deserializer::new(json);
-    let value =
-        T::deserialize_at(&mut deserializer, &Location::root(), &mut found).map_err(DeserializeError::Format)?;
-    deserializer.end().map_err(DeserializeError::Format)?;
-    deserialized_or_violations(value, found)
+    // Left where `deserialize_at` put it until it's answered: moved out before `end()`, the value was copied twice
+    // more, and reading a valid 8-field body without LTO took 5% longer.
+    let read = T::deserialize_at(&mut deserializer, &Location::root(), &mut found);
+    if read.is_ok()
+        && let Err(format_error) = deserializer.end()
+    {
+        return Err(DeserializeError::Format(format_error));
+    }
+    match read {
+        Ok(value) => deserialized_or_violations(value, found),
+        Err(format_error) => Err(DeserializeError::Format(format_error)),
+    }
 }
