@@ -17,7 +17,6 @@ mod pattern;
 mod range;
 mod required;
 mod text;
-#[cfg(feature = "url")]
 mod url;
 
 pub use custom::{Custom, custom};
@@ -30,5 +29,4 @@ pub use pattern::{Pattern, pattern};
 pub use range::{Range, range};
 pub use required::{Presence, Required, required};
 pub use text::{Contains, Prefix, Suffix, contains, prefix, suffix};
-#[cfg(feature = "url")]
 pub use url::{Url, url};

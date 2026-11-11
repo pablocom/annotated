@@ -53,6 +53,8 @@ struct NewMember {
     full_name: String,
     #[validate(length(min = 2))]
     nickname: Option<String>,
+    #[validate(url)]
+    website: String,
 }
 
 #[test]
@@ -60,6 +62,7 @@ fn validating_a_valid_value_by_its_derived_rules_allocates_nothing() {
     let member = NewMember {
         full_name: "Alex Morgan".to_owned(),
         nickname: Some("Al".to_owned()),
+        website: "https://example.com/alex".to_owned(),
     };
 
     let allocations = allocation_counter::measure(|| {

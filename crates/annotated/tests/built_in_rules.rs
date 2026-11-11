@@ -104,14 +104,12 @@ fn ipv6_checks_that_a_field_is_an_ipv6_address() {
     assert_eq!(violations_of(&contact), ["resolver: ipv6"]);
 }
 
-#[cfg(feature = "url")]
 #[derive(Validate)]
 struct Release {
     #[validate(url(schemes = &["ftp", "sftp"]))]
     download: String,
 }
 
-#[cfg(feature = "url")]
 #[test]
 fn url_takes_the_schemes_it_accepts_as_a_named_argument() {
     let release = Release {

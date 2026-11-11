@@ -13,16 +13,16 @@ categories = ["data-structures", "encoding", "rust-patterns"]
 [features]
 regex = ["dep:regex", "annotated-derive/regex"]
 unicode = ["dep:unicode-segmentation"]
-url = ["dep:url"]
 
 [dependencies]
 annotated-derive = { version = "=0.1.0", path = "../annotated-derive" }
 regex = { version = "1.13.1", optional = true }
 unicode-segmentation = { version = "1.13.3", optional = true }
-url = { version = "2.5.8", optional = true }
 
 [dev-dependencies]
 allocation-counter = "0.8.1"
+iri-string = "0.7.14"
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 trybuild = "1.0.122"
 
 [package.metadata.docs.rs]
