@@ -55,6 +55,9 @@ pub use validate::Validate;
 ///   `#[validate(report_all)]` on the struct reports every rule a field breaks instead.
 /// - On an `Option` field, `required` checks the `Option` itself; every other rule checks the value inside,
 ///   and is skipped when there is none.
+/// - `nested` validates a field whose type implements [`Validate`], under the field's name.
+/// - `each(...)` applies its rules to every element of a collection, at its index, or every value of a map, at
+///   its key: anything implementing [`rules::HasElements`]. `each(nested)` validates every element.
 /// - Fields are reported by the name serde reads them by, from `#[serde(...)]` attributes such as
 ///   `rename_all` and `rename`. The struct doesn't need to derive serde's traits.
 pub use annotated_derive::Validate;

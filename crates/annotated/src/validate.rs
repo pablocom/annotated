@@ -28,6 +28,10 @@ use crate::{FoundViolations, Location, Violations};
 /// let violations = new_password.validate().unwrap_err();
 /// assert_eq!(violations.to_string(), "repeatedPassword: must match the password");
 /// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` doesn't implement `Validate`",
+    note = "derive it with `#[derive(Validate)]`, or implement it by hand"
+)]
 pub trait Validate {
     /// Checks this value, found at the location `at`, and pushes every violation into `found`.
     fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations);

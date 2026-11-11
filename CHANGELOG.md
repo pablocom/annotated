@@ -16,3 +16,4 @@ Every change users of the crates can notice is listed here. The format follows [
 - The `contains`, `prefix` and `suffix` rules: a string containing, starting with or ending with a text.
 - The `custom` rule: any `Fn(&V) -> Result<(), Problem>` of your own, checking any value that borrows as a `V`, so a check of `&str` checks a `String` field.
 - The `pattern` rule, behind the `regex` feature: a string matching a regular expression. Written in `#[validate(...)]`, the expression is a string literal checked at compile time and compiled once, into a `static` at the field.
+- `nested`, which validates a field implementing `Validate` under the field's name, and `each(...)`, which applies its rules to every element of a collection at its index, or every value of a map at its key, through the `HasElements` capability trait. `each(nested)` validates every element, and `each` nests.

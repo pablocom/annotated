@@ -1,9 +1,12 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, Ident, Lit, Path, Type};
+use syn::{
+    Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, GenericArgument, Ident, Lit, Path,
+    PathArguments, Type, TypePath,
+};
 
-use crate::written_rule::{NamedArgument, WrittenRule, validate_attributes, written_rules};
+use crate::written_rule::{NamedArgument, RuleCall, WrittenRule, validate_attributes, written_rules};
 use crate::{pattern, serde_names};
 
 pub struct ValidatedStruct<'a> {
@@ -19,7 +22,19 @@ pub struct ValidatedField<'a> {
     pub rules: Vec<FieldRule>,
 }
 
-pub struct FieldRule {
+pub enum FieldRule {
+    Check(RuleCheck),
+    Nested {
+        span: Span,
+    },
+    Each {
+        element_rules: Vec<FieldRule>,
+        are_elements_optional: bool,
+        span: Span,
+    },
+}
+
+pub struct RuleCheck {
     pub rule: TokenStream,
     pub is_required: bool,
     pub message: Option<Expr>,
@@ -71,54 +86,106 @@ impl<'a> ValidatedField<'a> {
         let member = field.ident.as_ref().expect("a named field has a name");
         let rules = written_rules(&field.attrs)?
             .into_iter()
-            .map(FieldRule::from_written)
+            .map(|written| FieldRule::from_written(written, Some(&field.ty)))
             .collect::<syn::Result<_>>()?;
         Ok(Self {
             member,
             name,
-            is_optional: is_option(&field.ty),
+            is_optional: option_content(&field.ty).is_some(),
             rules,
         })
     }
 }
 
-fn is_option(field_type: &Type) -> bool {
-    let Type::Path(type_path) = field_type else {
-        return false;
+fn option_content(checked_type: &Type) -> Option<&Type> {
+    let Type::Path(type_path) = checked_type else {
+        return None;
     };
-    type_path
-        .path
-        .segments
-        .last()
-        .is_some_and(|segment| segment.ident == "Option")
+    let last_segment = type_path.path.segments.last()?;
+    if last_segment.ident != "Option" {
+        return None;
+    }
+    last_type_argument(type_path)
+}
+
+fn element_type(collection: &Type) -> Option<&Type> {
+    match collection {
+        Type::Array(array) => Some(&array.elem),
+        Type::Path(type_path) => last_type_argument(type_path),
+        _ => None,
+    }
+}
+
+fn last_type_argument(type_path: &TypePath) -> Option<&Type> {
+    let PathArguments::AngleBracketed(arguments) = &type_path.path.segments.last()?.arguments else {
+        return None;
+    };
+    arguments
+        .args
+        .iter()
+        .filter_map(|argument| match argument {
+            GenericArgument::Type(argument) => Some(argument),
+            _ => None,
+        })
+        .next_back()
 }
 
 impl FieldRule {
-    fn from_written(written: WrittenRule) -> syn::Result<Self> {
-        let rule_name = &written.path.segments.last().expect("a path has a segment").ident;
+    fn from_written(written: WrittenRule, checked_type: Option<&Type>) -> syn::Result<Self> {
+        match written {
+            WrittenRule::Each { span, element_rules } => Self::each(element_rules, checked_type, span),
+            WrittenRule::Call(call) if call.path.is_ident("nested") => Self::nested(&call),
+            WrittenRule::Call(call) => Ok(Self::Check(RuleCheck::from_call(*call)?)),
+        }
+    }
+
+    fn each(element_rules: Vec<WrittenRule>, checked_type: Option<&Type>, span: Span) -> syn::Result<Self> {
+        let collection = checked_type.map(|checked_type| option_content(checked_type).unwrap_or(checked_type));
+        let element = collection.and_then(element_type);
+        Ok(Self::Each {
+            element_rules: element_rules
+                .into_iter()
+                .map(|written| Self::from_written(written, element))
+                .collect::<syn::Result<_>>()?,
+            are_elements_optional: element.and_then(option_content).is_some(),
+            span,
+        })
+    }
+
+    fn nested(call: &RuleCall) -> syn::Result<Self> {
+        if call.has_arguments() {
+            return Err(Error::new_spanned(&call.path, "`nested` takes no arguments"));
+        }
+        Ok(Self::Nested { span: call.path.span() })
+    }
+}
+
+impl RuleCheck {
+    fn from_call(call: RuleCall) -> syn::Result<Self> {
+        let rule_name = &call.path.segments.last().expect("a path has a segment").ident;
         let span = rule_name.span();
-        let constructor = match written.path.get_ident() {
-            Some(built_in) => quote_spanned!(span=> ::annotated::rules::#built_in),
-            None => written.path.to_token_stream(),
-        };
-        let constructor_value = &written.value;
-        if written.path.is_ident("pattern") {
+        if call.path.is_ident("pattern") {
             return Ok(Self {
-                rule: pattern::pattern_rule(&written, span)?,
+                rule: pattern::pattern_rule(&call, span)?,
                 is_required: false,
-                message: written.message,
+                message: call.message,
                 span,
             });
         }
-        let builder_calls = written
+        let constructor = match call.path.get_ident() {
+            Some(built_in) => quote_spanned!(span=> ::annotated::rules::#built_in),
+            None => call.path.to_token_stream(),
+        };
+        let constructor_value = &call.value;
+        let builder_calls = call
             .builder_arguments
             .iter()
-            .map(|argument| builder_call(&written.path, argument))
+            .map(|argument| builder_call(&call.path, argument))
             .collect::<syn::Result<Vec<_>>>()?;
         Ok(Self {
             rule: quote_spanned!(span=> #constructor(#constructor_value) #(#builder_calls)*),
-            is_required: written.path.is_ident("required"),
-            message: written.message,
+            is_required: call.path.is_ident("required"),
+            message: call.message,
             span,
         })
     }

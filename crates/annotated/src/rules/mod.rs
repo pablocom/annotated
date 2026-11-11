@@ -8,6 +8,7 @@
 //! own types once those implement them.
 
 mod custom;
+mod elements;
 mod email;
 mod ip;
 mod length;
@@ -20,6 +21,7 @@ mod text;
 mod url;
 
 pub use custom::{Custom, custom};
+pub use elements::HasElements;
 pub use email::{Email, email};
 pub use ip::{Ip, ip};
 pub use length::{HasLength, Length, StringLength, length};

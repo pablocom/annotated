@@ -1,0 +1,5 @@
+error: `message` goes on the rules inside `each`, not on `each` itself
+ --> tests/ui/message_on_each.rs:5:39
+  |
+5 |     #[validate(each(length(max = 10), message = "keep tags short"))]
+  |                                       ^^^^^^^

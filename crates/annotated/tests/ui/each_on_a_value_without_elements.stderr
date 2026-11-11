@@ -1,0 +1,18 @@
+error[E0277]: `each` can't go through the elements of `u8`
+ --> tests/ui/each_on_a_value_without_elements.rs:3:10
+  |
+3 | #[derive(Validate)]
+  |          ^^^^^^^^ `u8` doesn't implement `annotated::rules::HasElements`
+4 | struct Post {
+5 |     #[validate(each(length(max = 10)))]
+  |                ---- required by a bound introduced by this call
+  |
+  = help: the trait `HasElements` is not implemented for `u8`
+  = note: implement `annotated::rules::HasElements` for `u8` to say what its elements are
+  = help: the following other types implement trait `HasElements`:
+            BTreeMap<K, V>
+            HashMap<K, V, S>
+            Vec<T>
+            VecDeque<T>
+            [T; N]
+            [T]

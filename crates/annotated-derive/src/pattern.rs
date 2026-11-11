@@ -2,10 +2,10 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 use syn::{Error, Expr, ExprLit, Lit, LitStr};
 
-use crate::written_rule::WrittenRule;
+use crate::written_rule::RuleCall;
 
-pub fn pattern_rule(written: &WrittenRule, span: Span) -> syn::Result<TokenStream> {
-    let expression = regular_expression(written, span)?;
+pub fn pattern_rule(call: &RuleCall, span: Span) -> syn::Result<TokenStream> {
+    let expression = regular_expression(call, span)?;
     check_regular_expression(expression, span)?;
     Ok(quote_spanned! {span=>
         {
@@ -19,12 +19,12 @@ pub fn pattern_rule(written: &WrittenRule, span: Span) -> syn::Result<TokenStrea
     })
 }
 
-fn regular_expression(written: &WrittenRule, span: Span) -> syn::Result<&LitStr> {
-    match &written.value {
+fn regular_expression(call: &RuleCall, span: Span) -> syn::Result<&LitStr> {
+    match &call.value {
         Some(Expr::Lit(ExprLit {
             lit: Lit::Str(expression),
             ..
-        })) if written.builder_arguments.is_empty() => Ok(expression),
+        })) if call.builder_arguments.is_empty() => Ok(expression),
         _ => Err(Error::new(
             span,
             r#"`pattern` takes its regular expression as a string literal: `pattern = r"..."`"#,

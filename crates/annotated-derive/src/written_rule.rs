@@ -1,8 +1,18 @@
+use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{Attribute, Error, Expr, Ident, Path, Token, parenthesized, token};
 
-pub struct WrittenRule {
+pub enum WrittenRule {
+    Each {
+        span: Span,
+        element_rules: Vec<WrittenRule>,
+    },
+    Call(Box<RuleCall>),
+}
+
+pub struct RuleCall {
     pub path: Path,
     pub value: Option<Expr>,
     pub builder_arguments: Vec<NamedArgument>,
@@ -33,7 +43,60 @@ pub fn validate_attributes(attributes: &[Attribute]) -> impl Iterator<Item = &At
         .filter(|attribute| attribute.path().is_ident("validate"))
 }
 
-impl WrittenRule {
+impl Parse for WrittenRule {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path = input.call(Path::parse_mod_style)?;
+        if path.is_ident("each") {
+            return Ok(Self::Each {
+                span: path.span(),
+                element_rules: element_rules(&path, input)?,
+            });
+        }
+        Ok(Self::Call(Box::new(RuleCall::parse_after(path, input)?)))
+    }
+}
+
+fn element_rules(each: &Path, input: ParseStream) -> syn::Result<Vec<WrittenRule>> {
+    if !input.peek(token::Paren) {
+        return Err(Error::new_spanned(
+            each,
+            "`each` takes the rules for every element in parentheses: `each(...)`",
+        ));
+    }
+    let element_rules;
+    parenthesized!(element_rules in input);
+    let element_rules = Punctuated::<WrittenRule, Token![,]>::parse_terminated(&element_rules)?;
+    for element_rule in &element_rules {
+        if let WrittenRule::Call(call) = element_rule
+            && call.path.is_ident("message")
+        {
+            return Err(Error::new_spanned(
+                &call.path,
+                "`message` goes on the rules inside `each`, not on `each` itself",
+            ));
+        }
+    }
+    Ok(element_rules.into_iter().collect())
+}
+
+impl RuleCall {
+    fn parse_after(path: Path, input: ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            return Ok(Self {
+                value: Some(input.parse()?),
+                ..Self::without_arguments(path)
+            });
+        }
+        if !input.peek(token::Paren) {
+            return Ok(Self::without_arguments(path));
+        }
+        let arguments;
+        parenthesized!(arguments in input);
+        let arguments = Punctuated::<Argument, Token![,]>::parse_terminated(&arguments)?;
+        Self::from_arguments(path, arguments)
+    }
+
     fn without_arguments(path: Path) -> Self {
         Self {
             path,
@@ -63,25 +126,9 @@ impl WrittenRule {
         }
         Ok(rule)
     }
-}
 
-impl Parse for WrittenRule {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let path = input.call(Path::parse_mod_style)?;
-        if input.peek(Token![=]) {
-            input.parse::<Token![=]>()?;
-            return Ok(Self {
-                value: Some(input.parse()?),
-                ..Self::without_arguments(path)
-            });
-        }
-        if !input.peek(token::Paren) {
-            return Ok(Self::without_arguments(path));
-        }
-        let arguments;
-        parenthesized!(arguments in input);
-        let arguments = Punctuated::<Argument, Token![,]>::parse_terminated(&arguments)?;
-        Self::from_arguments(path, arguments)
+    pub fn has_arguments(&self) -> bool {
+        self.value.is_some() || !self.builder_arguments.is_empty() || self.message.is_some()
     }
 }
 

@@ -1,0 +1,11 @@
+error: `each` takes the rules for every element in parentheses: `each(...)`
+ --> tests/ui/each_without_rules.rs:5:16
+  |
+5 |     #[validate(each)]
+  |                ^^^^
+
+error: `each` takes the rules for every element in parentheses: `each(...)`
+  --> tests/ui/each_without_rules.rs:11:16
+   |
+11 |     #[validate(each = length)]
+   |                ^^^^
