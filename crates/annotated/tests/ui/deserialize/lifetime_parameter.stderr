@@ -1,0 +1,5 @@
+error: `Deserialize` can't be derived for a struct with lifetime parameters: borrowing from the input isn't supported
+ --> tests/ui/deserialize/lifetime_parameter.rs:4:18
+  |
+4 | struct NewMember<'a> {
+  |                  ^^

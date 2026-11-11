@@ -1,4 +1,5 @@
-//! Validating a valid value allocates nothing, and finding a violation allocates little.
+//! Validating a valid value allocates nothing, deserializing one allocates only what its fields hold, and finding
+//! a violation allocates little.
 
 use std::hint::black_box;
 
@@ -137,6 +138,34 @@ fn validating_a_valid_value_by_its_struct_level_rules_allocates_nothing() {
     });
 
     assert_eq!(allocations.count_total, 0);
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct SignUp {
+    #[validate(required, length(max = 50))]
+    full_name: String,
+    #[validate(length(min = 2))]
+    nickname: Option<String>,
+    #[validate(email)]
+    email: String,
+    #[validate(range(min = 18))]
+    age: u8,
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_a_valid_value_allocates_only_its_three_strings() {
+    let body = r#"{ "fullName": "Alex Morgan", "nickname": "Al", "email": "alex@example.com", "age": 30 }"#;
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(annotated::from_deserializer::<SignUp, _>(&mut deserializer));
+    });
+
+    assert_eq!(allocations.count_total, 3);
 }
 
 #[test]

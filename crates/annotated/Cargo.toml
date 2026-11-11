@@ -26,8 +26,9 @@ unicode-segmentation = { version = "1.13.3", optional = true }
 allocation-counter = "0.8.1"
 iri-string = "0.7.14"
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
-serde = "1.0.229"
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_test = "1.0.177"
 trybuild = "1.0.122"
 
 [package.metadata.docs.rs]

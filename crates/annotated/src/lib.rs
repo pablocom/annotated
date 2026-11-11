@@ -4,6 +4,10 @@
 //! each a [`Problem`] at the [`Path`] where it happened, or with [`Validate::validate_fail_fast`], which
 //! answers only the first violation: the first that `validate` answers. Fields are reported by the names
 //! serde reads them by.
+//!
+//! With the `serde` feature, on by default, `#[derive(Deserialize)]` checks a struct as it is deserialized:
+//! [`from_deserializer`] answers every missing field and broken rule together, and serde's own `Deserialize`
+//! refuses a struct breaking its rules with every violation in its error's message.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -112,5 +116,51 @@ pub use validate::Validate;
 /// assert_eq!(new_password.validate().unwrap_err().to_string(), "repeatedPassword: must match the password");
 /// ```
 pub use annotated_derive::Validate;
+
+/// Implements [`Deserialize`](trait@Deserialize), and serde's own `Deserialize` through it, for a struct with
+/// named fields: deserializing it reports every missing field and broken rule together.
+///
+/// ```
+/// use annotated::Deserialize;
+///
+/// #[derive(Deserialize, Debug)]
+/// #[serde(rename_all = "camelCase")]
+/// struct NewMember {
+///     #[validate(required, length(max = 50))]
+///     full_name: String,
+///     #[validate(email)]
+///     email: String,
+/// }
+///
+/// let mut body = serde_json::Deserializer::from_str(r#"{ "fullName": "  " }"#);
+/// let error = annotated::from_deserializer::<NewMember, _>(&mut body).unwrap_err();
+///
+/// assert_eq!(error.to_string(), "fullName: is required\nemail: is missing");
+/// ```
+///
+/// The struct is read as serde's derive would read it, by the names it gives the struct and its fields. It
+/// takes these `#[serde(...)]` attributes: `rename_all`, `rename`, `deny_unknown_fields` and `expecting` on
+/// the struct, and `rename` and `alias` on a field. Any other is refused at compile time, as is a struct with
+/// lifetime parameters. `#[annotated(...)]` takes no options yet. Unknown fields are ignored, unless the struct
+/// denies them, and a field given twice, an unknown field denied or a value of the wrong type is the format's
+/// error, which ends deserialization.
+///
+/// Once the input is read to its end, every field is checked in the order the struct declares them:
+///
+/// - A field absent from the input is [`Problem::Missing`], at its name. An `Option` field is `None` instead,
+///   as with serde, and `required` on it reports [`Problem::Required`].
+/// - A field that came is checked by its `#[validate(...)]` rules exactly as [`Validate`] checks it, so for
+///   input with every field there, the same violations are reported in the same order as deserializing with
+///   serde, then validating.
+/// - Struct-level rules run last, as with [`Validate`], once every field came; when one is missing they are
+///   skipped, since there is no struct to check.
+///
+/// [`from_deserializer_fail_fast`] answers only the first violation: the first that [`from_deserializer`]
+/// answers. No rule runs after it, but the input is still read to its end, since a field is known to be
+/// missing only then.
+///
+/// Fields checked with `nested` or `each(nested)` aren't supported yet.
+#[cfg(feature = "serde")]
+pub use annotated_derive::Deserialize;
 pub use violation::Violation;
 pub use violations::Violations;

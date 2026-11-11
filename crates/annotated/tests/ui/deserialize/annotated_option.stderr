@@ -1,0 +1,11 @@
+error: `#[annotated(...)]` takes no options yet
+ --> tests/ui/deserialize/annotated_option.rs:4:13
+  |
+4 | #[annotated(collect_type_errors)]
+  |             ^^^^^^^^^^^^^^^^^^^
+
+error: `#[annotated(...)]` takes no options yet
+  --> tests/ui/deserialize/annotated_option.rs:12:17
+   |
+12 |     #[annotated(collect_type_errors)]
+   |                 ^^^^^^^^^^^^^^^^^^^

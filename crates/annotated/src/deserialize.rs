@@ -5,9 +5,9 @@ use crate::{DeserializeError, FoundViolations, Location};
 /// A value that is deserialized collecting the violations in it: missing fields and broken rules together,
 /// instead of stopping at the first.
 ///
-/// `#[derive(Deserialize)]` implements it, and serde's own `Deserialize` through it, for a struct with rules
-/// on its fields. It can also be implemented by hand: [`Deserialize::deserialize_at`] reads the value found at
-/// the location `at` and pushes every violation in it into `found`. It answers:
+/// [`#[derive(Deserialize)]`](macro@crate::Deserialize) implements it, and serde's own `Deserialize` through it,
+/// for a struct with rules on its fields. It can also be implemented by hand: [`Deserialize::deserialize_at`]
+/// reads the value found at the location `at` and pushes every violation in it into `found`. It answers:
 ///
 /// - `Ok(Some(value))` when the value could be built, though rules in it may have broken: those are in
 ///   `found`.

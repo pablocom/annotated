@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{
-    Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, GenericArgument, Ident, Lit, Path,
+    Attribute, Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, GenericArgument, Ident, Lit, Path,
     PathArguments, Type, TypePath,
 };
 
@@ -27,6 +27,8 @@ pub struct StructCheck {
 
 pub struct ValidatedField<'a> {
     pub member: &'a Ident,
+    pub field_type: &'a Type,
+    pub attributes: &'a [Attribute],
     pub name: String,
     pub is_optional: bool,
     pub rules: Vec<FieldRule>,
@@ -52,7 +54,7 @@ pub struct RuleCheck {
 }
 
 impl<'a> ValidatedStruct<'a> {
-    pub fn from_input(input: &'a DeriveInput) -> syn::Result<Self> {
+    pub fn from_input(input: &'a DeriveInput, derive: &str) -> syn::Result<Self> {
         let Data::Struct(DataStruct {
             fields: Fields::Named(fields),
             ..
@@ -60,7 +62,7 @@ impl<'a> ValidatedStruct<'a> {
         else {
             return Err(Error::new_spanned(
                 &input.ident,
-                "`Validate` can only be derived for a struct with named fields",
+                format!("`{derive}` can only be derived for a struct with named fields"),
             ));
         };
         let fields = fields
@@ -135,6 +137,8 @@ impl<'a> ValidatedField<'a> {
             .collect::<syn::Result<_>>()?;
         Ok(Self {
             member,
+            field_type: &field.ty,
+            attributes: &field.attrs,
             name,
             is_optional: option_content(&field.ty).is_some(),
             rules,

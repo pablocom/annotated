@@ -1,0 +1,11 @@
+error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, `deny_unknown_fields` and `expecting`
+ --> tests/ui/deserialize/unsupported_serde_attribute.rs:4:35
+  |
+4 | #[serde(rename_all = "camelCase", default)]
+  |                                   ^^^^^^^
+
+error: with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename` and `alias`
+  --> tests/ui/deserialize/unsupported_serde_attribute.rs:12:30
+   |
+12 |     #[serde(alias = "title", skip)]
+   |                              ^^^^

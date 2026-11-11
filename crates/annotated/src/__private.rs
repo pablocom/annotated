@@ -1,5 +1,7 @@
 #[cfg(feature = "regex")]
 pub use regex::Regex;
+#[cfg(feature = "serde")]
+pub use serde;
 
 use crate::{FoundViolations, Location, Problem};
 
@@ -17,4 +19,18 @@ pub fn record_violation(
         Some(message) => found.push_with_message(at, problem, message),
         None => found.push(at, problem),
     }
+}
+
+#[cfg(feature = "serde")]
+pub fn deserialize_for_serde<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: crate::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error as _;
+
+    crate::from_deserializer(deserializer).map_err(|error| match error {
+        crate::DeserializeError::Violations(violations) => D::Error::custom(violations),
+        crate::DeserializeError::Format(format_error) => format_error,
+    })
 }

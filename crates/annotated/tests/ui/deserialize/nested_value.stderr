@@ -1,0 +1,11 @@
+error: `#[derive(Deserialize)]` can't read a value checked with `nested` yet
+  --> tests/ui/deserialize/nested_value.rs:11:16
+   |
+11 |     #[validate(nested)]
+   |                ^^^^^^
+
+error: `#[derive(Deserialize)]` can't read a value checked with `nested` yet
+  --> tests/ui/deserialize/nested_value.rs:17:39
+   |
+17 |     #[validate(length(max = 10), each(nested))]
+   |                                       ^^^^^^

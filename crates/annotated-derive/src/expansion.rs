@@ -5,11 +5,11 @@ use syn::{Expr, Ident};
 use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField, ValidatedStruct};
 
 #[derive(Clone)]
-struct Expansion {
-    at: Ident,
-    found: Ident,
+pub struct Expansion {
+    pub at: Ident,
+    pub found: Ident,
     element_at: Ident,
-    value: Ident,
+    pub value: Ident,
     problem: Ident,
     found_before: Ident,
     is_reporting_all: bool,
@@ -42,7 +42,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
 }
 
 impl Expansion {
-    fn new(is_reporting_all: bool, stop: TokenStream) -> Self {
+    pub fn new(is_reporting_all: bool, stop: TokenStream) -> Self {
         let local = |name| Ident::new(name, Span::mixed_site());
         Self {
             at: local("at"),
@@ -63,18 +63,18 @@ impl Expansion {
         }
     }
 
-    fn keeps_validity_of(&self, validated_struct: &ValidatedStruct, field: usize) -> bool {
+    pub fn keeps_validity_of(&self, validated_struct: &ValidatedStruct, field: usize) -> bool {
         !self.is_reporting_all && validated_struct.is_checked_by_a_struct_rule(field)
     }
 
-    fn field_checks(&self, field: &ValidatedField, value_of_field: &TokenStream) -> TokenStream {
+    pub fn field_checks(&self, field: &ValidatedField, value_of_field: &TokenStream) -> TokenStream {
         if field.rules.is_empty() {
             return TokenStream::new();
         }
         self.with_value(value_of_field, &self.field_rule_checks(field))
     }
 
-    fn field_validity(&self, field: &ValidatedField, value_of_field: &TokenStream) -> TokenStream {
+    pub fn field_validity(&self, field: &ValidatedField, value_of_field: &TokenStream) -> TokenStream {
         let is_valid = validity_of(field);
         if field.rules.is_empty() {
             return quote!(let #is_valid = true;);
@@ -83,11 +83,11 @@ impl Expansion {
         quote!(let #is_valid = #checks;)
     }
 
-    fn field_rule_checks(&self, field: &ValidatedField) -> TokenStream {
+    pub fn field_rule_checks(&self, field: &ValidatedField) -> TokenStream {
         self.checks(&field.rules, field.is_optional, &self.field_location(field))
     }
 
-    fn field_passes_every_rule(&self, field: &ValidatedField) -> TokenStream {
+    pub fn field_passes_every_rule(&self, field: &ValidatedField) -> TokenStream {
         self.passes_every_rule(&field.rules, field.is_optional, &self.field_location(field))
     }
 
@@ -101,7 +101,7 @@ impl Expansion {
         }
     }
 
-    fn field_location(&self, field: &ValidatedField) -> TokenStream {
+    pub fn field_location(&self, field: &ValidatedField) -> TokenStream {
         let at = &self.at;
         let name = &field.name;
         quote!(&#at.field(#name))
@@ -235,7 +235,7 @@ impl Expansion {
         }
     }
 
-    fn stop_if_finished(&self) -> TokenStream {
+    pub fn stop_if_finished(&self) -> TokenStream {
         let Self { found, stop, .. } = self;
         quote! {
             if #found.is_finished() {
@@ -244,7 +244,7 @@ impl Expansion {
         }
     }
 
-    fn struct_checks(&self, validated_struct: &ValidatedStruct, checked: &TokenStream) -> Vec<TokenStream> {
+    pub fn struct_checks(&self, validated_struct: &ValidatedStruct, checked: &TokenStream) -> Vec<TokenStream> {
         validated_struct
             .struct_checks
             .iter()
@@ -288,7 +288,7 @@ impl Expansion {
     }
 }
 
-fn validity_of(field: &ValidatedField) -> Ident {
+pub fn validity_of(field: &ValidatedField) -> Ident {
     format_ident!("{}_is_valid", field.member, span = Span::mixed_site())
 }
 
