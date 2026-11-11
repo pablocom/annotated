@@ -66,8 +66,10 @@ pub use validate::Validate;
 /// `#[validate(custom(check))]` on the struct checks the whole struct with any `Fn(&Self) -> Result<(),
 /// Problem>`, and reports at the struct's own location: the root, or the field it is `nested` under.
 /// `custom(check, field = name)` reports at that field instead, by its serde name, and `message = "..."`
-/// replaces the problem's message. Struct-level rules are checked after every field, each of them, in the
-/// order written, beside `report_all` in the same or another `#[validate(...)]`.
+/// replaces the problem's message. Struct-level rules are checked after every field, in the order written,
+/// beside `report_all` in the same or another `#[validate(...)]`. One at a field counts as that field's last
+/// rule: it is skipped once the field has a violation, and the first one there that fails stops the later
+/// ones, unless the struct has `report_all`. One at the struct itself always runs.
 ///
 /// ```
 /// use annotated::{Problem, Validate};

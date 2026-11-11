@@ -20,7 +20,7 @@ pub struct ValidatedStruct<'a> {
 
 pub struct StructCheck {
     pub check: Expr,
-    pub field_name: Option<String>,
+    pub field: Option<usize>,
     pub message: Option<Expr>,
     pub span: Span,
 }
@@ -87,31 +87,43 @@ impl<'a> ValidatedStruct<'a> {
     }
 }
 
+impl ValidatedStruct<'_> {
+    pub fn is_checked_by_a_struct_rule(&self, field: usize) -> bool {
+        self.struct_checks.iter().any(|check| check.field == Some(field))
+    }
+
+    pub fn is_checked_by_a_later_struct_rule(&self, field: usize, position: usize) -> bool {
+        self.struct_checks[position + 1..]
+            .iter()
+            .any(|check| check.field == Some(field))
+    }
+}
+
 impl StructCheck {
     fn from_custom(custom: StructCustom, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<Self> {
-        let field_name = custom
+        let field = custom
             .field
-            .map(|field| serde_name_of(&field, struct_name, fields))
+            .map(|field| position_of(&field, struct_name, fields))
             .transpose()?;
         Ok(Self {
             check: custom.check,
-            field_name,
+            field,
             message: custom.message,
             span: custom.span,
         })
     }
 }
 
-fn serde_name_of(field: &Expr, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<String> {
-    let named_field = fields
+fn position_of(field: &Expr, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<usize> {
+    fields
         .iter()
-        .find(|validated| matches!(field, Expr::Path(path) if path.path.is_ident(validated.member)));
-    named_field.map(|validated| validated.name.clone()).ok_or_else(|| {
-        Error::new_spanned(
-            field,
-            format!("`{struct_name}` has no field `{}`", field.to_token_stream()),
-        )
-    })
+        .position(|validated| matches!(field, Expr::Path(path) if path.path.is_ident(validated.member)))
+        .ok_or_else(|| {
+            Error::new_spanned(
+                field,
+                format!("`{struct_name}` has no field `{}`", field.to_token_stream()),
+            )
+        })
 }
 
 impl<'a> ValidatedField<'a> {

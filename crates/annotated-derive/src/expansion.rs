@@ -1,5 +1,5 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
 use syn::{Expr, Ident};
 
 use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField, ValidatedStruct};
@@ -16,15 +16,17 @@ struct Expansion {
 pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
     let expansion = Expansion::new(validated_struct.is_reporting_all);
     let Expansion { at, found, .. } = &expansion;
-    let field_checks = validated_struct
-        .fields
-        .iter()
-        .filter(|field| !field.rules.is_empty())
-        .map(|field| expansion.field_checks(field));
+    let field_checks = validated_struct.fields.iter().enumerate().map(|(index, field)| {
+        if expansion.is_reporting_all || !validated_struct.is_checked_by_a_struct_rule(index) {
+            return expansion.field_checks(field);
+        }
+        expansion.field_validity(field)
+    });
     let struct_checks = validated_struct
         .struct_checks
         .iter()
-        .map(|check| expansion.struct_check(check));
+        .enumerate()
+        .map(|(position, check)| expansion.struct_check(validated_struct, position, check));
     let input = validated_struct.input;
     let name = &input.ident;
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
@@ -52,11 +54,28 @@ impl Expansion {
     }
 
     fn field_checks(&self, field: &ValidatedField) -> TokenStream {
+        if field.rules.is_empty() {
+            return TokenStream::new();
+        }
+        let checks = self.checks(&field.rules, field.is_optional);
+        self.at_field(field, &checks)
+    }
+
+    fn field_validity(&self, field: &ValidatedField) -> TokenStream {
+        let is_valid = validity_of(field);
+        if field.rules.is_empty() {
+            return quote!(let #is_valid = true;);
+        }
+        let passes_every_rule = self.passes_every_rule(&field.rules, field.is_optional);
+        let checks = self.at_field(field, &passes_every_rule);
+        quote!(let #is_valid = #checks;)
+    }
+
+    fn at_field(&self, field: &ValidatedField, checks: &TokenStream) -> TokenStream {
         let Self {
             at, field_at, value, ..
         } = self;
         let ValidatedField { member, name, .. } = field;
-        let checks = self.checks(&field.rules, field.is_optional);
         quote! {
             {
                 let #field_at = #at.field(#name);
@@ -67,11 +86,17 @@ impl Expansion {
     }
 
     fn checks(&self, rules: &[FieldRule], is_value_optional: bool) -> TokenStream {
-        let checks = rules.iter().map(|rule| self.rule_check(rule, is_value_optional));
         if self.is_reporting_all {
+            let checks = rules.iter().map(|rule| self.rule_check(rule, is_value_optional));
             return quote!(#(#checks;)*);
         }
-        quote!(let _ = #(#checks)&&*;)
+        let passes_every_rule = self.passes_every_rule(rules, is_value_optional);
+        quote!(let _ = #passes_every_rule;)
+    }
+
+    fn passes_every_rule(&self, rules: &[FieldRule], is_value_optional: bool) -> TokenStream {
+        let checks = rules.iter().map(|rule| self.rule_check(rule, is_value_optional));
+        quote!(#(#checks)&&*)
     }
 
     fn rule_check(&self, rule: &FieldRule, is_value_optional: bool) -> TokenStream {
@@ -147,29 +172,44 @@ impl Expansion {
         }
     }
 
-    fn struct_check(&self, check: &StructCheck) -> TokenStream {
-        let Self { at, found, .. } = self;
-        let StructCheck {
-            check,
-            field_name,
-            message,
-            span,
-        } = check;
-        let reported_at = if let Some(field_name) = field_name {
-            quote!(&#at.field(#field_name))
-        } else {
-            quote!(#at)
+    fn struct_check(&self, validated_struct: &ValidatedStruct, position: usize, check: &StructCheck) -> TokenStream {
+        let at = &self.at;
+        let Some(field_index) = check.field else {
+            let passes = self.struct_rule_passes(check, &quote!(#at));
+            return quote!(let _ = #passes;);
         };
+        let field = &validated_struct.fields[field_index];
+        let field_name = &field.name;
+        let passes = self.struct_rule_passes(check, &quote!(&#at.field(#field_name)));
+        if self.is_reporting_all {
+            return quote!(let _ = #passes;);
+        }
+        let is_valid = validity_of(field);
+        if validated_struct.is_checked_by_a_later_struct_rule(field_index, position) {
+            return quote!(let #is_valid = #is_valid && #passes;);
+        }
+        quote!(let _ = #is_valid && #passes;)
+    }
+
+    fn struct_rule_passes(&self, check: &StructCheck, reported_at: &TokenStream) -> TokenStream {
+        let found = &self.found;
+        let StructCheck {
+            check, message, span, ..
+        } = check;
         let message = message_override(message.as_ref());
         quote_spanned! {*span=>
-            let _ = ::annotated::__private::passes(
+            ::annotated::__private::passes(
                 ::annotated::Rule::check(&::annotated::rules::custom::<Self, _>(#check), self),
                 #reported_at,
                 #found,
                 #message,
-            );
+            )
         }
     }
+}
+
+fn validity_of(field: &ValidatedField) -> Ident {
+    format_ident!("{}_is_valid", field.member, span = Span::mixed_site())
 }
 
 fn message_override(message: Option<&Expr>) -> TokenStream {

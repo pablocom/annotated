@@ -18,6 +18,7 @@ fn passwords_match(new_password: &NewPassword) -> Result<(), Problem> {
 struct NewPassword {
     #[validate(length(min = 8))]
     password: String,
+    #[validate(required)]
     repeated_password: String,
 }
 
@@ -56,7 +57,17 @@ fn struct_level_rules_are_checked_after_every_field() {
     );
 }
 
-fn ends_after_it_starts(stay: &Stay) -> Result<(), Problem> {
+#[test]
+fn a_struct_level_rule_at_a_field_is_skipped_when_the_field_breaks_its_own_rules() {
+    let new_password = NewPassword {
+        repeated_password: String::new(),
+        ..new_password()
+    };
+
+    assert_eq!(violations_of(&new_password), ["repeatedPassword: required"]);
+}
+
+fn last_night_follows_the_first(stay: &Stay) -> Result<(), Problem> {
     if stay.last_night < stay.first_night {
         return Err(Problem::custom("ends_before_it_starts", "must end after it starts"));
     }
@@ -64,7 +75,7 @@ fn ends_after_it_starts(stay: &Stay) -> Result<(), Problem> {
 }
 
 #[derive(Validate)]
-#[validate(custom(ends_after_it_starts))]
+#[validate(custom(last_night_follows_the_first))]
 struct Stay {
     first_night: u16,
     last_night: u16,
@@ -146,15 +157,49 @@ fn a_struct_level_rule_of_a_nested_struct_naming_a_field_reports_under_the_neste
     );
 }
 
-fn ends_after_it_starts_playing(concert: &Concert) -> Result<(), Problem> {
-    if concert.ends_at <= concert.starts_at {
+fn second_stay_follows_the_first(trip: &Trip) -> Result<(), Problem> {
+    if trip.second_stay.first_night <= trip.first_stay.last_night {
+        return Err(Problem::custom("stays_overlap", "must start after the first stay ends"));
+    }
+    Ok(())
+}
+
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+#[validate(custom(second_stay_follows_the_first, field = second_stay))]
+struct Trip {
+    #[validate(nested)]
+    first_stay: Stay,
+    #[validate(nested)]
+    second_stay: Stay,
+}
+
+#[test]
+fn a_struct_level_rule_at_a_field_is_skipped_when_violations_are_found_under_it() {
+    let trip = Trip {
+        first_stay: stay(),
+        second_stay: stay_ending_before_it_starts(),
+    };
+
+    assert_eq!(violations_of(&trip), ["secondStay: ends_before_it_starts"]);
+}
+
+fn ends_after_it_starts(starts_at: u16, ends_at: u16) -> Result<(), Problem> {
+    if ends_at <= starts_at {
         return Err(Problem::custom("ends_before_it_starts", "must end after it starts"));
     }
     Ok(())
 }
 
-fn doors_open_before_it_starts(concert: &Concert) -> Result<(), Problem> {
-    if concert.doors_open_at > concert.starts_at {
+fn lasts_an_hour_at_least(starts_at: u16, ends_at: u16) -> Result<(), Problem> {
+    if ends_at < starts_at + 100 {
+        return Err(Problem::custom("too_short", "must last an hour at least"));
+    }
+    Ok(())
+}
+
+fn doors_open_before_it_starts(gig: &Gig) -> Result<(), Problem> {
+    if gig.doors_open > gig.starts_at {
         return Err(Problem::custom("doors_open_too_late", "must open by the start"));
     }
     Ok(())
@@ -162,25 +207,23 @@ fn doors_open_before_it_starts(concert: &Concert) -> Result<(), Problem> {
 
 #[derive(Validate)]
 #[serde(rename_all = "camelCase")]
-#[validate(report_all, custom(ends_after_it_starts_playing, field = ends_at))]
+#[validate(custom(|gig| ends_after_it_starts(gig.starts_at, gig.ends_at), field = ends_at))]
+#[validate(custom(|gig| lasts_an_hour_at_least(gig.starts_at, gig.ends_at), field = ends_at))]
 #[validate(custom(
     doors_open_before_it_starts,
-    field = doors_open_at,
+    field = doors_open,
     message = "doors must open by the start"
 ))]
-struct Concert {
-    #[validate(required, length(min = 3))]
-    title: String,
+struct Gig {
     #[serde(rename = "doors")]
-    doors_open_at: u16,
+    doors_open: u16,
     starts_at: u16,
     ends_at: u16,
 }
 
-fn concert() -> Concert {
-    Concert {
-        title: "Night of strings".to_owned(),
-        doors_open_at: 1900,
+fn gig() -> Gig {
+    Gig {
+        doors_open: 1900,
         starts_at: 2000,
         ends_at: 2200,
     }
@@ -188,39 +231,76 @@ fn concert() -> Concert {
 
 #[test]
 fn every_struct_level_rule_is_checked_in_the_order_written() {
-    let concert = Concert {
-        doors_open_at: 2030,
-        ends_at: 1930,
-        ..concert()
+    let gig = Gig {
+        doors_open: 2030,
+        ends_at: 2030,
+        ..gig()
     };
 
-    assert_eq!(
-        violations_of(&concert),
-        ["endsAt: ends_before_it_starts", "doors: doors_open_too_late"]
-    );
+    assert_eq!(violations_of(&gig), ["endsAt: too_short", "doors: doors_open_too_late"]);
+}
+
+#[test]
+fn the_first_struct_level_rule_a_field_breaks_stops_its_later_ones() {
+    let gig = Gig { ends_at: 1930, ..gig() };
+
+    assert_eq!(violations_of(&gig), ["endsAt: ends_before_it_starts"]);
 }
 
 #[test]
 fn a_message_replaces_the_problem_s_own_on_a_struct_level_rule() {
-    let concert = Concert {
-        doors_open_at: 2030,
-        ..concert()
+    let gig = Gig {
+        doors_open: 2030,
+        ..gig()
     };
 
     assert_eq!(
-        concert.validate().unwrap_err().to_string(),
+        gig.validate().unwrap_err().to_string(),
         "doors: doors must open by the start"
     );
 }
 
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+#[validate(report_all, custom(|festival| ends_after_it_starts(festival.starts_at, festival.ends_at), field = ends_at))]
+#[validate(custom(|festival| lasts_an_hour_at_least(festival.starts_at, festival.ends_at), field = ends_at))]
+struct Festival {
+    #[validate(required, length(min = 3))]
+    title: String,
+    starts_at: u16,
+    #[validate(range(min = 1200))]
+    ends_at: u16,
+}
+
+fn festival() -> Festival {
+    Festival {
+        title: "Summer strings".to_owned(),
+        starts_at: 1400,
+        ends_at: 2300,
+    }
+}
+
 #[test]
 fn report_all_beside_a_struct_level_rule_still_reports_every_rule_a_field_breaks() {
-    let concert = Concert {
+    let festival = Festival {
         title: String::new(),
-        ..concert()
+        ..festival()
     };
 
-    assert_eq!(violations_of(&concert), ["title: required", "title: length"]);
+    assert_eq!(violations_of(&festival), ["title: required", "title: length"]);
+}
+
+#[test]
+fn report_all_checks_every_struct_level_rule_at_a_field_whatever_the_field_broke() {
+    let festival = Festival {
+        ends_at: 1130,
+        ..festival()
+    };
+
+    assert_eq!(
+        violations_of(&festival),
+        ["endsAt: range", "endsAt: ends_before_it_starts", "endsAt: too_short"]
+    );
 }
 
 #[derive(Validate)]
@@ -231,6 +311,7 @@ fn report_all_beside_a_struct_level_rule_still_reports_every_rule_a_field_breaks
     Ok(())
 }))]
 struct AgeLimits {
+    #[validate(range(max = 120))]
     youngest: u8,
     oldest: u8,
 }
@@ -243,4 +324,14 @@ fn a_struct_level_rule_takes_a_closure() {
     };
 
     assert_eq!(violations_of(&limits), ["youngest_above_oldest"]);
+}
+
+#[test]
+fn a_struct_level_rule_at_the_struct_itself_runs_whatever_the_fields_broke() {
+    let limits = AgeLimits {
+        youngest: 130,
+        oldest: 18,
+    };
+
+    assert_eq!(violations_of(&limits), ["youngest: range", "youngest_above_oldest"]);
 }

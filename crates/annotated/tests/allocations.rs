@@ -90,3 +90,33 @@ fn a_pattern_is_compiled_once_and_validating_by_it_again_allocates_nothing() {
 
     assert_eq!(allocations.count_total, 0);
 }
+
+fn passwords_match(new_password: &NewPassword) -> Result<(), Problem> {
+    if new_password.repeated_password != new_password.password {
+        return Err(Problem::custom("passwords_differ", "must match the password"));
+    }
+    Ok(())
+}
+
+#[derive(Validate)]
+#[validate(custom(passwords_match, field = repeated_password))]
+struct NewPassword {
+    #[validate(length(min = 8))]
+    password: String,
+    #[validate(required)]
+    repeated_password: String,
+}
+
+#[test]
+fn validating_a_valid_value_by_its_struct_level_rules_allocates_nothing() {
+    let new_password = NewPassword {
+        password: "correct horse battery staple".to_owned(),
+        repeated_password: "correct horse battery staple".to_owned(),
+    };
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = black_box(new_password.validate());
+    });
+
+    assert_eq!(allocations.count_total, 0);
+}
