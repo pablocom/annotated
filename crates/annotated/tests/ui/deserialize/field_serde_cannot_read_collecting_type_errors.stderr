@@ -24,8 +24,9 @@ help: the trait `annotated::__private::serde::Deserialize<'_>` is not implemente
 note: required by a bound in `annotated::__private::CollectingTypeErrorsAt::<'a, 'l, T>::new`
   --> src/collecting_type_errors.rs
    |
+   | impl<'a, 'l, T> CollectingTypeErrorsAt<'a, 'l, T> {
+...
    |     pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut Report) -> Self
-   |            --- required by a bound in this associated function
    |     where
    |         T: serde::Deserialize<'de>,
    |            ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `CollectingTypeErrorsAt::<'a, 'l, T>::new`
