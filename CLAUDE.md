@@ -50,3 +50,9 @@ cargo fmt --check --manifest-path benchmarks/Cargo.toml
 cargo clippy --manifest-path benchmarks/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path benchmarks/Cargo.toml
 ```
+
+## Releasing
+
+- A release is one commit to `main`, `chore(repo): release x.y.z`. It bumps `version` in the workspace `Cargo.toml` and the `=` requirement on `annotated-derive` to match, and turns *Unreleased* in `CHANGELOG.md` into the version's section, with its link.
+- Once CI passes on a commit whose version has no `v{major}.{minor}.{patch}` tag yet, CI publishes both crates to crates.io and tags the commit. So bumping the version is what releases: never bump it in a commit that isn't the release.
+- CI publishes with the `CARGO_REGISTRY_TOKEN` secret of the `release` environment, which only `main` can use.

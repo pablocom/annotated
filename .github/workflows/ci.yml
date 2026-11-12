@@ -58,3 +58,42 @@ jobs:
       - run: cargo doc --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+
+  version:
+    if: github.ref == 'refs/heads/main'
+    needs: [format, lint, test, docs]
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      is_tagged: ${{ steps.tag.outputs.is_tagged }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: tag
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq --raw-output '.packages[] | select(.name == "annotated") | .version')
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag"; then
+            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: version
+    if: needs.version.outputs.is_tagged == 'false'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo publish --workspace
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - run: |
+          git tag "$TAG"
+          git push origin "$TAG"
