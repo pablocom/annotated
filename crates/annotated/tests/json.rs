@@ -3,9 +3,9 @@
 
 #![cfg(feature = "json")]
 
-use annotated::{Deserialize, ParamValue, Path, Problem, Violation};
+use annotated::{Deserialize, ParamValue, Path, Problem, Validate, Violation};
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Validate, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct NewMember {
     #[validate(required, length(max = 50))]

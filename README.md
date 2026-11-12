@@ -5,7 +5,7 @@ Validation for structs that works with serde. You write rules on a struct's fiel
 ```rust
 use annotated::{Deserialize, ParamValue, Path, Problem, Validate};
 
-#[derive(Validate, Deserialize)]
+#[derive(Validate, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct NewMember {
     #[validate(required, length(max = 50))]
