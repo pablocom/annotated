@@ -1,5 +1,5 @@
-//! An axum extractor that reads a JSON body with [collecting deserialization](annotated::Deserialize), and
-//! answers every violation in it at once as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details.
+//! An axum extractor that reads a JSON body with [collecting deserialization](annotated::Deserialize), and responds
+//! with every violation in it at once, as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details.
 
 use annotated::{DeserializeError, ParamValue, Violation};
 use axum::Json;
@@ -10,11 +10,15 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::{Serialize, Serializer};
 
-/// A JSON body that came whole and breaks none of its rules, read with [`annotated::json::from_slice`].
+/// A JSON body that could be read as a `T` and breaks none of its rules, read with [`annotated::json::from_slice`].
 ///
-/// It refuses a request as axum's [`Json`] does: 415 when it isn't sent as JSON, 400 when its body isn't JSON,
-/// and 422 when a value is of the wrong type for a struct that doesn't collect type errors. A body with
-/// violations is answered with 422 and [`ProblemDetails`] listing every one.
+/// It rejects a request the way axum's [`Json`] does:
+///
+/// - 415 when the request isn't sent as JSON.
+/// - 400 when the body isn't JSON.
+/// - 422 when a value has the wrong type, in a struct that doesn't collect type errors.
+///
+/// A body with violations gets a 422 response with [`ProblemDetails`] listing every one of them.
 pub struct ValidJson<T>(pub T);
 
 impl<T, S> FromRequest<S> for ValidJson<T>
@@ -59,9 +63,9 @@ fn refusal_of_unreadable_json(error: &serde_json::Error) -> Response {
     (StatusCode::BAD_REQUEST, message).into_response()
 }
 
-/// Every violation in a body, answered with 422 as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem
-/// details, `application/problem+json`, whose `errors` member lists each one's JSON Pointer, code, params and
-/// message.
+/// Every violation in a body, as the response to send: 422 with [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)
+/// problem details (`application/problem+json`), whose `errors` member lists each violation's JSON Pointer, code,
+/// params and message.
 #[derive(Serialize)]
 pub struct ProblemDetails {
     r#type: &'static str,

@@ -1,4 +1,4 @@
-//! A server taking new members at `POST /members`, answering every violation in a body at once.
+//! A server that accepts new members at `POST /members`, and responds with every violation in a body at once.
 
 use annotated::Deserialize;
 use annotated_example_axum::ValidJson;
