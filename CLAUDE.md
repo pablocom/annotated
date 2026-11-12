@@ -34,4 +34,7 @@ cargo fmt --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+cargo fmt --check --manifest-path benchmarks/Cargo.toml
+cargo clippy --manifest-path benchmarks/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path benchmarks/Cargo.toml
 ```
