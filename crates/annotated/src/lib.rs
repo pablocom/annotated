@@ -1,4 +1,4 @@
-//! Validation for structs: write rules on their fields, and get every problem back at once.
+//! Validation for structs and enums: write rules on their fields, and get every problem back at once.
 //!
 //! [`Validate::validate`] checks a value. It returns `Ok(())`, or every [`Issue`] it found. Each issue is a
 //! [`Problem`] and the [`Path`] where it was found. [`Validate::validate_fail_fast`] returns only the first issue,
@@ -59,7 +59,7 @@ pub use report::Report;
 pub use rule::Rule;
 pub use validate::Validate;
 
-/// Implements [`Validate`] from the `#[validate(...)]` rules on a struct's fields.
+/// Implements [`Validate`] from the `#[validate(...)]` rules on the fields of a struct, or of an enum's variants.
 ///
 /// ```
 /// use annotated::Validate;
@@ -148,6 +148,36 @@ pub use validate::Validate;
 /// };
 ///
 /// assert_eq!(new_password.validate().unwrap_err().to_string(), "repeatedPassword: must match the password");
+/// ```
+///
+/// # Enums
+///
+/// On an enum, rules go on the fields of its variants, named or not, and the variant the value holds is checked.
+///
+/// - Each issue is at the path where serde reads its value, as the enum's `#[serde(...)]` lays the variant out: under
+///   the variant's name by default (`card.number`), at the enum's own location with `tag` or `untagged`
+///   (`number`), and under the content's name with `tag` and `content` (`data.number`). A variant with
+///   `#[serde(untagged)]` is at the enum's own location too.
+/// - A newtype variant's value is at the variant's location, and a tuple variant's elements at their index.
+/// - `#[validate(...)]` on the enum takes `custom(check)` and `report_all`, as on a struct. A `custom` rule reports at
+///   the enum's own location, after the variant's fields. It takes no `field`, since each field belongs to one variant.
+///
+/// ```
+/// use annotated::Validate;
+///
+/// #[derive(Validate)]
+/// #[serde(rename_all = "camelCase")]
+/// enum Payment {
+///     Card {
+///         #[validate(length(min = 16))]
+///         number: String,
+///     },
+///     BankTransfer(#[validate(required)] String),
+/// }
+///
+/// let payment = Payment::Card { number: "4111".to_owned() };
+///
+/// assert_eq!(payment.validate().unwrap_err().to_string(), "card.number: must be at least 16 characters long");
 /// ```
 pub use annotated_derive::Validate;
 

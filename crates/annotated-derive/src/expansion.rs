@@ -1,8 +1,11 @@
 use proc_macro2::{Group, Span, TokenStream, TokenTree};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{ToTokens, quote, quote_spanned};
 use syn::{Expr, Ident};
 
-use crate::validated_struct::{FieldRule, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in};
+use crate::validated_enum::{ValidatedEnum, ValidatedVariant};
+use crate::validated_struct::{
+    FieldRule, Place, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in,
+};
 
 #[derive(Clone)]
 pub struct Expansion {
@@ -28,7 +31,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
     let expansion = Expansion::new(validated_struct.is_reporting_all, quote!(return));
     let Expansion { at, found, .. } = &expansion;
     let field_checks = validated_struct.fields.iter().enumerate().map(|(index, field)| {
-        let member = field.member;
+        let member = &field.member;
         let value_of_field = quote!(&self.#member);
         if expansion.keeps_validity_of(validated_struct, index) {
             return expansion.field_validity(field, &value_of_field);
@@ -44,6 +47,36 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
             fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
                 #(#field_checks)*
                 #(#struct_checks)*
+            }
+        }
+    }
+}
+
+pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
+    let expansion = Expansion::new(validated_enum.is_reporting_all, quote!(return));
+    let Expansion { at, found, .. } = &expansion;
+    let variant_checks = validated_enum
+        .variants
+        .iter()
+        .map(|variant| expansion.variant_checks(variant));
+    let checked = CheckedStruct {
+        value: &quote!(self),
+        value_type: &quote!(Self),
+    };
+    let enum_checks = validated_enum
+        .enum_checks
+        .iter()
+        .map(|check| expansion.whole_value_check(check, &checked));
+    let input = validated_enum.input;
+    let name = &input.ident;
+    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+    quote! {
+        impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
+            fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
+                match *self {
+                    #(#variant_checks)*
+                }
+                #(#enum_checks)*
             }
         }
     }
@@ -109,6 +142,31 @@ impl Expansion {
         quote!(let #is_valid = #checks;)
     }
 
+    fn variant_checks(&self, variant: &ValidatedVariant) -> TokenStream {
+        let at = &self.at;
+        let ident = variant.ident;
+        let checked_fields: Vec<_> = variant.fields.iter().filter(|field| !field.rules.is_empty()).collect();
+        let members = checked_fields.iter().map(|field| &field.member);
+        let values: Vec<_> = checked_fields.iter().map(|field| field.local("value")).collect();
+        let field_checks = checked_fields
+            .iter()
+            .zip(&values)
+            .map(|(field, value)| self.field_checks(field, &value.to_token_stream()));
+        let content_at = match &variant.content_place {
+            Place::OfItsParent => TokenStream::new(),
+            content_place => {
+                let content_location = self.location_of(content_place);
+                quote!(let #at = #content_location;)
+            }
+        };
+        quote! {
+            Self::#ident { #(#members: ref #values,)* .. } => {
+                #content_at
+                #(#field_checks)*
+            }
+        }
+    }
+
     pub fn field_rule_checks(&self, field: &ValidatedField) -> TokenStream {
         self.checks(&field.rules, field.is_optional, &self.field_location(field))
     }
@@ -127,14 +185,17 @@ impl Expansion {
         }
     }
 
-    // A flattened field's keys sit in the struct's own map, so its issues are at the struct's location.
     pub fn field_location(&self, field: &ValidatedField) -> TokenStream {
+        self.location_of(&field.place)
+    }
+
+    fn location_of(&self, place: &Place) -> TokenStream {
         let at = &self.at;
-        if field.is_flattened {
-            return quote!(#at);
+        match place {
+            Place::Named(name) => quote!(&#at.field(#name)),
+            Place::Indexed(index) => quote!(&#at.index(#index)),
+            Place::OfItsParent => quote!(#at),
         }
-        let name = &field.name;
-        quote!(&#at.field(#name))
     }
 
     fn checks(&self, rules: &[FieldRule], is_value_optional: bool, value_at: &TokenStream) -> TokenStream {
@@ -331,10 +392,8 @@ impl Expansion {
         check: &StructCheck,
         checked: &CheckedStruct,
     ) -> TokenStream {
-        let at = &self.at;
         let Some(field_index) = check.field else {
-            let passes = self.struct_rule_passes(check, checked, &quote!(#at));
-            return quote!(let _ = #passes;);
+            return self.whole_value_check(check, checked);
         };
         let field = &validated_struct.fields[field_index];
         let passes = self.struct_rule_passes(check, checked, &self.field_location(field));
@@ -346,6 +405,12 @@ impl Expansion {
             return quote!(let #is_valid = #is_valid && #passes;);
         }
         quote!(let _ = #is_valid && #passes;)
+    }
+
+    fn whole_value_check(&self, check: &StructCheck, checked: &CheckedStruct) -> TokenStream {
+        let at = &self.at;
+        let passes = self.struct_rule_passes(check, checked, &quote!(#at));
+        quote!(let _ = #passes;)
     }
 
     fn struct_rule_passes(
@@ -372,7 +437,7 @@ struct CheckedStruct<'a> {
 }
 
 pub fn validity_of(field: &ValidatedField) -> Ident {
-    format_ident!("{}_is_valid", field.member, span = Span::mixed_site())
+    field.local("is_valid")
 }
 
 fn spanned(tokens: &TokenStream, span: Span) -> TokenStream {

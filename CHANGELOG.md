@@ -33,6 +33,10 @@ This file lists every change that users of the crates can notice. The format fol
   - With `collect_type_errors`, keys that don't fit a flattened type are `Problem::InvalidType` at the struct's location. A `nested` flattened value follows its own type's option.
   - As with serde, a struct with a flattened field is read as a map, so it can't be read from a sequence. Only such a struct keeps the keys it doesn't know, which allocates for each of them.
   - `flatten` in a struct with `deny_unknown_fields` is a compile error.
+- `#[derive(Validate)]` works on enums, with unit, newtype, tuple and struct variants.
+  - Rules go on the fields of the variants, named or not, and the variant the value holds is checked.
+  - Each issue is at the path where serde reads its value, following the enum's tagging: under the variant's name by default, at the enum's own location with `tag` or `untagged`, and under the content's name with `tag` and `content`. A newtype variant's value is at the variant's location, and a tuple variant's elements are at their index.
+  - `#[validate(custom(check))]` and `report_all` work on the enum as on a struct. A `custom` rule reports at the enum's own location, and takes no `field`.
 
 ### Changed
 

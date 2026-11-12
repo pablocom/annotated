@@ -1,5 +1,5 @@
 use proc_macro2::Span;
-use serde_derive_internals::ast::{Container, Data};
+use serde_derive_internals::ast::{self, Container, Data};
 use serde_derive_internals::{Ctxt, Derive, attr};
 use syn::{DeriveInput, ExprPath, Ident, Lifetime, parse_quote};
 
@@ -21,6 +21,24 @@ pub struct SerdeField {
     pub deserialize_with: Option<ExprPath>,
 }
 
+pub struct SerdeEnum {
+    pub tag: Tag,
+    pub variants: Vec<SerdeVariant>,
+}
+
+pub enum Tag {
+    External,
+    Internal,
+    Adjacent { content: String },
+    Untagged,
+}
+
+pub struct SerdeVariant {
+    pub name: String,
+    pub is_untagged: bool,
+    pub fields: Vec<SerdeField>,
+}
+
 pub enum DefaultValue {
     OfItsType,
     ReturnedBy(ExprPath),
@@ -30,29 +48,23 @@ pub fn fields_of(input: &DeriveInput) -> syn::Result<Vec<SerdeField>> {
     Ok(SerdeStruct::from_input(input)?.fields)
 }
 
+fn read<T>(input: &DeriveInput, reading: impl FnOnce(&Container) -> T) -> syn::Result<T> {
+    let context = Ctxt::new();
+    let serde_private_module = Ident::new("__private", Span::call_site());
+    let read = Container::from_ast(&context, input, Derive::Deserialize, &serde_private_module)
+        .map(|container| reading(&container));
+    context.check()?;
+    Ok(read.expect("serde reads any item it finds no error in"))
+}
+
 impl SerdeStruct {
     pub fn from_input(input: &DeriveInput) -> syn::Result<Self> {
-        let context = Ctxt::new();
-        let serde_private_module = Ident::new("__private", Span::call_site());
-        let serde_struct = Container::from_ast(&context, input, Derive::Deserialize, &serde_private_module)
-            .map(|container| Self::from_container(&container));
-        context.check()?;
-        Ok(serde_struct.expect("serde reads any struct it finds no error in"))
+        read(input, Self::from_container)
     }
 
     fn from_container(container: &Container) -> Self {
         let fields = match &container.data {
-            Data::Struct(_, fields) => fields
-                .iter()
-                .map(|field| SerdeField {
-                    name: field.attrs.name().deserialize_name().value.clone(),
-                    names_read: field.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
-                    is_skipped: field.attrs.skip_deserializing(),
-                    is_flattened: field.attrs.flatten(),
-                    default: DefaultValue::from_serde(field.attrs.default()),
-                    deserialize_with: field.attrs.deserialize_with().map(reachable_function),
-                })
-                .collect(),
+            Data::Struct(_, fields) => fields.iter().map(SerdeField::from_serde).collect(),
             Data::Enum(_) => Vec::new(),
         };
         Self {
@@ -62,6 +74,48 @@ impl SerdeStruct {
             expecting: container.attrs.expecting().map(ToOwned::to_owned),
             default: DefaultValue::from_serde(container.attrs.default()),
             borrowed_lifetimes: borrowed_lifetimes(container),
+        }
+    }
+}
+
+impl SerdeEnum {
+    pub fn from_input(input: &DeriveInput) -> syn::Result<Self> {
+        read(input, Self::from_container)
+    }
+
+    fn from_container(container: &Container) -> Self {
+        let tag = match container.attrs.tag() {
+            attr::TagType::External => Tag::External,
+            attr::TagType::Internal { .. } => Tag::Internal,
+            attr::TagType::Adjacent { content, .. } => Tag::Adjacent {
+                content: content.clone(),
+            },
+            attr::TagType::None => Tag::Untagged,
+        };
+        let variants = match &container.data {
+            Data::Enum(variants) => variants
+                .iter()
+                .map(|variant| SerdeVariant {
+                    name: variant.attrs.name().deserialize_name().value.clone(),
+                    is_untagged: variant.attrs.untagged(),
+                    fields: variant.fields.iter().map(SerdeField::from_serde).collect(),
+                })
+                .collect(),
+            Data::Struct(..) => Vec::new(),
+        };
+        Self { tag, variants }
+    }
+}
+
+impl SerdeField {
+    fn from_serde(field: &ast::Field) -> Self {
+        Self {
+            name: field.attrs.name().deserialize_name().value.clone(),
+            names_read: field.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
+            is_skipped: field.attrs.skip_deserializing(),
+            is_flattened: field.attrs.flatten(),
+            default: DefaultValue::from_serde(field.attrs.default()),
+            deserialize_with: field.attrs.deserialize_with().map(reachable_function),
         }
     }
 }

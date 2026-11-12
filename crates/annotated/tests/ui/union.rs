@@ -1,9 +1,9 @@
 use annotated::Validate;
 
 #[derive(Validate)]
-enum Payment {
-    Card,
-    Transfer,
+union Bits {
+    whole: u32,
+    halves: [u16; 2],
 }
 
 fn main() {}

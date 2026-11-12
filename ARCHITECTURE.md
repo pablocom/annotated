@@ -27,7 +27,7 @@ Use these words, with these meanings, in code, docs and conversation.
 
 ## The two ways in
 
-1. **Validation** checks a value that already exists. `#[derive(Validate)]` implements `Validate`, and `value.validate()` returns `Ok(())` or every issue found. It works on any struct, whether or not serde built it.
+1. **Validation** checks a value that already exists. `#[derive(Validate)]` implements `Validate`, and `value.validate()` returns `Ok(())` or every issue found. It works on any struct or enum, whether or not serde built it.
 2. **Collecting deserialization** builds a value and validates it in one go. `#[derive(Deserialize)]` generates a serde visitor for the struct. The visitor passes its location down into nested values, so a missing field at any depth becomes an issue instead of stopping serde. It runs the same rules as validation and reports every problem together. The derive also implements `serde::Deserialize`, so the struct still works anywhere serde does.
 
 Both report a field under the name serde reads it by. To find that name, the derives read `#[serde(...)]` attributes with `serde_derive_internals`, which publishes the code serde's own derive reads them with.

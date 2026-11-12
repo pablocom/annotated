@@ -1008,7 +1008,7 @@ impl<'a> DeserializeExpansion<'a> {
     fn build(&self) -> TokenStream {
         let deserialized = &self.deserialized;
         let fields = self.fields().iter().map(|field| {
-            let member = field.member;
+            let member = &field.member;
             let slot = slot_of(field);
             match (self.is_read_with_issues(field), self.can_be_missing(field)) {
                 (false, false) => quote!(#member: #slot),
@@ -1082,7 +1082,7 @@ impl<'a> DeserializeExpansion<'a> {
         let read = &self.read;
         let read_slots: Vec<_> = read_fields.iter().map(|field| slot_of(field)).collect();
         let skipped_slots = skipped_fields.iter().map(|field| slot_of(field));
-        let members = read_fields.iter().chain(&skipped_fields).map(|field| field.member);
+        let members = read_fields.iter().chain(&skipped_fields).map(|field| &field.member);
         let defaults = read_fields
             .iter()
             .chain(&skipped_fields)
@@ -1320,11 +1320,11 @@ fn default_value(field: &ValidatedField, default: &DefaultValue) -> TokenStream 
 }
 
 fn struct_default_of(field: &ValidatedField) -> Ident {
-    format_ident!("{}_struct_default", field.member, span = Span::mixed_site())
+    field.local("struct_default")
 }
 
 fn slot_of(field: &ValidatedField) -> Ident {
-    format_ident!("{}_slot", field.member, span = Span::mixed_site())
+    field.local("slot")
 }
 
 fn waiting_for_the_elements(field: &ValidatedField) -> TokenStream {
@@ -1355,7 +1355,7 @@ fn type_name_of(field_type: &Type) -> String {
 }
 
 fn read_issues_of(field: &ValidatedField) -> Ident {
-    format_ident!("{}_read_issues", field.member, span = Span::mixed_site())
+    field.local("read_issues")
 }
 
 // A turbofish takes all of a type's lifetime arguments or none, and the visitor has one more than the struct.

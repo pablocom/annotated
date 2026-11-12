@@ -1,0 +1,5 @@
+error: an enum's `#[validate(...)]` takes `report_all` and `custom(...)`
+ --> tests/ui/enum_level_rule_other_than_custom.rs:4:12
+  |
+4 | #[validate(required)]
+  |            ^^^^^^^^

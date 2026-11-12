@@ -1,0 +1,17 @@
+error: `custom` on an enum takes one function checking the enum, then optionally `message = ...`: `custom(check)`
+ --> tests/ui/enum_level_custom_with_other_arguments.rs:4:37
+  |
+4 | #[validate(custom(within_the_limit, is_refundable))]
+  |                                     ^^^^^^^^^^^^^
+
+error: `custom` on an enum takes one function checking the enum, then optionally `message = ...`: `custom(check)`
+  --> tests/ui/enum_level_custom_with_other_arguments.rs:11:37
+   |
+11 | #[validate(custom(within_the_limit, at = cents))]
+   |                                     ^^
+
+error: `custom` on an enum takes one function checking the enum, then optionally `message = ...`: `custom(check)`
+  --> tests/ui/enum_level_custom_with_other_arguments.rs:18:12
+   |
+18 | #[validate(custom)]
+   |            ^^^^^^

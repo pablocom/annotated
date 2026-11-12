@@ -51,7 +51,10 @@ const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
 
 impl<'a> DeserializedStruct<'a> {
     pub fn from_input(input: &'a DeriveInput) -> syn::Result<Self> {
-        let validated = ValidatedStruct::from_input(input, "Deserialize")?;
+        let validated = ValidatedStruct::from_input(
+            input,
+            "`Deserialize` can only be derived for a struct with named fields",
+        )?;
         let collects_type_errors = collects_type_errors(&input.attrs)?;
         refuse_serde_attributes_other_than(&ON_A_STRUCT, &input.attrs)?;
         for field in &validated.fields {

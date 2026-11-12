@@ -1,9 +1,9 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote_spanned};
+use quote::{ToTokens, format_ident, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, GenericArgument, Ident, Lit, Path,
-    PathArguments, Type, TypePath,
+    Attribute, Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, GenericArgument, Ident, Index, Lit,
+    Member, Path, PathArguments, Type, TypePath,
 };
 
 use crate::pattern;
@@ -27,13 +27,22 @@ pub struct StructCheck {
 }
 
 pub struct ValidatedField<'a> {
-    pub member: &'a Ident,
+    pub member: Member,
     pub field_type: &'a Type,
     pub attributes: &'a [Attribute],
     pub name: String,
+    pub place: Place,
     pub is_flattened: bool,
     pub is_optional: bool,
     pub rules: Vec<FieldRule>,
+}
+
+// Where a value is in the input, from where its parent is.
+pub enum Place {
+    Named(String),
+    Indexed(usize),
+    // A flattened field's keys sit in its parent's own map, and a newtype variant's value is the variant's content.
+    OfItsParent,
 }
 
 pub enum FieldRule {
@@ -56,22 +65,23 @@ pub struct RuleCheck {
 }
 
 impl<'a> ValidatedStruct<'a> {
-    pub fn from_input(input: &'a DeriveInput, derive: &str) -> syn::Result<Self> {
+    pub fn from_input(input: &'a DeriveInput, refusal: &str) -> syn::Result<Self> {
         let Data::Struct(DataStruct {
             fields: Fields::Named(fields),
             ..
         }) = &input.data
         else {
-            return Err(Error::new_spanned(
-                &input.ident,
-                format!("`{derive}` can only be derived for a struct with named fields"),
-            ));
+            return Err(Error::new_spanned(&input.ident, refusal));
         };
         let fields = fields
             .named
             .iter()
             .zip(serde_names::fields_of(input)?)
-            .map(|(field, serde_field)| ValidatedField::from_field(field, serde_field))
+            .enumerate()
+            .map(|(index, (field, serde_field))| {
+                let place = Place::of_a_named_field(&serde_field);
+                ValidatedField::from_field(field, index, serde_field, place)
+            })
             .collect::<syn::Result<Vec<_>>>()?;
         let struct_rules = written_struct_rules(&input.attrs)?;
         let is_reporting_all = struct_rules.iter().any(|rule| matches!(rule, StructRule::ReportAll));
@@ -121,7 +131,9 @@ impl StructCheck {
 fn position_of(field: &Expr, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<usize> {
     fields
         .iter()
-        .position(|validated| matches!(field, Expr::Path(path) if path.path.is_ident(validated.member)))
+        .position(|validated| {
+            matches!((field, &validated.member), (Expr::Path(path), Member::Named(member)) if path.path.is_ident(member))
+        })
         .ok_or_else(|| {
             Error::new_spanned(
                 field,
@@ -130,9 +142,21 @@ fn position_of(field: &Expr, struct_name: &Ident, fields: &[ValidatedField]) -> 
         })
 }
 
+impl Place {
+    pub fn of_a_named_field(serde_field: &SerdeField) -> Self {
+        if serde_field.is_flattened {
+            return Self::OfItsParent;
+        }
+        Self::Named(serde_field.name.clone())
+    }
+}
+
 impl<'a> ValidatedField<'a> {
-    fn from_field(field: &'a Field, serde_field: SerdeField) -> syn::Result<Self> {
-        let member = field.ident.as_ref().expect("a named field has a name");
+    pub fn from_field(field: &'a Field, index: usize, serde_field: SerdeField, place: Place) -> syn::Result<Self> {
+        let member = field
+            .ident
+            .clone()
+            .map_or_else(|| Member::Unnamed(Index::from(index)), Member::Named);
         let rules = written_rules(&field.attrs)?
             .into_iter()
             .map(|written| FieldRule::from_written(written, Some(&field.ty)))
@@ -142,6 +166,7 @@ impl<'a> ValidatedField<'a> {
             field_type: &field.ty,
             attributes: &field.attrs,
             name: serde_field.name,
+            place,
             is_flattened: serde_field.is_flattened,
             is_optional: option_content(&field.ty).is_some(),
             rules,
@@ -231,6 +256,13 @@ fn nested_value_type_in<'a>(rules: &[FieldRule], checked_type: &'a Type) -> Opti
 }
 
 impl ValidatedField<'_> {
+    pub fn local(&self, purpose: &str) -> Ident {
+        match &self.member {
+            Member::Named(name) => format_ident!("{}_{}", name, purpose, span = Span::mixed_site()),
+            Member::Unnamed(index) => format_ident!("field_{}_{}", index.index, purpose, span = Span::mixed_site()),
+        }
+    }
+
     pub fn has_nested_values(&self) -> bool {
         !nested_rules_in(&self.rules).is_empty()
     }
