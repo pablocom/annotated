@@ -148,7 +148,7 @@ fn buffered<'de, D: Deserializer<'de>, E>(
 }
 
 #[cold]
-fn invalid_type(wrong_type: WrongType, type_name: &'static str, kind_found: ValueKind) -> Problem {
+pub(crate) fn invalid_type(wrong_type: WrongType, type_name: &'static str, kind_found: ValueKind) -> Problem {
     Problem::InvalidType {
         expected: wrong_type.expected.map_or(Cow::Borrowed(type_name), Cow::Owned),
         found: wrong_type.found.unwrap_or(kind_found).name(),

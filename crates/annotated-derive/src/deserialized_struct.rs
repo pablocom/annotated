@@ -38,14 +38,15 @@ const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "deserialize_with",
         "with",
         "borrow",
+        "flatten",
         "skip_serializing",
         "skip_serializing_if",
         "serialize_with",
         "getter",
     ],
     refusal: "with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default`, \
-              `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow` and those that only change \
-              serializing",
+              `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow`, `flatten` and those that only \
+              change serializing",
 };
 
 impl<'a> DeserializedStruct<'a> {
@@ -59,6 +60,9 @@ impl<'a> DeserializedStruct<'a> {
             refuse_nested_more_than_once(&field.rules)?;
         }
         let serde = SerdeStruct::from_input(input)?;
+        if serde.is_denying_unknown_fields {
+            refuse_flatten(&validated)?;
+        }
         Ok(Self {
             validated,
             serde,
@@ -137,6 +141,22 @@ fn attributes_named<'a>(name: &'a str, attributes: &'a [Attribute]) -> impl Iter
     attributes
         .iter()
         .filter(move |attribute| attribute.path().is_ident(name))
+}
+
+fn refuse_flatten(validated: &ValidatedStruct) -> syn::Result<()> {
+    for field in validated.fields.iter().filter(|field| field.is_flattened) {
+        for attribute in attributes_named("serde", field.attributes) {
+            let serde_attributes = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+            if let Some(flatten) = serde_attributes.iter().find(|meta| meta.path().is_ident("flatten")) {
+                return Err(Error::new_spanned(
+                    flatten.path(),
+                    "with `#[derive(Deserialize)]`, a struct that denies unknown fields can't have a flattened field: \
+                     a key meant for the flattened field can't be told from an unknown one",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn refuse_nested_more_than_once(rules: &[FieldRule]) -> syn::Result<()> {

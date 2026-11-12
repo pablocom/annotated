@@ -6,7 +6,7 @@ use crate::deserialize_containers::room_for;
 
 /// Any well-formed value, as a self-describing format presents it. It is kept so that it can be read again as the type
 /// it is meant to be. Strings and bytes the format lends are borrowed, not copied.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Content<'de> {
     Bool(bool),
     U8(u8),

@@ -1,0 +1,5 @@
+error: with `#[derive(Deserialize)]`, a struct that denies unknown fields can't have a flattened field: a key meant for the flattened field can't be told from an unknown one
+  --> tests/ui/deserialize/flatten_in_a_struct_denying_unknown_fields.rs:10:13
+   |
+10 |     #[serde(flatten)]
+   |             ^^^^^^^

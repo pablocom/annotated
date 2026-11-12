@@ -26,6 +26,13 @@ This file lists every change that users of the crates can notice. The format fol
   - As with serde, a `&str` or `&[u8]` field borrows from the input, and any other field borrows with `borrow`. A `Cow<str>` or `Cow<[u8]>` with `borrow` borrows what the input lends, and owns the rest.
   - The implementation requires the input to outlive each lifetime a field borrows, as serde's does.
   - A value the input can't lend, such as a JSON string with an escape in it, is the format's error, or `Problem::InvalidType` under `collect_type_errors`.
+- `#[derive(Deserialize)]` reads `#[serde(flatten)]` on a field.
+  - As with serde, the struct keeps every key that isn't one of its fields, and reads each flattened field from them once the input is read: a struct takes the keys it knows, a map or an enum the keys left.
+  - A flattened field's issues are at the struct's own location, where its keys are in the input, in the field's place among the others.
+  - A flattened `Option` is `None` when its value can't be built from the keys, and the issues found trying are dropped.
+  - With `collect_type_errors`, keys that don't fit a flattened type are `Problem::InvalidType` at the struct's location. A `nested` flattened value follows its own type's option.
+  - As with serde, a struct with a flattened field is read as a map, so it can't be read from a sequence. Only such a struct keeps the keys it doesn't know, which allocates for each of them.
+  - `flatten` in a struct with `deny_unknown_fields` is a compile error.
 
 ### Changed
 

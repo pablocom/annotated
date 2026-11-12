@@ -307,11 +307,14 @@ The derive reads a field the way serde's derive reads it with the same attribute
 
 #### `flatten`
 
-- A flattened field's keys sit in the struct's own map, as with serde. The struct keeps every key that isn't one of its fields in a buffer, and reads each flattened field from the buffer after the last key. A flattened struct takes the keys it knows, and a flattened map takes every key no other field took.
+- A flattened field's keys sit in the struct's own map, as with serde. The struct keeps every key that isn't one of its fields in a buffer, `Leftovers`, and reads each flattened field from the buffer after the last key, in declaration order, through annotated's own `FlatMapDeserializer`. serde's is private to serde.
+  - A flattened struct takes the keys it knows, and a flattened enum the first key that names one of its variants.
+  - A flattened map reads every key still in the buffer without taking it, as serde's does, so the flattened fields after it still find theirs. It reads a copy of each entry, which allocates for every value the format didn't lend.
+  - As in serde, the buffered values are read as human-readable.
 - A flattened field has the struct's own location. Issues inside a flattened `Address` are at `street`, not at `address.street`, because that is where they are in the input. The `Validate` derive agrees: `nested` on a flattened field validates it at the struct's location.
   - A rule on the flattened value as a whole, such as `length` on a flattened map, reports at the struct's location. A rule under `each` reports at each key.
   - A flattened field's issues come at its place among the fields.
-- A flattened `Option<T>` is `None` when `T` can't be built from the buffer, as with serde, and the issues found trying are dropped.
+- A flattened `Option<T>` is `None` when `T` can't be built from the buffer, as with serde, and the issues found trying are dropped. The derive recognizes the `Option` by how its type is written, like every `Option` it handles. A flattened `Option` hidden behind a type alias is read as `Some` of its value.
 - With `collect_type_errors` on the struct, a flattened field without `nested` whose buffered keys don't fit its type is a `Problem::InvalidType` at the struct's location. A `nested` flattened field follows its own type's option.
 - As in serde, a struct with a flattened field is read with `deserialize_map`, so it can't be read from a sequence.
 - `flatten` together with `deny_unknown_fields` on the same struct is a compile error: a key meant for a flattened field can't be told from an unknown one while the struct reads its own keys.

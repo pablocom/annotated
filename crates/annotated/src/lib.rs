@@ -35,6 +35,8 @@ mod deserialize;
 mod deserialize_containers;
 #[cfg(feature = "serde")]
 mod deserialize_error;
+#[cfg(feature = "serde")]
+mod flattened;
 mod issue;
 mod issues;
 mod location;
@@ -175,12 +177,13 @@ pub use annotated_derive::Validate;
 /// The struct is read as serde's derive would read it, by the names serde gives the struct and its fields.
 ///
 /// - **Supported:** `rename_all`, `rename`, `deny_unknown_fields`, `expecting` and `default` on the struct, and
-///   `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with` and `borrow` on a field.
+///   `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow` and `flatten` on a
+///   field.
 /// - **Accepted and ignored:** attributes that only change serializing, so that the struct can derive serde's
 ///   `Serialize` too. These are `into` and `bound(serialize = "...")` on the struct, and `skip_serializing`,
 ///   `skip_serializing_if`, `serialize_with`, `getter` and `bound(serialize = "...")` on a field. When a `rename` or
 ///   `rename_all` gives separate names for serializing and deserializing, the deserializing name is the one read.
-/// - **Compile errors:** any other serde attribute.
+/// - **Compile errors:** any other serde attribute, and `flatten` in a struct with `deny_unknown_fields`.
 ///
 /// A struct can have lifetime parameters, and its fields borrow from the input as with serde: a `&str` or `&[u8]`
 /// field always, any other field with `#[serde(borrow)]`. A value the input can't lend, such as a JSON string with an
@@ -208,6 +211,10 @@ pub use annotated_derive::Validate;
 /// - A field with `#[serde(deserialize_with = "path")]` or `#[serde(with = "module")]` is read by that function, and
 ///   its rules check the value the function returns. A `nested` rule checks it with [`Validate`]. As with serde, the
 ///   field is [`Problem::Missing`] when it is absent, even an `Option`, unless it has a default.
+/// - A field with `#[serde(flatten)]` is read, as with serde, from the keys that aren't the struct's own fields, once
+///   the input is read. Its issues are at the struct's own location, where its keys are in the input. A flattened
+///   `Option` is `None` when its value can't be built from those keys, and the issues found trying are dropped. As
+///   with serde, a struct with a flattened field can't be read from a sequence.
 /// - A field that is present is checked by its `#[validate(...)]` rules exactly as [`Validate`] checks it. So for input
 ///   that has every field, the issues are the same, in the same order, as when deserializing with serde and then
 ///   validating.

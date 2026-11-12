@@ -26,6 +26,7 @@ struct DeserializeExpansion<'a> {
     has_finished: Ident,
     read: Ident,
     wrapper: Ident,
+    leftovers: Ident,
     element_at: Ident,
     visitor_lifetime: Lifetime,
     field_checks_label: Lifetime,
@@ -53,6 +54,7 @@ impl<'a> DeserializeExpansion<'a> {
             has_finished: local("has_finished"),
             read: local("read"),
             wrapper: local("wrapper"),
+            leftovers: local("leftovers"),
             element_at: local("element_at"),
             visitor_lifetime: Lifetime::new("'__visitor", Span::call_site()),
             field_checks_label,
@@ -94,9 +96,26 @@ impl<'a> DeserializeExpansion<'a> {
         let (_, type_generics_without_lifetimes, _) = without_lifetimes.split_for_impl();
         let turbofish = type_generics_without_lifetimes.as_turbofish();
         let struct_name = &self.deserialized_struct.serde.name;
-        let field_identifier = self.field_identifier();
         let functions_reading_fields = self.functions_reading_fields();
         let visitor = self.visitor();
+        let new_visitor = quote! {
+            __Visitor #turbofish {
+                #at,
+                #found,
+                marker: ::core::marker::PhantomData,
+            }
+        };
+        let (field_identifier, deserializing) = if self.has_flattened_fields() {
+            (
+                TokenStream::new(),
+                quote!(#serde::Deserializer::deserialize_map(#deserializer, #new_visitor)),
+            )
+        } else {
+            (
+                self.field_identifier(),
+                quote!(#serde::Deserializer::deserialize_struct(#deserializer, #struct_name, __FIELDS, #new_visitor)),
+            )
+        };
         quote! {
             impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
@@ -107,16 +126,7 @@ impl<'a> DeserializeExpansion<'a> {
                     #field_identifier
                     #(#functions_reading_fields)*
                     #visitor
-                    #serde::Deserializer::deserialize_struct(
-                        #deserializer,
-                        #struct_name,
-                        __FIELDS,
-                        __Visitor #turbofish {
-                            #at,
-                            #found,
-                            marker: ::core::marker::PhantomData,
-                        },
-                    )
+                    #deserializing
                 }
             }
 
@@ -242,7 +252,7 @@ impl<'a> DeserializeExpansion<'a> {
         let (takes_a_default, is_its_type_s_default) = match self.when_absent(field) {
             WhenAbsent::TakesDefault(default) => (true, matches!(default, DefaultValue::OfItsType)),
             WhenAbsent::TakesStructDefault => (true, false),
-            WhenAbsent::IsMissing | WhenAbsent::IsNone => (false, false),
+            WhenAbsent::IsMissing | WhenAbsent::IsNone | WhenAbsent::IsNeverAbsent => (false, false),
         };
         if !takes_a_default && self.reads_nested_values(field) {
             return Vec::new();
@@ -389,12 +399,17 @@ impl<'a> DeserializeExpansion<'a> {
             .expecting
             .clone()
             .unwrap_or_else(|| format!("struct {name}"));
-        let visit_seq = self.visit_seq();
-        let visit_map = self.visit_map();
+        let has_flattened_fields = self.has_flattened_fields();
+        let (visit_seq, visit_map) = if has_flattened_fields {
+            (TokenStream::new(), self.visit_map_keeping_leftovers())
+        } else {
+            (self.visit_seq(), self.visit_map())
+        };
         let checked_value = self.checked_value();
         let names_read = self.read_serde_fields().flat_map(|field| &field.names_read);
+        let field_names = (!has_flattened_fields).then(|| quote!(const __FIELDS: &[&str] = &[#(#names_read),*];));
         quote! {
-            const __FIELDS: &[&str] = &[#(#names_read),*];
+            #field_names
 
             struct __Visitor #visitor_definition_generics #visitor_where_clause {
                 #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
@@ -519,6 +534,14 @@ impl<'a> DeserializeExpansion<'a> {
         self.serde_field_of(field).is_skipped
     }
 
+    fn has_flattened_fields(&self) -> bool {
+        self.read_fields().any(|field| field.is_flattened)
+    }
+
+    fn keyed_fields(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
+        self.read_fields().filter(|field| !field.is_flattened)
+    }
+
     fn fields_read_with_issues(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
         self.fields().iter().filter(|field| self.is_read_with_issues(field))
     }
@@ -526,9 +549,9 @@ impl<'a> DeserializeExpansion<'a> {
     fn visit_map(&self) -> TokenStream {
         let Self { serde, map, key, .. } = self;
         let Expansion { found, .. } = &self.rules;
-        let slots = self.read_fields().map(slot_of);
-        let slot_types = self.read_fields().map(|field| self.slot_type_of(field));
-        let field_arms = self.read_fields().enumerate().map(|(index, field)| {
+        let slots = self.keyed_fields().map(slot_of);
+        let slot_types = self.keyed_fields().map(|field| self.slot_type_of(field));
+        let field_arms = self.keyed_fields().enumerate().map(|(index, field)| {
             let variant = format_ident!("Field{index}");
             let slot = slot_of(field);
             let name = &field.name;
@@ -572,6 +595,129 @@ impl<'a> DeserializeExpansion<'a> {
                 ::core::result::Result::Ok(self.checked_value((#(#read_slots,)*), (#(#read_issues,)*)))
             }
         }
+    }
+
+    // As in serde's derive, the keys that aren't the struct's fields are kept, and each flattened field is read from
+    // them after the last key.
+    fn visit_map_keeping_leftovers(&self) -> TokenStream {
+        let Self {
+            serde,
+            map,
+            key,
+            leftovers,
+            ..
+        } = self;
+        let Expansion { found, .. } = &self.rules;
+        let slots = self.keyed_fields().map(slot_of);
+        let slot_types = self.keyed_fields().map(|field| self.slot_type_of(field));
+        let field_arms = self.keyed_fields().map(|field| {
+            let names_read = &self.serde_field_of(field).names_read;
+            let slot = slot_of(field);
+            let name = &field.name;
+            let value = self.value_read_from_the_map(field);
+            quote! {
+                ::core::option::Option::Some(#(#names_read)|*) => {
+                    if ::core::option::Option::is_some(&#slot) {
+                        return ::core::result::Result::Err(
+                            <__A::Error as #serde::de::Error>::duplicate_field(#name),
+                        );
+                    }
+                    #slot = ::core::option::Option::Some(#value);
+                }
+            }
+        });
+        let flattened_values = self
+            .read_fields()
+            .filter(|field| field.is_flattened)
+            .map(|field| self.flattened_value(field));
+        let read_slots = self.read_fields().map(slot_of);
+        let read_issues: Vec<_> = self.fields_read_with_issues().map(read_issues_of).collect();
+        quote! {
+            #[inline]
+            fn visit_map<__A: #serde::de::MapAccess<'de>>(
+                self,
+                mut #map: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                #(let mut #slots: #slot_types = ::core::option::Option::None;)*
+                #(let mut #read_issues = self.#found.new_alike();)*
+                let mut #leftovers = ::annotated::__private::Leftovers::new();
+                while let ::core::option::Option::Some(#key) =
+                    #serde::de::MapAccess::next_key::<::annotated::__private::Key<'de>>(&mut #map)?
+                {
+                    match ::annotated::__private::Key::as_field_name(&#key) {
+                        #(#field_arms)*
+                        _ => ::annotated::__private::Leftovers::keep(&mut #leftovers, #key, &mut #map)?,
+                    }
+                }
+                #(#flattened_values)*
+                ::core::result::Result::Ok(self.checked_value((#(#read_slots,)*), (#(#read_issues,)*)))
+            }
+        }
+    }
+
+    fn flattened_value(&self, field: &ValidatedField) -> TokenStream {
+        let Self {
+            serde,
+            leftovers,
+            wrapper,
+            ..
+        } = self;
+        let Expansion { at, .. } = &self.rules;
+        let slot = slot_of(field);
+        let slot_type = self.slot_type_of(field);
+        let field_type = field.field_type;
+        let read_issues = read_issues_of(field);
+        let flattened = quote!(::annotated::__private::Leftovers::flattened::<__A::Error>(&mut #leftovers));
+        let is_read_by_a_function = self.is_read_by_a_function(field);
+        let content_type = option_content(field_type).filter(|_| !is_read_by_a_function);
+        let read_type = if is_read_by_a_function {
+            self.wrapper_type_of(field)
+        } else {
+            field_type.to_token_stream()
+        };
+        let read_value = match (self.reads_nested_values(field), content_type) {
+            (true, Some(content_type)) => quote_spanned! {field_type.span()=>
+                ::core::option::Option::Some(::core::option::Option::flatten(::core::result::Result::ok(
+                    <#content_type as ::annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues),
+                )))
+            },
+            (true, None) => quote_spanned! {field_type.span()=>
+                <#field_type as ::annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues)?
+            },
+            (false, Some(content_type)) => {
+                let value_or_none = quote_spanned! {field_type.span()=>
+                    ::core::result::Result::ok(<#content_type as #serde::Deserialize<'de>>::deserialize(#flattened))
+                };
+                self.as_its_slot_holds_it(field, &value_or_none)
+            }
+            (false, None) if self.deserialized_struct.collects_type_errors => {
+                let type_name = type_name_of(field_type);
+                let read = quote_spanned! {field_type.span()=>
+                    ::annotated::__private::Leftovers::flattened_collecting_type_errors::<#read_type>(
+                        &mut #leftovers,
+                        #type_name,
+                        self.#at,
+                        &mut #read_issues,
+                    )
+                };
+                if is_read_by_a_function {
+                    quote!(::core::option::Option::map(#read, |#wrapper| #wrapper.value))
+                } else {
+                    read
+                }
+            }
+            (false, None) => {
+                let read = quote_spanned! {field_type.span()=>
+                    <#read_type as #serde::Deserialize<'de>>::deserialize(#flattened)?
+                };
+                if is_read_by_a_function {
+                    quote!(#read.value)
+                } else {
+                    read
+                }
+            }
+        };
+        quote!(let #slot: #slot_type = #read_value;)
     }
 
     fn value_read_from_the_map(&self, field: &ValidatedField) -> TokenStream {
@@ -878,6 +1024,12 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn slot_type_of(&self, field: &ValidatedField) -> TokenStream {
         let field_type = field.field_type;
+        if field.is_flattened && self.is_read_with_issues(field) {
+            return quote!(::core::option::Option<#field_type>);
+        }
+        if field.is_flattened {
+            return quote!(#field_type);
+        }
         if self.is_read_with_issues(field) {
             return quote!(::core::option::Option<::core::option::Option<#field_type>>);
         }
@@ -888,7 +1040,7 @@ impl<'a> DeserializeExpansion<'a> {
         let slot = slot_of(field);
         let is_read_with_issues = self.is_read_with_issues(field);
         match self.when_absent(field) {
-            WhenAbsent::IsMissing | WhenAbsent::TakesStructDefault => TokenStream::new(),
+            WhenAbsent::IsMissing | WhenAbsent::TakesStructDefault | WhenAbsent::IsNeverAbsent => TokenStream::new(),
             WhenAbsent::IsNone if is_read_with_issues => quote! {
                 let #slot = ::core::option::Option::unwrap_or(
                     #slot,
@@ -975,6 +1127,9 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn when_absent(&self, field: &ValidatedField) -> WhenAbsent<'a> {
+        if field.is_flattened && !self.is_skipped(field) {
+            return WhenAbsent::IsNeverAbsent;
+        }
         if let Some(default) = &self.serde_field_of(field).default {
             return WhenAbsent::TakesDefault(default);
         }
@@ -1054,13 +1209,11 @@ impl<'a> DeserializeExpansion<'a> {
     // Nothing waits in the field's buffer for a value annotated didn't read. Validating its nested values into the
     // buffer lets the field's rules find them there, as for a value read, so the rules are expanded once for both.
     fn validating_nested_values(&self, field: &ValidatedField, value: &TokenStream) -> TokenStream {
-        let Expansion { at, .. } = &self.rules;
-        let name = &field.name;
         self.validating_nested_values_in(
             &field.rules,
             field.is_optional,
             value,
-            &quote!(&#at.field(#name)),
+            &self.rules.field_location(field),
             &FieldBuffer {
                 read_issues: read_issues_of(field),
                 field_type_span: field.field_type.span(),
@@ -1135,6 +1288,7 @@ enum WhenAbsent<'a> {
     IsNone,
     TakesDefault(&'a DefaultValue),
     TakesStructDefault,
+    IsNeverAbsent,
 }
 
 struct FieldBuffer {

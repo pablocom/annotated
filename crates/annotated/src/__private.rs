@@ -13,6 +13,8 @@ pub use crate::collecting_type_errors::{
 };
 #[cfg(feature = "serde")]
 pub use crate::deserialize::DeserializeAt;
+#[cfg(feature = "serde")]
+pub use crate::flattened::{FlatMapDeserializer, Key, Leftovers};
 
 // Out of line and cold, so a rule that passes costs one branch: the benchmarks' order of 100 lines validates in
 // 357 ns instead of 429 ns with LTO, and in 581 ns instead of 1.03 µs without.
