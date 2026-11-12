@@ -301,6 +301,8 @@ pub use annotated_derive::Validate;
 /// - The `expected` parameter is what serde says the type expects (`u8`, `a string`, `struct Address`). When serde
 ///   doesn't say, as when the type rejects the value with a message of its own, it is the type's name.
 /// - The `found` parameter is the kind of value in the input (`string`, `integer`, `null`, …), never the value itself.
+/// - A name that is no variant of an enum is a [`Problem::UnknownVariant`] instead, whose `expected` parameter lists
+///   the names the enum accepts, never the one sent.
 /// - A value of the wrong type is checked by no other rule, and the struct-level rules are skipped, as when a field is
 ///   missing.
 /// - A nested struct that collects type errors too reports the ones inside it at their full paths.

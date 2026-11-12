@@ -33,6 +33,7 @@ This file lists every change that users of the crates can notice. The format fol
   - With `collect_type_errors`, keys that don't fit a flattened type are `Problem::InvalidType` at the struct's location. A `nested` flattened value follows its own type's option.
   - As with serde, a struct with a flattened field is read as a map, so it can't be read from a sequence. Only such a struct keeps the keys it doesn't know, which allocates for each of them.
   - `flatten` in a struct with `deny_unknown_fields` is a compile error.
+- `Problem::UnknownVariant`, with the code `unknown_variant`: a value names no variant of its enum. Its parameter `expected` lists the names the enum accepts, comma-separated, and its message is `must be one of card, transfer`. It never repeats the name sent.
 - `#[derive(Validate)]` works on enums, with unit, newtype, tuple and struct variants.
   - Rules go on the fields of the variants, named or not, and the variant the value holds is checked.
   - Each issue is at the path where serde reads its value, following the enum's tagging: under the variant's name by default, at the enum's own location with `tag` or `untagged`, and under the content's name with `tag` and `content`. A newtype variant's value is at the variant's location, and a tuple variant's elements are at their index.
@@ -41,6 +42,7 @@ This file lists every change that users of the crates can notice. The format fol
 ### Changed
 
 - `#[derive(Validate)]` reports a field with `#[serde(flatten)]` at the struct's own location, where serde reads its keys, instead of under the field's name.
+- Under `collect_type_errors`, a field holding a serde enum reports a name that is none of its variants as `Problem::UnknownVariant`, instead of `Problem::InvalidType`.
 
 ## [0.1.0] - 2026-11-12
 

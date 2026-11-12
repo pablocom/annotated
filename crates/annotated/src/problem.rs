@@ -39,6 +39,14 @@ pub enum Problem {
         /// `sequence` or `map`. It is never the value itself, so nothing from the input is repeated back.
         found: &'static str,
     },
+    /// A value names no variant of its enum. Reported by collecting deserialization, with the code `unknown_variant` and
+    /// the parameter `expected`, the names the enum accepts, comma-separated.
+    #[non_exhaustive]
+    UnknownVariant {
+        /// The names the enum accepts, aliases included, as serde lists them. The name that was sent isn't kept, so
+        /// nothing from the input is repeated back.
+        expected: &'static [&'static str],
+    },
     /// A length is out of bounds. Reported by `length`, with the code `length`. Its parameters are the `min` and `max`
     /// the rule has, `equal` as well when the two are the same, and `unit`.
     #[non_exhaustive]
@@ -243,6 +251,7 @@ impl Problem {
             Self::Required => "required",
             Self::Missing => "missing",
             Self::InvalidType { .. } => "invalid_type",
+            Self::UnknownVariant { .. } => "unknown_variant",
             Self::Length { .. } => "length",
             Self::Range { .. } => "range",
             Self::Email => "email",
@@ -278,6 +287,7 @@ impl Problem {
                 ("found", ParamValue::text(found)),
             ],
             Self::Required | Self::Missing | Self::Email | Self::Ip | Self::Ipv4 | Self::Ipv6 => Vec::new(),
+            Self::UnknownVariant { expected } => vec![("expected", ParamValue::from(expected.join(", ")))],
             Self::Url { schemes } => vec![("schemes", ParamValue::from(schemes.join(", ")))],
             Self::Pattern { pattern } => vec![("pattern", ParamValue::text(pattern))],
             Self::Contains { text } => vec![("text", ParamValue::text(text))],
@@ -294,6 +304,7 @@ impl Display for Problem {
             Self::Required => formatter.write_str("is required"),
             Self::Missing => formatter.write_str("is missing"),
             Self::InvalidType { expected, found } => write!(formatter, "must be {expected}, found {found}"),
+            Self::UnknownVariant { expected } => write!(formatter, "must be one of {}", expected.join(", ")),
             Self::Length { bounds, unit } => {
                 let counted_in = unit.counted_in(*bounds.farthest());
                 match unit {
@@ -618,6 +629,31 @@ mod tests {
                 ("expected", ParamValue::Text("struct Address".into())),
                 ("found", ParamValue::Text("integer".into())),
             ]
+        );
+    }
+
+    fn unknown_variant(expected: &'static [&'static str]) -> Problem {
+        Problem::UnknownVariant { expected }
+    }
+
+    #[test]
+    fn a_tag_that_names_no_variant_is_known_as_unknown_variant() {
+        assert_eq!(unknown_variant(&["card", "transfer"]).code(), "unknown_variant");
+    }
+
+    #[test]
+    fn a_tag_that_names_no_variant_reads_as_the_names_accepted() {
+        assert_eq!(
+            unknown_variant(&["card", "transfer", "cash"]).to_string(),
+            "must be one of card, transfer, cash"
+        );
+    }
+
+    #[test]
+    fn an_unknown_variant_s_param_is_the_names_accepted() {
+        assert_eq!(
+            unknown_variant(&["card", "transfer"]).params(),
+            [("expected", ParamValue::Text("card, transfer".into()))]
         );
     }
 

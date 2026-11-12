@@ -402,6 +402,7 @@ JSON writes every map key as a string. So a key written as a string is read as t
 
 Its message is `must be {expected}, found {found}`.
 
+- **An unknown variant.** A name that is no variant of an enum is a `Problem::UnknownVariant` instead, as [Enums](#enums) says.
 - **A failure inside the field.** The value that failed may be inside the field: an element of a list, say, or a field of a nested struct that doesn't collect type errors. Then both parameters describe that inner value, as serde's message does.
 - **The value is never included.** Nothing the client sent, a password for example, is echoed back.
 - **Cost.** Buffering allocates once for each sequence, map, option or newtype in a field. Strings and bytes are borrowed when the format lends them, and moved when the format hands over its own copy. So a flat struct read from `serde_json` allocates no more than it does without the option.

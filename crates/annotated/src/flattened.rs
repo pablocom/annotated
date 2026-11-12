@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, Visitor};
 
-use crate::collecting_type_errors::invalid_type;
+use crate::collecting_type_errors::problem_of;
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, WrongType};
 use crate::{Location, Report};
@@ -51,7 +51,7 @@ impl<'de> Leftovers<'de> {
         match T::deserialize(self.flattened::<WrongType>()) {
             Ok(value) => Some(value),
             Err(wrong_type) => {
-                found.push(at, invalid_type(wrong_type, type_name, ValueKind::Map));
+                found.push(at, problem_of(wrong_type, type_name, ValueKind::Map));
                 None
             }
         }

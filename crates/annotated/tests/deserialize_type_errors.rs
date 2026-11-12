@@ -307,6 +307,67 @@ fn an_optional_value_its_type_refuses_with_a_message_of_its_own_must_be_the_type
     );
 }
 
+#[derive(serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+enum Contract {
+    Permanent,
+    FixedTerm,
+    #[serde(alias = "temporary")]
+    Seasonal,
+}
+
+#[derive(serde::Deserialize, Debug)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum Pay {
+    Monthly {
+        #[allow(dead_code)]
+        cents: u32,
+    },
+    Hourly {
+        #[allow(dead_code)]
+        cents: u32,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct Hiring {
+    #[allow(dead_code)]
+    contract: Contract,
+    #[allow(dead_code)]
+    pay: Pay,
+}
+
+#[test]
+fn a_variant_a_serde_enum_doesn_t_know_is_reported_by_the_names_it_accepts_aliases_included() {
+    let body = r#"{ "contract": "partTime", "pay": { "type": "monthly", "cents": 250000 } }"#;
+
+    assert_eq!(
+        issues_reading::<Hiring>(body),
+        ["contract: unknown_variant(expected: permanent, fixedTerm, seasonal, temporary)"]
+    );
+}
+
+#[test]
+fn a_tag_a_serde_enum_doesn_t_know_is_reported_at_its_field_by_the_names_it_accepts() {
+    let body = r#"{ "contract": "permanent", "pay": { "type": "daily", "cents": 9000 } }"#;
+
+    assert_eq!(
+        issues_reading::<Hiring>(body),
+        ["pay: unknown_variant(expected: monthly, hourly)"]
+    );
+}
+
+#[test]
+fn a_variant_a_serde_enum_doesn_t_know_is_never_repeated_back() {
+    let body = r#"{ "contract": "partTime", "pay": { "type": "monthly", "cents": 250000 } }"#;
+
+    let error = deserialize::<Hiring>(body).unwrap_err();
+
+    let everything_said = format!("{error}\n{error:?}");
+    assert!(!everything_said.contains("partTime"), "{everything_said}");
+}
+
 #[derive(Debug, PartialEq)]
 struct Password(String);
 

@@ -465,17 +465,22 @@ impl<'de, E: de::Error> IntoDeserializer<'de, E> for MapKeyDeserializer<'de, E> 
     }
 }
 
-/// Why a [`Content`] couldn't be read as a type: what the type expects and the kind of value found, when serde
-/// says. It never holds the value, nor a message that might quote it.
+/// Why a [`Content`] couldn't be read as a type: what the type expects and the kind of value found, when serde says,
+/// or the names an enum accepts. It never holds the value, nor a message that might quote it.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct WrongType {
-    pub(crate) expected: Option<String>,
-    pub(crate) found: Option<ValueKind>,
+pub(crate) enum WrongType {
+    Mismatched {
+        expected: Option<String>,
+        found: Option<ValueKind>,
+    },
+    UnknownVariant {
+        expected: &'static [&'static str],
+    },
 }
 
 impl WrongType {
     fn of(unexpected: &Unexpected<'_>, expected: &dyn Expected) -> Self {
-        Self {
+        Self::Mismatched {
             expected: Some(expected.to_string()),
             found: ValueKind::of_unexpected(unexpected),
         }
@@ -484,7 +489,7 @@ impl WrongType {
 
 impl de::Error for WrongType {
     fn custom<T: Display>(_message: T) -> Self {
-        Self {
+        Self::Mismatched {
             expected: None,
             found: None,
         }
@@ -499,23 +504,34 @@ impl de::Error for WrongType {
     }
 
     fn invalid_length(_length: usize, expected: &dyn Expected) -> Self {
-        Self {
+        Self::Mismatched {
             expected: Some(expected.to_string()),
             found: None,
         }
+    }
+
+    fn unknown_variant(_variant: &str, expected: &'static [&'static str]) -> Self {
+        Self::UnknownVariant { expected }
     }
 }
 
 impl Display for WrongType {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("invalid type")?;
-        if let Some(found) = self.found {
-            write!(formatter, ": {}", found.name())?;
+        match self {
+            Self::Mismatched { expected, found } => {
+                formatter.write_str("invalid type")?;
+                if let Some(found) = found {
+                    write!(formatter, ": {}", found.name())?;
+                }
+                if let Some(expected) = expected {
+                    write!(formatter, ", expected {expected}")?;
+                }
+                Ok(())
+            }
+            Self::UnknownVariant { expected } => {
+                write!(formatter, "unknown variant, expected one of {}", expected.join(", "))
+            }
         }
-        if let Some(expected) = &self.expected {
-            write!(formatter, ", expected {expected}")?;
-        }
-        Ok(())
     }
 }
 
@@ -572,7 +588,7 @@ mod tests {
     }
 
     fn wrong_type(expected: &str, found: ValueKind) -> WrongType {
-        WrongType {
+        WrongType::Mismatched {
             expected: Some(expected.to_owned()),
             found: Some(found),
         }
@@ -688,7 +704,7 @@ mod tests {
     fn a_128_bit_integer_beyond_64_bits_is_refused_by_a_narrower_type() {
         assert_eq!(
             read::<u64>(Content::U128(u128::MAX)),
-            Err(WrongType {
+            Err(WrongType::Mismatched {
                 expected: Some("u64".to_owned()),
                 found: None,
             })
@@ -917,7 +933,7 @@ mod tests {
 
         assert_eq!(
             read::<(u8, u8)>(three_elements),
-            Err(WrongType {
+            Err(WrongType::Mismatched {
                 expected: Some("2 elements in sequence".to_owned()),
                 found: None,
             })
@@ -1056,7 +1072,7 @@ mod tests {
 
         assert_eq!(
             read::<Point>(without_y),
-            Err(WrongType {
+            Err(WrongType::Mismatched {
                 expected: None,
                 found: None,
             })
@@ -1214,7 +1230,7 @@ mod tests {
     fn a_length_error_keeps_what_was_expected() {
         assert_eq!(
             WrongType::invalid_length(3, &"a tuple of size 2"),
-            WrongType {
+            WrongType::Mismatched {
                 expected: Some("a tuple of size 2".to_owned()),
                 found: None,
             }
@@ -1225,7 +1241,7 @@ mod tests {
     fn a_custom_error_keeps_nothing_of_its_message() {
         assert_eq!(
             WrongType::custom("hunter2 is too weak"),
-            WrongType {
+            WrongType::Mismatched {
                 expected: None,
                 found: None,
             }
@@ -1242,7 +1258,7 @@ mod tests {
 
     #[test]
     fn a_wrong_type_without_a_reason_serde_structures_reads_as_an_invalid_type() {
-        let without_a_reason = WrongType {
+        let without_a_reason = WrongType::Mismatched {
             expected: None,
             found: None,
         };

@@ -45,7 +45,7 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
             Ok(value) => Ok(Some(value)),
             Err(wrong_type) => {
                 self.found
-                    .push(self.at, invalid_type(wrong_type, self.type_name, kind_found));
+                    .push(self.at, problem_of(wrong_type, self.type_name, kind_found));
                 Ok(None)
             }
         }
@@ -87,7 +87,7 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for NestedCollectingTypeErro
             Err(wrong_type) => {
                 *self.found = self.found.new_alike();
                 self.found
-                    .push(self.at, invalid_type(wrong_type, self.type_name, kind_found));
+                    .push(self.at, problem_of(wrong_type, self.type_name, kind_found));
                 Ok(None)
             }
         }
@@ -130,7 +130,7 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
             Ok(value) => Ok(Some(value)),
             Err(FunctionError::WrongType(wrong_type)) => {
                 self.found
-                    .push(self.at, invalid_type(wrong_type, self.type_name, kind_found));
+                    .push(self.at, problem_of(wrong_type, self.type_name, kind_found));
                 Ok(None)
             }
             Err(FunctionError::Message(message)) => Err(D::Error::custom(message)),
@@ -148,10 +148,13 @@ fn buffered<'de, D: Deserializer<'de>, E>(
 }
 
 #[cold]
-pub(crate) fn invalid_type(wrong_type: WrongType, type_name: &'static str, kind_found: ValueKind) -> Problem {
-    Problem::InvalidType {
-        expected: wrong_type.expected.map_or(Cow::Borrowed(type_name), Cow::Owned),
-        found: wrong_type.found.unwrap_or(kind_found).name(),
+pub(crate) fn problem_of(wrong_type: WrongType, type_name: &'static str, kind_found: ValueKind) -> Problem {
+    match wrong_type {
+        WrongType::Mismatched { expected, found } => Problem::InvalidType {
+            expected: expected.map_or(Cow::Borrowed(type_name), Cow::Owned),
+            found: found.unwrap_or(kind_found).name(),
+        },
+        WrongType::UnknownVariant { expected } => Problem::UnknownVariant { expected },
     }
 }
 
