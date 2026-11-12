@@ -1618,3 +1618,59 @@ fn a_skipped_variant_s_type_parameter_needs_no_deserialize() {
 fn a_tag_given_as_an_index_beyond_the_variants_reads_as_the_other_variant() {
     assert_eq!(read::<Attachment>(r#"{ "type": 7 }"#), Ok(Attachment::Unsupported));
 }
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum Envelope<T> {
+    Data {
+        #[validate(nested)]
+        payload: T,
+    },
+    Empty,
+}
+
+#[test]
+fn an_internally_tagged_enum_with_a_type_parameter_reads_the_value_it_holds() {
+    assert_eq!(
+        issues_reading::<Envelope<Address>>(r#"{ "type": "data", "payload": { "street": "" } }"#),
+        ["payload.street: required"]
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+enum Message<'a, T> {
+    Text(#[validate(required)] &'a str),
+    Value(#[validate(nested)] T),
+}
+
+#[test]
+fn an_adjacently_tagged_enum_with_a_lifetime_and_a_type_parameter_reads_with_both() {
+    assert_eq!(
+        issues_reading::<Message<Address>>(r#"{ "data": { "street": "" }, "type": "value" }"#),
+        ["data.street: required"]
+    );
+}
+
+#[test]
+fn an_adjacently_tagged_enum_with_a_lifetime_borrows_from_the_input() {
+    assert_eq!(
+        read::<Message<Address>>(r#"{ "type": "text", "data": "Hola" }"#),
+        Ok(Message::Text("Hola"))
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(untagged)]
+enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
+
+#[test]
+fn an_untagged_enum_with_type_parameters_reads_the_first_that_fits() {
+    assert_eq!(
+        read::<Either<u8, String>>(r#""ocho""#),
+        Ok(Either::Right("ocho".to_owned()))
+    );
+}
