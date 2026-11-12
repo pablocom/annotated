@@ -144,10 +144,3 @@ impl Display for Case {
 pub fn all_cases() -> Vec<Case> {
     scenarios::all().into_iter().chain(experiments::cases()).collect()
 }
-
-/// annotated's own case in every scenario, whose instructions and allocations `benches/instructions.rs` counts.
-pub fn annotated_cases() -> impl Iterator<Item = Case> {
-    scenarios::all()
-        .into_iter()
-        .filter(|case| case.library == Library::Annotated)
-}
