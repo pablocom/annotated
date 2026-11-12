@@ -1,11 +1,12 @@
 use proc_macro2::{Literal, Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{Generics, Ident, Lifetime, parse_quote};
 
 use crate::deserialize_expansion::{DeserializeExpansion, with_lifetime, without_lifetime_parameters};
 use crate::deserialized_enum::{DeserializedEnum, DeserializedVariant};
 use crate::deserialized_struct::Form;
 use crate::expansion::Expansion;
+use crate::serde_names::Tag;
 use crate::validated_struct::Place;
 
 pub fn deserialize_enum_impl(deserialized_enum: &DeserializedEnum) -> TokenStream {
@@ -65,7 +66,10 @@ impl<'a> EnumExpansion<'a> {
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         let (_, type_generics, _) = input.generics.split_for_impl();
         let variant_identifier = self.variant_identifier();
-        let enum_visitor = self.enum_visitor();
+        let variant_reader = match &self.deserialized_enum.tag {
+            Tag::External => self.enum_visitor(),
+            Tag::Internal { .. } | Tag::Adjacent { .. } | Tag::Untagged => self.variant_seed(),
+        };
         let reading = self.reading();
         quote! {
             impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
@@ -75,7 +79,7 @@ impl<'a> EnumExpansion<'a> {
                     #found: &mut ::annotated::Report,
                 ) -> ::core::result::Result<::core::option::Option<Self>, __D::Error> {
                     #variant_identifier
-                    #enum_visitor
+                    #variant_reader
                     #reading
                 }
             }
@@ -213,11 +217,7 @@ impl<'a> EnumExpansion<'a> {
             visitor_generics.split_for_impl();
         let generics_reading_variants = with_lifetime(&self.generics_reading_variants(), visitor_lifetime);
         let (impl_generics, _, where_clause) = generics_reading_variants.split_for_impl();
-        let expecting = self
-            .deserialized_enum
-            .expecting
-            .clone()
-            .unwrap_or_else(|| format!("enum {name}"));
+        let expecting = self.expecting();
         let variant_arms = self
             .readable_variants()
             .map(|(index, variant)| self.variant_arm(index, variant));
@@ -247,6 +247,21 @@ impl<'a> EnumExpansion<'a> {
         }
     }
 
+    fn expecting(&self) -> String {
+        let name = &self.deserialized_enum.input.ident;
+        let representation = match &self.deserialized_enum.tag {
+            Tag::External => "",
+            Tag::Internal { .. } => "internally tagged ",
+            Tag::Adjacent { .. } => "adjacently tagged ",
+            Tag::Untagged => "untagged ",
+        };
+        self.deserialized_enum
+            .expecting
+            .clone()
+            .unwrap_or_else(|| format!("{representation}enum {name}"))
+    }
+
+    // An externally tagged variant is read through the `VariantAccess` serde's `EnumAccess` gives for it.
     fn variant_arm(&self, index: usize, variant: &DeserializedVariant) -> TokenStream {
         let Self { serde, .. } = self;
         let variant_access = &self.variant;
@@ -261,116 +276,166 @@ impl<'a> EnumExpansion<'a> {
                 }
             };
         };
+        let new_visitor = content.new_visitor();
+        let reading = match deserialized_content.form {
+            Form::Struct if content.has_flattened_fields() => {
+                quote!(#serde::de::VariantAccess::newtype_variant_seed(#variant_access, #new_visitor))
+            }
+            Form::Struct => {
+                quote!(#serde::de::VariantAccess::struct_variant(#variant_access, __FIELDS, #new_visitor))
+            }
+            Form::Tuple => {
+                let length = content.read_fields().count();
+                quote!(#serde::de::VariantAccess::tuple_variant(#variant_access, #length, #new_visitor))
+            }
+            Form::Newtype if content.read_fields().next().is_none() => quote! {
+                #serde::de::VariantAccess::unit_variant(#variant_access)?;
+                ::core::result::Result::Ok(#new_visitor.checked_value((), ()))
+            },
+            Form::Newtype => {
+                quote!(#serde::de::VariantAccess::newtype_variant_seed(#variant_access, #new_visitor))
+            }
+        };
+        let content_reading = self.content_reading(variant, content, deserialized_content.form, &reading);
+        quote! {
+            (__Variant::#tag, #variant_access) => {
+                #content_reading
+            }
+        }
+    }
+
+    // The items that read a variant's content, the location and report they're given, and the reading itself.
+    fn content_reading(
+        &self,
+        variant: &DeserializedVariant,
+        content: &DeserializeExpansion,
+        form: Form,
+        reading: &TokenStream,
+    ) -> TokenStream {
         let Expansion { at, found, .. } = &self.rules;
         let content_at = match &variant.content_place {
             Place::Named(name) => quote!(&self.#at.field(#name)),
             Place::Indexed(index) => quote!(&self.#at.index(#index)),
             Place::OfItsParent => quote!(self.#at),
         };
+        let reads_fields_by_name = form == Form::Struct && !content.has_flattened_fields();
+        let field_identifier = reads_fields_by_name.then(|| content.field_identifier());
         let functions_reading_fields = content.functions_reading_fields();
         let visitor = content.visitor();
+        quote! {
+            #field_identifier
+            #(#functions_reading_fields)*
+            #visitor
+            let #at = #content_at;
+            let #found = self.#found;
+            #reading
+        }
+    }
+
+    // A variant named by a tag is read from a deserializer of its content: one buffered for an internally tagged enum.
+    fn variant_seed(&self) -> TokenStream {
+        let Self {
+            serde,
+            deserializer,
+            variant,
+            visitor_lifetime,
+            ..
+        } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let input = self.deserialized_enum.input;
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let visitor_generics = with_lifetime(&input.generics, visitor_lifetime);
+        let (visitor_definition_generics, visitor_type_generics, visitor_where_clause) =
+            visitor_generics.split_for_impl();
+        let generics_reading_variants = with_lifetime(&self.generics_reading_variants(), visitor_lifetime);
+        let (impl_generics, _, where_clause) = generics_reading_variants.split_for_impl();
+        let variant_arms = self
+            .readable_variants()
+            .map(|(index, variant)| self.variant_read_from_its_content(index, variant));
+        quote! {
+            struct __VariantSeed #visitor_definition_generics #visitor_where_clause {
+                #variant: __Variant,
+                #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
+                #found: &#visitor_lifetime mut ::annotated::Report,
+                marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
+            }
+
+            impl #impl_generics #serde::de::DeserializeSeed<'de> for __VariantSeed #visitor_type_generics #where_clause {
+                type Value = ::core::option::Option<#name #type_generics>;
+
+                fn deserialize<__D: #serde::Deserializer<'de>>(
+                    self,
+                    #deserializer: __D,
+                ) -> ::core::result::Result<Self::Value, __D::Error> {
+                    match self.#variant {
+                        #(#variant_arms)*
+                    }
+                }
+            }
+        }
+    }
+
+    fn variant_read_from_its_content(&self, index: usize, variant: &DeserializedVariant) -> TokenStream {
+        let Self {
+            serde, deserializer, ..
+        } = self;
+        let tag = format_ident!("Variant{index}");
+        let name = &self.deserialized_enum.input.ident;
+        let ident = variant.ident;
+        let skipping_the_content = quote! {
+            #serde::Deserializer::deserialize_ignored_any(#deserializer, #serde::de::IgnoredAny)?;
+        };
+        let (Some(content), Some(deserialized_content)) = (&self.contents[index], &variant.content) else {
+            return quote! {
+                __Variant::#tag => {
+                    #skipping_the_content
+                    ::core::result::Result::Ok(::core::option::Option::Some(#name::#ident))
+                }
+            };
+        };
         let new_visitor = content.new_visitor();
-        let (field_identifier, reading) = match deserialized_content.form {
-            Form::Struct if content.has_flattened_fields() => (
-                TokenStream::new(),
-                quote!(#serde::de::VariantAccess::newtype_variant_seed(#variant_access, #new_visitor)),
-            ),
-            Form::Struct => (
-                content.field_identifier(),
-                quote!(#serde::de::VariantAccess::struct_variant(#variant_access, __FIELDS, #new_visitor)),
-            ),
+        let reading = match deserialized_content.form {
+            Form::Struct => quote!(#serde::Deserializer::deserialize_any(#deserializer, #new_visitor)),
             Form::Tuple => {
                 let length = content.read_fields().count();
-                (
-                    TokenStream::new(),
-                    quote!(#serde::de::VariantAccess::tuple_variant(#variant_access, #length, #new_visitor)),
-                )
+                quote!(#serde::Deserializer::deserialize_tuple(#deserializer, #length, #new_visitor))
             }
-            Form::Newtype if content.read_fields().next().is_none() => (
-                TokenStream::new(),
-                quote! {
-                    #serde::de::VariantAccess::unit_variant(#variant_access)?;
-                    ::core::result::Result::Ok(#new_visitor.checked_value((), ()))
-                },
-            ),
-            Form::Newtype => (
-                TokenStream::new(),
-                quote!(#serde::de::VariantAccess::newtype_variant_seed(#variant_access, #new_visitor)),
-            ),
+            Form::Newtype if content.read_fields().next().is_none() => quote! {
+                #skipping_the_content
+                ::core::result::Result::Ok(#new_visitor.checked_value((), ()))
+            },
+            Form::Newtype => quote!(#serde::de::DeserializeSeed::deserialize(#new_visitor, #deserializer)),
         };
+        let content_reading = self.content_reading(variant, content, deserialized_content.form, &reading);
         quote! {
-            (__Variant::#tag, #variant_access) => {
-                #field_identifier
-                #(#functions_reading_fields)*
-                #visitor
-                let #at = #content_at;
-                let #found = self.#found;
-                #reading
+            __Variant::#tag => {
+                #content_reading
             }
         }
     }
 
     fn reading(&self) -> TokenStream {
         let Self {
-            serde,
-            deserializer,
             read,
-            read_issues,
             deserialized,
             enum_checks_label,
             ..
         } = self;
-        let Expansion { at, found, .. } = &self.rules;
-        let input = self.deserialized_enum.input;
-        let enum_name = &self.deserialized_enum.name;
-        let without_lifetimes = without_lifetime_parameters(&input.generics);
-        let (_, type_generics_without_lifetimes, _) = without_lifetimes.split_for_impl();
-        let turbofish = type_generics_without_lifetimes.as_turbofish();
+        let found = &self.rules.found;
         let enum_checks = self.rules.whole_value_checks(
             &self.deserialized_enum.enum_checks,
             &quote!(#deserialized),
             &quote!(Self),
         );
-        let new_visitor = |found_by_the_visitor: TokenStream| {
-            quote! {
-                __EnumVisitor #turbofish {
-                    #at,
-                    #found: #found_by_the_visitor,
-                    marker: ::core::marker::PhantomData,
-                }
-            }
-        };
-        let read_value = if self.deserialized_enum.collects_type_errors {
-            let type_name = input.ident.to_string();
-            let new_visitor = new_visitor(quote!(&mut #read_issues));
-            quote! {
-                let mut #read_issues = #found.new_alike();
-                let #read = match ::annotated::__private::deserialize_enum_collecting_type_errors(
-                    #deserializer,
-                    #enum_name,
-                    __VARIANTS,
-                    #new_visitor,
-                    #type_name,
-                )? {
-                    ::core::result::Result::Ok(#read) => {
-                        #found.append(&mut #read_issues);
-                        #read
-                    }
-                    ::core::result::Result::Err(problem) => {
-                        ::annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
-                        ::core::option::Option::None
-                    }
-                };
-            }
-        } else if enum_checks.is_empty() {
-            let new_visitor = new_visitor(quote!(#found));
-            return quote! {
-                #serde::Deserializer::deserialize_enum(#deserializer, #enum_name, __VARIANTS, #new_visitor)
-            };
-        } else {
-            let new_visitor = new_visitor(quote!(&mut *#found));
-            quote! {
-                let #read = #serde::Deserializer::deserialize_enum(#deserializer, #enum_name, __VARIANTS, #new_visitor)?;
+        let collects_type_errors = self.deserialized_enum.collects_type_errors;
+        let read_value = match &self.deserialized_enum.tag {
+            Tag::Internal { tag } => self.internally_tagged_value_read(tag),
+            _ if collects_type_errors => self.value_read_collecting_type_errors(),
+            _ if enum_checks.is_empty() => return self.enum_read(&quote!(#found)),
+            _ => {
+                let enum_read = self.enum_read(&quote!(&mut *#found));
+                quote!(let #read = #enum_read?;)
             }
         };
         let enum_checks_unless_finished = (!enum_checks.is_empty()).then(|| {
@@ -388,6 +453,107 @@ impl<'a> EnumExpansion<'a> {
             #read_value
             #enum_checks_unless_finished
             ::core::result::Result::Ok(#read)
+        }
+    }
+
+    fn turbofish(&self) -> TokenStream {
+        let without_lifetimes = without_lifetime_parameters(&self.deserialized_enum.input.generics);
+        let (_, type_generics_without_lifetimes, _) = without_lifetimes.split_for_impl();
+        type_generics_without_lifetimes.as_turbofish().to_token_stream()
+    }
+
+    fn enum_visitor_reporting_into(&self, found_by_the_visitor: &TokenStream) -> TokenStream {
+        let Expansion { at, found, .. } = &self.rules;
+        let turbofish = self.turbofish();
+        quote! {
+            __EnumVisitor #turbofish {
+                #at,
+                #found: #found_by_the_visitor,
+                marker: ::core::marker::PhantomData,
+            }
+        }
+    }
+
+    fn enum_read(&self, found_by_the_visitor: &TokenStream) -> TokenStream {
+        let Self {
+            serde, deserializer, ..
+        } = self;
+        let enum_name = &self.deserialized_enum.name;
+        let enum_visitor = self.enum_visitor_reporting_into(found_by_the_visitor);
+        quote!(#serde::Deserializer::deserialize_enum(#deserializer, #enum_name, __VARIANTS, #enum_visitor))
+    }
+
+    // The enum is buffered whole first, since a streaming parser can't skip a variant it doesn't know.
+    fn value_read_collecting_type_errors(&self) -> TokenStream {
+        let Self {
+            deserializer,
+            read,
+            read_issues,
+            ..
+        } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let enum_name = &self.deserialized_enum.name;
+        let type_name = self.deserialized_enum.input.ident.to_string();
+        let enum_visitor = self.enum_visitor_reporting_into(&quote!(&mut #read_issues));
+        quote! {
+            let mut #read_issues = #found.new_alike();
+            let #read = match ::annotated::__private::deserialize_enum_collecting_type_errors(
+                #deserializer,
+                #enum_name,
+                __VARIANTS,
+                #enum_visitor,
+                #type_name,
+            )? {
+                ::core::result::Result::Ok(#read) => {
+                    #found.append(&mut #read_issues);
+                    #read
+                }
+                ::core::result::Result::Err(problem) => {
+                    ::annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
+                    ::core::option::Option::None
+                }
+            };
+        }
+    }
+
+    fn internally_tagged_value_read(&self, tag: &str) -> TokenStream {
+        let Self {
+            serde,
+            deserializer,
+            read,
+            variant,
+            ..
+        } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let expecting = self.expecting();
+        let collects_type_errors = self.deserialized_enum.collects_type_errors;
+        let turbofish = self.turbofish();
+        quote! {
+            let #read = match ::annotated::__private::read_internally_tagged::<_, __Variant>(
+                #deserializer,
+                #tag,
+                __VARIANTS,
+                #expecting,
+                #collects_type_errors,
+            )? {
+                ::annotated::__private::Tagged::Variant(#variant, content) => #serde::de::DeserializeSeed::deserialize(
+                    __VariantSeed #turbofish {
+                        #variant,
+                        #at,
+                        #found: &mut *#found,
+                        marker: ::core::marker::PhantomData,
+                    },
+                    ::annotated::__private::Buffered::deserializer::<__D::Error>(content),
+                )?,
+                ::annotated::__private::Tagged::IssueAtTheTag(problem) => {
+                    ::annotated::__private::record_issue(#found, &#at.field(#tag), problem, ::core::option::Option::None);
+                    ::core::option::Option::None
+                }
+                ::annotated::__private::Tagged::IssueAtTheEnum(problem) => {
+                    ::annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
+                    ::core::option::Option::None
+                }
+            };
         }
     }
 }

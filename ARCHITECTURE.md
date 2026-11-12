@@ -372,6 +372,8 @@ Both derives work on enums, with every kind of variant: unit, newtype, tuple and
 
 **How it's generated.** The enum gets an identifier for its variant names and a visitor that reads the variant through serde's `EnumAccess`. Each struct, tuple or newtype variant is then read by the same code a struct gets for its fields, in a block of its own, building the variant instead of a struct. Its visitor is given the location where the variant's content is. A newtype variant's value is read whole, through a seed, and a struct variant with a flattened field as a map, as serde's derive reads them.
 
+An externally tagged variant is read through the `VariantAccess` serde gives for it. Every other representation reads the variant from a deserializer of its content, through a seed that knows which variant its tag named. For an internally tagged enum, `annotated::__private::read_internally_tagged` reads the tag and buffers the other entries, and returns the variant the tag names, or the issue to report at the tag or at the enum.
+
 **Everything else works as for a struct:** generics and their bounds, borrowing, failing fast, and the equivalence with serde followed by `validate()`, which tests pin for each representation.
 
 **Cost.** A struct reads exactly as before, since enums generate code of their own. An externally tagged enum buffers nothing, and the other representations buffer what serde buffers. Trying an untagged variant that can't be built may allocate for its issues, which are then dropped. serde allocates an error for it too.

@@ -32,7 +32,7 @@ pub struct SerdeEnum {
 
 pub enum Tag {
     External,
-    Internal,
+    Internal { tag: String },
     Adjacent { content: String },
     Untagged,
 }
@@ -91,7 +91,7 @@ impl SerdeEnum {
     fn from_container(container: &Container) -> Self {
         let tag = match container.attrs.tag() {
             attr::TagType::External => Tag::External,
-            attr::TagType::Internal { .. } => Tag::Internal,
+            attr::TagType::Internal { tag } => Tag::Internal { tag: tag.clone() },
             attr::TagType::Adjacent { content, .. } => Tag::Adjacent {
                 content: content.clone(),
             },

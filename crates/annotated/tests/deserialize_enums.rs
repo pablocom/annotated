@@ -568,3 +568,221 @@ fn failing_fast_checks_no_enum_level_rule_after_the_first_issue() {
         ["direct.destination: required"]
     );
 }
+
+#[derive(Deserialize, Validate, Debug, PartialEq)]
+struct Device {
+    #[validate(required)]
+    token: String,
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum Notification {
+    #[serde(alias = "mail")]
+    Email {
+        #[validate(email)]
+        address: String,
+    },
+    Push(#[validate(nested)] Device),
+    Muted,
+}
+
+#[test]
+fn an_internally_tagged_variant_is_read_from_its_tag_and_the_keys_beside_it() {
+    assert_eq!(
+        read::<Notification>(r#"{ "type": "email", "address": "ada@example.com" }"#),
+        Ok(Notification::Email {
+            address: "ada@example.com".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn the_tag_of_an_internally_tagged_variant_may_come_after_its_keys() {
+    assert_eq!(
+        read::<Notification>(r#"{ "address": "ada@example.com", "type": "mail" }"#),
+        Ok(Notification::Email {
+            address: "ada@example.com".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn an_internally_tagged_unit_variant_is_read_from_its_tag_alone() {
+    assert_eq!(read::<Notification>(r#"{ "type": "muted" }"#), Ok(Notification::Muted));
+}
+
+#[test]
+fn an_issue_in_an_internally_tagged_variant_is_at_the_enum_s_location() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": "email", "address": "ada" }"#),
+        ["address: email"]
+    );
+}
+
+#[test]
+fn a_field_missing_from_an_internally_tagged_variant_is_missing_at_the_enum_s_location() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": "email" }"#),
+        ["address: missing"]
+    );
+}
+
+#[test]
+fn an_internally_tagged_newtype_variant_reads_its_value_from_the_keys_beside_the_tag() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": "push", "token": "" }"#),
+        ["token: required"]
+    );
+}
+
+#[test]
+fn an_internally_tagged_variant_is_read_from_a_sequence_led_by_its_tag_as_with_serde() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"["email", "ada"]"#),
+        ["address: email"]
+    );
+}
+
+#[test]
+fn a_missing_tag_is_missing_at_the_tag_s_name() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "address": "ada@example.com" }"#),
+        ["type: missing"]
+    );
+}
+
+#[test]
+fn a_tag_that_names_no_variant_is_an_issue_at_the_tag_even_without_collect_type_errors() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": "fax", "number": "+34 600 000 000" }"#),
+        ["type: unknown_variant(expected: email, mail, push, muted)"]
+    );
+}
+
+#[test]
+fn a_tag_that_isn_t_a_name_names_no_variant() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": { "kind": "email" } }"#),
+        ["type: unknown_variant(expected: email, mail, push, muted)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct Inbox {
+    #[validate(nested)]
+    first: Notification,
+    #[validate(nested)]
+    second: Notification,
+}
+
+#[test]
+fn reading_goes_on_after_a_tag_that_names_no_variant() {
+    let body = r#"{ "first": { "type": "fax" }, "second": { "type": "email", "address": "ada" } }"#;
+
+    assert_eq!(
+        issues_reading::<Inbox>(body),
+        [
+            "first.type: unknown_variant(expected: email, mail, push, muted)",
+            "second.address: email"
+        ]
+    );
+}
+
+#[test]
+fn a_tag_given_twice_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": "email", "type": "push" }"#),
+        ["the format's error: duplicate field `type` at line 1 column 25"]
+    );
+}
+
+#[test]
+fn without_collect_type_errors_a_value_that_isn_t_an_internally_tagged_enum_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Notification>("12"),
+        [
+            "the format's error: invalid type: integer `12`, expected internally tagged enum Notification at line 1 \
+          column 2"
+        ]
+    );
+}
+
+#[test]
+fn without_collect_type_errors_a_value_of_the_wrong_type_in_an_internally_tagged_variant_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": "email", "address": 12 }"#),
+        ["the format's error: invalid type: integer `12`, expected a string"]
+    );
+}
+
+#[derive(serde::Deserialize, Validate)]
+#[allow(dead_code)]
+struct DeviceThenValidated {
+    #[validate(required)]
+    token: String,
+}
+
+#[derive(serde::Deserialize, Validate)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[allow(dead_code)]
+enum NotificationThenValidated {
+    #[serde(alias = "mail")]
+    Email {
+        #[validate(email)]
+        address: String,
+    },
+    Push(#[validate(nested)] DeviceThenValidated),
+    Muted,
+}
+
+#[test]
+fn a_complete_internally_tagged_body_is_reported_as_serde_then_validate_report_it() {
+    let body = r#"{ "type": "push", "token": "" }"#;
+
+    assert_eq!(
+        issues_found_reading::<Notification>(body),
+        issues_validating_after_serde::<NotificationThenValidated>(body)
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+enum Alert {
+    Email {
+        #[validate(email)]
+        address: String,
+    },
+}
+
+#[test]
+fn under_collect_type_errors_a_value_of_the_wrong_type_in_an_internally_tagged_variant_is_an_issue_at_its_path() {
+    assert_eq!(
+        issues_reading::<Alert>(r#"{ "type": "email", "address": 12 }"#),
+        ["address: invalid_type(expected: a string, found: integer)"]
+    );
+}
+
+#[test]
+fn under_collect_type_errors_a_value_that_isn_t_an_internally_tagged_enum_is_an_issue_at_its_location() {
+    assert_eq!(
+        issues_reading::<Alert>("12"),
+        ["invalid_type(expected: internally tagged enum Alert, found: integer)"]
+    );
+}
+
+#[test]
+fn under_collect_type_errors_an_internally_tagged_variant_is_read_from_a_sequence_led_by_its_tag() {
+    assert_eq!(issues_reading::<Alert>(r#"["email", "ada"]"#), ["address: email"]);
+}
+
+#[test]
+fn under_collect_type_errors_a_tag_given_twice_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Alert>(r#"{ "type": "email", "type": "email" }"#),
+        ["the format's error: duplicate field `type`"]
+    );
+}

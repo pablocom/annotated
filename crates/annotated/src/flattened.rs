@@ -75,7 +75,7 @@ impl Key<'_> {
     }
 }
 
-fn field_name_of<'a>(key: &'a Content<'_>) -> Option<&'a str> {
+pub(crate) fn field_name_of<'a>(key: &'a Content<'_>) -> Option<&'a str> {
     match key {
         Content::Str(name) => Some(name),
         Content::String(name) => Some(name),

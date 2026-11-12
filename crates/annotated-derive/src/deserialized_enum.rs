@@ -4,7 +4,7 @@ use crate::deserialized_struct::{
     AcceptedSerdeAttributes, DeserializedStruct, Form, collects_type_errors, refuse_flatten, refuse_options_on,
     refuse_serde_attributes_other_than, refuse_what_fields_can_t_take,
 };
-use crate::serde_names::{SerdeEnum, SerdeStruct};
+use crate::serde_names::{SerdeEnum, SerdeStruct, Tag};
 use crate::validated_enum::ValidatedEnum;
 use crate::validated_struct::{Place, StructCheck, ValidatedStruct};
 
@@ -12,6 +12,7 @@ pub struct DeserializedEnum<'a> {
     pub input: &'a DeriveInput,
     pub variants: Vec<DeserializedVariant<'a>>,
     pub name: String,
+    pub tag: Tag,
     pub expecting: Option<String>,
     pub borrowed_lifetimes: Vec<syn::Lifetime>,
     pub enum_checks: Vec<StructCheck>,
@@ -34,9 +35,10 @@ const ON_AN_ENUM: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "deny_unknown_fields",
         "expecting",
         "into",
+        "tag",
     ],
-    refusal: "with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `rename_all`, `rename_all_fields`, \
-              `rename`, `deny_unknown_fields`, `expecting` and those that only change serializing",
+    refusal: "with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `rename_all`, \
+              `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting` and those that only change serializing",
 };
 
 const ON_A_VARIANT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
@@ -71,11 +73,11 @@ impl<'a> DeserializedEnum<'a> {
         } = validated;
         let SerdeEnum {
             name,
+            tag,
             variants: serde_variants,
             is_denying_unknown_fields,
             expecting,
             borrowed_lifetimes,
-            ..
         } = serde;
         let variants = data
             .variants
@@ -123,6 +125,7 @@ impl<'a> DeserializedEnum<'a> {
             input,
             variants,
             name,
+            tag,
             expecting,
             borrowed_lifetimes,
             enum_checks,

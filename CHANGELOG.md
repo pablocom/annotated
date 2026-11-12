@@ -44,6 +44,11 @@ This file lists every change that users of the crates can notice. The format fol
   - A name that is no variant is the format's error. With `collect_type_errors` on the enum, the enum is buffered whole, so it is `Problem::UnknownVariant` at the enum's location instead, and a value that isn't the enum is `Problem::InvalidType` there.
   - `#[validate(custom(check))]` on the enum runs once the variant could be built.
   - Reading an enum buffers nothing, unless it collects type errors.
+- `#[derive(Deserialize)]` reads internally tagged enums, with `#[serde(tag = "type")]`.
+  - As with serde, every key but the tag is buffered, and the variant is read from them. A sequence starting with the tag is read too.
+  - The variant's fields are at the enum's own location, beside the tag.
+  - A missing tag is `Problem::Missing` at the tag's name, and a tag that names no variant is `Problem::UnknownVariant` there, even without `collect_type_errors`, so reading goes on.
+  - With `collect_type_errors`, a value that isn't a map or a sequence is `Problem::InvalidType` at the enum's location.
 
 ### Changed
 

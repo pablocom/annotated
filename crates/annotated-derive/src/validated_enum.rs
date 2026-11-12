@@ -55,8 +55,8 @@ impl<'a> ValidatedVariant<'a> {
         let content_place = match tag {
             _ if serde_variant.is_untagged => Place::OfItsParent,
             Tag::External => Place::Named(serde_variant.name),
-            Tag::Adjacent { content } => Place::Named(content.clone()),
-            Tag::Internal | Tag::Untagged => Place::OfItsParent,
+            Tag::Adjacent { content, .. } => Place::Named(content.clone()),
+            Tag::Internal { .. } | Tag::Untagged => Place::OfItsParent,
         };
         let is_newtype = matches!(&variant.fields, Fields::Unnamed(fields) if fields.unnamed.len() == 1);
         let fields = variant

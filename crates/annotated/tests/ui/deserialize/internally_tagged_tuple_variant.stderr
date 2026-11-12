@@ -1,0 +1,5 @@
+error: #[serde(tag = "...")] cannot be used with tuple variants
+ --> tests/ui/deserialize/internally_tagged_tuple_variant.rs:6:5
+  |
+6 |     Rectangle(u32, u32),
+  |     ^^^^^^^^^^^^^^^^^^^
