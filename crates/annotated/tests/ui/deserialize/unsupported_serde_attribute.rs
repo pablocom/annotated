@@ -1,7 +1,7 @@
 use annotated::Deserialize;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", transparent)]
 struct NewMember {
     #[validate(required)]
     full_name: String,

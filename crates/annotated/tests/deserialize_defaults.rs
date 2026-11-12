@@ -458,3 +458,254 @@ fn a_body_without_its_defaulted_fields_fails_fast_on_the_issue_serde_then_valida
         .unwrap_err();
     assert_eq!(error.issues(), first_after_serde.as_slice());
 }
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+struct SearchFilters {
+    #[validate(length(max = 20))]
+    query: String,
+    #[validate(range(min = 1, max = 100))]
+    page_size: u32,
+    sort: Option<String>,
+}
+
+impl Default for SearchFilters {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            page_size: 20,
+            sort: Some("relevance".to_owned()),
+        }
+    }
+}
+
+#[test]
+fn an_absent_field_takes_its_value_in_the_struct_s_default() {
+    let filters = deserialize::<SearchFilters>(r#"{ "query": "boots", "sort": "price" }"#).unwrap();
+
+    assert_eq!(
+        filters,
+        SearchFilters {
+            query: "boots".to_owned(),
+            page_size: 20,
+            sort: Some("price".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn an_absent_optional_field_takes_its_value_in_the_struct_s_default_instead_of_none() {
+    let filters = deserialize::<SearchFilters>(r#"{ "query": "boots", "pageSize": 10 }"#).unwrap();
+
+    assert_eq!(
+        filters,
+        SearchFilters {
+            query: "boots".to_owned(),
+            page_size: 10,
+            sort: Some("relevance".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn an_element_missing_at_the_end_of_a_sequence_takes_its_value_in_the_struct_s_default() {
+    let filters = deserialize::<SearchFilters>(r#"["boots"]"#).unwrap();
+
+    assert_eq!(
+        filters,
+        SearchFilters {
+            query: "boots".to_owned(),
+            page_size: 20,
+            sort: Some("relevance".to_owned()),
+        }
+    );
+}
+
+fn fifty_results_by_date_in_spanish() -> ResultsPage {
+    ResultsPage {
+        size: 50,
+        order: "date".to_owned(),
+        language: "es".to_owned(),
+    }
+}
+
+fn english() -> String {
+    "en".to_owned()
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(default = "fifty_results_by_date_in_spanish")]
+struct ResultsPage {
+    #[validate(range(max = 40))]
+    size: u32,
+    order: String,
+    #[serde(default = "english")]
+    language: String,
+}
+
+#[test]
+fn the_struct_s_default_function_gives_an_absent_field_its_value() {
+    let page = deserialize::<ResultsPage>(r#"{ "size": 10, "language": "fr" }"#).unwrap();
+
+    assert_eq!(
+        page,
+        ResultsPage {
+            size: 10,
+            order: "date".to_owned(),
+            language: "fr".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn a_field_s_own_default_comes_before_the_struct_s() {
+    let page = deserialize::<ResultsPage>(r#"{ "size": 10, "order": "price" }"#).unwrap();
+
+    assert_eq!(
+        page,
+        ResultsPage {
+            size: 10,
+            order: "price".to_owned(),
+            language: "en".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn a_value_from_the_struct_s_default_is_checked_by_its_field_s_rules() {
+    let body = r#"{ "order": "price", "language": "fr" }"#;
+
+    assert_eq!(issues_reading::<ResultsPage>(body), ["size: range"]);
+}
+
+fn no_struct_default_expected() -> Coordinates {
+    panic!("the struct's default was made for an input with every field")
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(default = "no_struct_default_expected")]
+struct Coordinates {
+    latitude: i32,
+    longitude: i32,
+}
+
+#[test]
+fn the_struct_s_default_is_made_only_when_a_field_is_absent() {
+    let coordinates = deserialize::<Coordinates>(r#"{ "latitude": 40, "longitude": -3 }"#).unwrap();
+
+    assert_eq!(
+        coordinates,
+        Coordinates {
+            latitude: 40,
+            longitude: -3,
+        }
+    );
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct Itinerary {
+    #[validate(nested)]
+    #[allow(dead_code)]
+    starting_point: Address,
+    #[validate(range(min = 1))]
+    #[allow(dead_code)]
+    days: u8,
+}
+
+#[test]
+fn an_absent_nested_field_is_validated_on_its_value_in_the_struct_s_default() {
+    assert_eq!(
+        issues_reading::<Itinerary>(r#"{ "days": 2 }"#),
+        ["startingPoint.street: required", "startingPoint.postalCode: length"]
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq, Default)]
+#[serde(default)]
+struct Paged<T> {
+    items: Vec<T>,
+    #[validate(range(min = 1))]
+    page: u32,
+}
+
+#[test]
+fn a_struct_with_a_type_parameter_takes_an_absent_field_from_its_default() {
+    let paged = deserialize::<Paged<u8>>(r#"{ "page": 2 }"#).unwrap();
+
+    assert_eq!(
+        paged,
+        Paged {
+            items: Vec::new(),
+            page: 2,
+        }
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(default = "fifty_results_collecting_type_errors")]
+#[annotated(collect_type_errors)]
+struct ResultsPageCollectingTypeErrors {
+    size: u32,
+    order: String,
+}
+
+fn fifty_results_collecting_type_errors() -> ResultsPageCollectingTypeErrors {
+    ResultsPageCollectingTypeErrors {
+        size: 50,
+        order: "date".to_owned(),
+    }
+}
+
+#[test]
+fn a_struct_collecting_type_errors_takes_an_absent_field_from_its_default() {
+    let page = deserialize::<ResultsPageCollectingTypeErrors>(r#"{ "order": "price" }"#).unwrap();
+
+    assert_eq!(
+        page,
+        ResultsPageCollectingTypeErrors {
+            size: 50,
+            order: "price".to_owned(),
+        }
+    );
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(default, rename_all = "camelCase")]
+#[allow(dead_code)]
+struct Route {
+    #[validate(required)]
+    name: String,
+    #[validate(nested)]
+    origin: Address,
+    #[validate(each(custom(not_a_restricted_stop), nested))]
+    stops: Vec<Address>,
+    #[serde(default = "a_restricted_stop_then_an_unnamed_one")]
+    #[validate(each(nested))]
+    detours: Vec<Address>,
+}
+
+#[derive(serde::Deserialize, Validate, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct RouteThenValidated {
+    #[validate(required)]
+    name: String,
+    #[validate(nested)]
+    origin: AddressThenValidated,
+    #[validate(each(custom(not_a_restricted_stop_once_validated), nested))]
+    stops: Vec<AddressThenValidated>,
+    #[serde(default = "a_restricted_stop_then_an_unnamed_one_then_validated")]
+    #[validate(each(nested))]
+    detours: Vec<AddressThenValidated>,
+}
+
+#[test]
+fn a_body_without_the_fields_the_struct_s_default_gives_is_reported_as_serde_then_validate_report_it() {
+    let body =
+        r#"{ "stops": [{ "street": "Calle Falsa 1", "postalCode": "1" }, { "street": "", "postalCode": "2" }] }"#;
+
+    assert_eq!(
+        issues_found_reading::<Route>(body),
+        issues_validating_after_serde::<RouteThenValidated>(body)
+    );
+}

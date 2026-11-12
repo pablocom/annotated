@@ -1,8 +1,8 @@
-error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, `deny_unknown_fields`, `expecting` and those that only change serializing
+error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` and those that only change serializing
  --> tests/ui/deserialize/unsupported_serde_attribute.rs:4:35
   |
-4 | #[serde(rename_all = "camelCase", default)]
-  |                                   ^^^^^^^
+4 | #[serde(rename_all = "camelCase", transparent)]
+  |                                   ^^^^^^^^^^^
 
 error: with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default` and those that only change serializing
   --> tests/ui/deserialize/unsupported_serde_attribute.rs:12:30
@@ -10,13 +10,13 @@ error: with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, 
 12 |     #[serde(alias = "title", skip)]
    |                              ^^^^
 
-error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, `deny_unknown_fields`, `expecting` and those that only change serializing
+error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` and those that only change serializing
   --> tests/ui/deserialize/unsupported_serde_attribute.rs:17:9
    |
 17 | #[serde(bound(serialize = "T: Clone", deserialize = "T: Clone"))]
    |         ^^^^^
 
-error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, `deny_unknown_fields`, `expecting` and those that only change serializing
+error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` and those that only change serializing
   --> tests/ui/deserialize/unsupported_serde_attribute.rs:23:9
    |
 23 | #[serde(bound = "T: Clone")]

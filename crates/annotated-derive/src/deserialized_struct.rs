@@ -16,9 +16,16 @@ struct AcceptedSerdeAttributes {
 }
 
 const ON_A_STRUCT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
-    names: &["rename_all", "rename", "deny_unknown_fields", "expecting", "into"],
+    names: &[
+        "rename_all",
+        "rename",
+        "deny_unknown_fields",
+        "expecting",
+        "default",
+        "into",
+    ],
     refusal: "with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, \
-              `deny_unknown_fields`, `expecting` and those that only change serializing",
+              `deny_unknown_fields`, `expecting`, `default` and those that only change serializing",
 };
 
 const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {

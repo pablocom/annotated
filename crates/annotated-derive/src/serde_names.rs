@@ -8,6 +8,7 @@ pub struct SerdeStruct {
     pub fields: Vec<SerdeField>,
     pub is_denying_unknown_fields: bool,
     pub expecting: Option<String>,
+    pub default: Option<DefaultValue>,
 }
 
 pub struct SerdeField {
@@ -53,6 +54,7 @@ impl SerdeStruct {
             fields,
             is_denying_unknown_fields: container.attrs.deny_unknown_fields(),
             expecting: container.attrs.expecting().map(ToOwned::to_owned),
+            default: DefaultValue::from_serde(container.attrs.default()),
         }
     }
 }

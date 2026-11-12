@@ -10,6 +10,9 @@ This file lists every change that users of the crates can notice. The format fol
   - An absent field takes `Default::default()`, or what the function returns, instead of being `Problem::Missing`. An absent `Option` field takes it instead of `None`.
   - The field's rules check the default like a value read. A `nested` rule checks it with `Validate`, so the nested type must implement `Validate`.
   - The default is made only when the field is absent.
+- `#[derive(Deserialize)]` reads `#[serde(default)]` and `#[serde(default = "path")]` on the struct.
+  - An absent field without a default of its own takes its value in `Self::default()`, or in what the function returns. Its rules check that value like a value read.
+  - The struct's default is made once, and only when such a field is absent.
 
 ## [0.1.0] - 2026-11-12
 

@@ -128,11 +128,17 @@ impl<'a> DeserializeExpansion<'a> {
     fn generics_checking_fields(&self) -> Generics {
         let input = self.input();
         let parameters = type_and_const_parameters(&input.generics);
-        let checking_bounds: Vec<_> = self
+        let mut checking_bounds: Vec<_> = self
             .fields()
             .iter()
             .flat_map(|field| self.checking_bounds_of(field, &parameters))
             .collect();
+        let is_default_of_its_type = matches!(self.deserialized_struct.serde.default, Some(DefaultValue::OfItsType));
+        if is_default_of_its_type && !parameters.is_empty() {
+            let name = &input.ident;
+            let (_, type_generics, _) = input.generics.split_for_impl();
+            checking_bounds.push(parse_quote!(#name #type_generics: ::core::default::Default));
+        }
         let mut generics = input.generics.clone();
         if !checking_bounds.is_empty() {
             generics.make_where_clause().predicates.extend(checking_bounds);
@@ -153,12 +159,13 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn checking_bounds_of(&self, field: &ValidatedField, parameters: &[&Ident]) -> Vec<WherePredicate> {
-        let WhenAbsent::TakesDefault(default) = self.when_absent(field) else {
-            return Vec::new();
+        let is_its_type_s_default = match self.when_absent(field) {
+            WhenAbsent::TakesDefault(default) => matches!(default, DefaultValue::OfItsType),
+            WhenAbsent::TakesStructDefault => false,
+            WhenAbsent::IsMissing | WhenAbsent::IsNone => return Vec::new(),
         };
         let mut bounds = Vec::new();
         let field_type = field.field_type;
-        let is_its_type_s_default = matches!(default, DefaultValue::OfItsType);
         if is_its_type_s_default && mentions_any(field_type.to_token_stream(), parameters) {
             bounds.push(parse_quote!(#field_type: ::core::default::Default));
         }
@@ -488,6 +495,7 @@ impl<'a> DeserializeExpansion<'a> {
         let read_issues = self.fields_read_with_issues().map(read_issues_of);
         let read_issues_types = self.fields_read_with_issues().map(|_| quote!(::annotated::Report));
         let values_of_slots = fields.iter().map(|field| self.value_of_slot(field));
+        let values_from_the_struct_default = self.values_from_the_struct_default();
         let validities = self.fields_keeping_their_validity().map(validity_of);
         let field_checks = self.field_checks();
         let build = self.build();
@@ -523,6 +531,7 @@ impl<'a> DeserializeExpansion<'a> {
                 let #at = self.#at;
                 let #found = self.#found;
                 #(#values_of_slots)*
+                #values_from_the_struct_default
                 #(let mut #validities = false;)*
                 #finishing #field_checks_label: {
                     #(#field_checks)*
@@ -739,7 +748,7 @@ impl<'a> DeserializeExpansion<'a> {
         let slot = slot_of(field);
         let is_read_with_issues = self.is_read_with_issues(field);
         match self.when_absent(field) {
-            WhenAbsent::IsMissing => TokenStream::new(),
+            WhenAbsent::IsMissing | WhenAbsent::TakesStructDefault => TokenStream::new(),
             WhenAbsent::IsNone if is_read_with_issues => quote! {
                 let #slot = ::core::option::Option::unwrap_or(
                     #slot,
@@ -749,7 +758,7 @@ impl<'a> DeserializeExpansion<'a> {
             WhenAbsent::IsNone => quote!(let #slot = ::core::option::Option::flatten(#slot);),
             WhenAbsent::TakesDefault(default) => {
                 let read = &self.read;
-                let value_when_absent = self.value_when_absent(field, default);
+                let value_when_absent = self.value_when_absent(field, &default_value(field, default));
                 quote! {
                     let #slot = match #slot {
                         ::core::option::Option::Some(#read) => #read,
@@ -760,9 +769,56 @@ impl<'a> DeserializeExpansion<'a> {
         }
     }
 
+    // The struct's default is made once, and only when a field that takes its value from it is absent.
+    fn values_from_the_struct_default(&self) -> TokenStream {
+        let Some(struct_default) = &self.deserialized_struct.serde.default else {
+            return TokenStream::new();
+        };
+        let fields: Vec<_> = self
+            .fields()
+            .iter()
+            .filter(|field| matches!(self.when_absent(field), WhenAbsent::TakesStructDefault))
+            .collect();
+        if fields.is_empty() {
+            return TokenStream::new();
+        }
+        let read = &self.read;
+        let slots: Vec<_> = fields.iter().map(|field| slot_of(field)).collect();
+        let members = fields.iter().map(|field| field.member);
+        let defaults: Vec<_> = fields.iter().map(|field| struct_default_of(field)).collect();
+        let values_when_absent = fields
+            .iter()
+            .zip(&defaults)
+            .map(|(field, default)| self.value_when_absent(field, &quote!(#default)));
+        let input = self.input();
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let struct_default_value = match struct_default {
+            DefaultValue::OfItsType => quote!(<#name #type_generics as ::core::default::Default>::default()),
+            DefaultValue::ReturnedBy(function) => quote_spanned!(function.span()=> #function()),
+        };
+        quote! {
+            let (#(#slots,)*) = match (#(#slots,)*) {
+                (#(::core::option::Option::Some(#slots),)*) => (#(#slots,)*),
+                (#(#slots,)*) => {
+                    let #name { #(#members: #defaults,)* .. } = #struct_default_value;
+                    (#(
+                        match #slots {
+                            ::core::option::Option::Some(#read) => #read,
+                            ::core::option::Option::None => #values_when_absent,
+                        },
+                    )*)
+                }
+            };
+        }
+    }
+
     fn when_absent(&self, field: &ValidatedField) -> WhenAbsent<'a> {
         if let Some(default) = &self.serde_field_of(field).default {
             return WhenAbsent::TakesDefault(default);
+        }
+        if self.deserialized_struct.serde.default.is_some() {
+            return WhenAbsent::TakesStructDefault;
         }
         if field.is_optional {
             return WhenAbsent::IsNone;
@@ -783,10 +839,9 @@ impl<'a> DeserializeExpansion<'a> {
         &self.deserialized_struct.serde.fields[position]
     }
 
-    fn value_when_absent(&self, field: &ValidatedField, default: &DefaultValue) -> TokenStream {
-        let default_value = default_value(field, default);
+    fn value_when_absent(&self, field: &ValidatedField, default_value: &TokenStream) -> TokenStream {
         if !self.is_read_with_issues(field) {
-            return default_value;
+            return default_value.clone();
         }
         if !field.has_nested_values() {
             return quote!(::core::option::Option::Some(#default_value));
@@ -886,6 +941,7 @@ enum WhenAbsent<'a> {
     IsMissing,
     IsNone,
     TakesDefault(&'a DefaultValue),
+    TakesStructDefault,
 }
 
 struct FieldBuffer {
@@ -914,6 +970,10 @@ fn default_value(field: &ValidatedField, default: &DefaultValue) -> TokenStream 
         }
         DefaultValue::ReturnedBy(function) => quote_spanned!(function.span()=> #function()),
     }
+}
+
+fn struct_default_of(field: &ValidatedField) -> Ident {
+    format_ident!("{}_struct_default", field.member, span = Span::mixed_site())
 }
 
 fn slot_of(field: &ValidatedField) -> Ident {
