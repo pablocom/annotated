@@ -10,6 +10,7 @@ pub use crate::borrowed::{borrow_cow_bytes, borrow_cow_str};
 #[cfg(feature = "serde")]
 pub use crate::collecting_type_errors::{
     CollectingTypeErrorsAt, CollectingTypeErrorsOfAFunctionAt, NestedCollectingTypeErrorsAt,
+    deserialize_enum_collecting_type_errors,
 };
 #[cfg(feature = "serde")]
 pub use crate::deserialize::DeserializeAt;

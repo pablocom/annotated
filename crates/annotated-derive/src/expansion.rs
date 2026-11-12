@@ -59,14 +59,7 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
         .variants
         .iter()
         .map(|variant| expansion.variant_checks(variant));
-    let checked = CheckedStruct {
-        value: &quote!(self),
-        value_type: &quote!(Self),
-    };
-    let enum_checks = validated_enum
-        .enum_checks
-        .iter()
-        .map(|check| expansion.whole_value_check(check, &checked));
+    let enum_checks = expansion.whole_value_checks(&validated_enum.enum_checks, &quote!(self), &quote!(Self));
     let input = validated_enum.input;
     let name = &input.ident;
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
@@ -405,6 +398,22 @@ impl Expansion {
             return quote!(let #is_valid = #is_valid && #passes;);
         }
         quote!(let _ = #is_valid && #passes;)
+    }
+
+    pub fn whole_value_checks(
+        &self,
+        checks: &[StructCheck],
+        checked: &TokenStream,
+        checked_type: &TokenStream,
+    ) -> Vec<TokenStream> {
+        let checked = CheckedStruct {
+            value: checked,
+            value_type: checked_type,
+        };
+        checks
+            .iter()
+            .map(|check| self.whole_value_check(check, &checked))
+            .collect()
     }
 
     fn whole_value_check(&self, check: &StructCheck, checked: &CheckedStruct) -> TokenStream {

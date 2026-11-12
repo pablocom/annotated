@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use serde::Deserializer;
-use serde::de::{DeserializeSeed, Error as _};
+use serde::de::{DeserializeSeed, Error as _, Visitor};
 
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, FunctionError, WrongType};
@@ -136,6 +136,30 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
             Err(FunctionError::Message(message)) => Err(D::Error::custom(message)),
         }
     }
+}
+
+/// Reads an enum that collects type errors. The whole value is buffered first, so a name that is no variant of the
+/// enum, or a value that isn't the enum at all, becomes the [`Problem`] returned instead of ending deserialization.
+/// `type_name` says what was expected when serde's error doesn't.
+///
+/// # Errors
+///
+/// The format's own error, when the value isn't well-formed.
+pub fn deserialize_enum_collecting_type_errors<'de, D, V, T>(
+    deserializer: D,
+    name: &'static str,
+    variants: &'static [&'static str],
+    visitor: V,
+    type_name: &'static str,
+) -> Result<Result<Option<T>, Problem>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Visitor<'de, Value = Option<T>>,
+{
+    let (buffered, kind_found) = buffered::<D, WrongType>(deserializer)?;
+    Ok(buffered
+        .deserialize_enum(name, variants, visitor)
+        .map_err(|wrong_type| problem_of(wrong_type, type_name, kind_found)))
 }
 
 fn buffered<'de, D: Deserializer<'de>, E>(

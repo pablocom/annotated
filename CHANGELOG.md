@@ -38,6 +38,12 @@ This file lists every change that users of the crates can notice. The format fol
   - Rules go on the fields of the variants, named or not, and the variant the value holds is checked.
   - Each issue is at the path where serde reads its value, following the enum's tagging: under the variant's name by default, at the enum's own location with `tag` or `untagged`, and under the content's name with `tag` and `content`. A newtype variant's value is at the variant's location, and a tuple variant's elements are at their index.
   - `#[validate(custom(check))]` and `report_all` work on the enum as on a struct. A `custom` rule reports at the enum's own location, and takes no `field`.
+- `#[derive(Deserialize)]` reads enums, as serde reads them by default: from the variant's name.
+  - The variant read is checked as a struct's fields are, with each issue at its path in the input: `card.number`, a newtype variant's value at `card`, a tuple variant's elements at `point[1]`. A field missing from a variant is `Problem::Missing` there.
+  - The enum takes `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields` and `expecting`, a variant takes `rename`, `alias` and `rename_all`, and a variant's fields take what a struct's fields take.
+  - A name that is no variant is the format's error. With `collect_type_errors` on the enum, the enum is buffered whole, so it is `Problem::UnknownVariant` at the enum's location instead, and a value that isn't the enum is `Problem::InvalidType` there.
+  - `#[validate(custom(check))]` on the enum runs once the variant could be built.
+  - Reading an enum buffers nothing, unless it collects type errors.
 
 ### Changed
 

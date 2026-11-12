@@ -1,6 +1,8 @@
 //! The derive macros of [`annotated`](https://docs.rs/annotated), which re-exports and documents them.
 
+mod deserialize_enum_expansion;
 mod deserialize_expansion;
+mod deserialized_enum;
 mod deserialized_struct;
 mod expansion;
 mod pattern;
@@ -12,6 +14,7 @@ mod written_rule;
 use proc_macro::TokenStream;
 use syn::{Data, DeriveInput, Error, parse_macro_input};
 
+use deserialized_enum::DeserializedEnum;
 use deserialized_struct::DeserializedStruct;
 use validated_enum::ValidatedEnum;
 use validated_struct::ValidatedStruct;
@@ -38,9 +41,11 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Deserialize, attributes(validate, serde, annotated))]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    DeserializedStruct::from_input(&input)
-        .map_or_else(Error::into_compile_error, |deserialized_struct| {
-            deserialize_expansion::deserialize_impl(&deserialized_struct)
-        })
-        .into()
+    let deserialize_impl = match &input.data {
+        Data::Enum(data) => DeserializedEnum::from_input(&input, data)
+            .map(|deserialized_enum| deserialize_enum_expansion::deserialize_enum_impl(&deserialized_enum)),
+        Data::Struct(_) | Data::Union(_) => DeserializedStruct::from_input(&input)
+            .map(|deserialized_struct| deserialize_expansion::deserialize_impl(&deserialized_struct)),
+    };
+    deserialize_impl.unwrap_or_else(Error::into_compile_error).into()
 }

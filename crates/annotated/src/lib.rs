@@ -182,7 +182,7 @@ pub use validate::Validate;
 pub use annotated_derive::Validate;
 
 /// Implements [`Deserialize`](trait@Deserialize), and serde's own `Deserialize` through it, for a struct with named
-/// fields. Deserializing the struct reports every missing field and broken rule together.
+/// fields or an enum. Deserializing it reports every missing field and broken rule together.
 ///
 /// ```
 /// use annotated::Deserialize;
@@ -325,6 +325,42 @@ pub use annotated_derive::Validate;
 /// let error = annotated::from_deserializer::<NewMember, _>(&mut body).unwrap_err();
 ///
 /// assert_eq!(error.to_string(), "email: must be an email address\nage: must be u8, found string");
+/// ```
+///
+/// # Enums
+///
+/// An enum is read as serde reads it, from its variant's name, and the variant read is checked as a struct's fields
+/// are. Each issue is at the path where its value is in the input: under the variant's name, as in `card.number`. A
+/// newtype variant's value is at the variant's name, and a tuple variant's elements are at their index.
+///
+/// - The enum takes `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields` and `expecting`, and a variant
+///   takes `rename`, `alias` and `rename_all`, as with serde. A variant's fields take what a struct's fields take. Any
+///   other serde attribute on the enum or a variant is a compile error.
+/// - A name that is no variant of the enum is the format's error. With `collect_type_errors` on the enum, the enum is
+///   buffered whole first, so such a name is a [`Problem::UnknownVariant`] at the enum's location instead, and a value
+///   that isn't the enum at all is a [`Problem::InvalidType`] there. A value of the wrong type in a variant's field is
+///   an issue at its path, as in a struct.
+/// - `#[validate(custom(check))]` on the enum runs after the variant's fields, once the variant could be built.
+///
+/// ```
+/// use annotated::Deserialize;
+///
+/// #[derive(Deserialize, Debug)]
+/// #[serde(rename_all = "camelCase")]
+/// enum Payment {
+///     Card {
+///         #[validate(length(min = 16))]
+///         number: String,
+///         #[validate(required)]
+///         holder: String,
+///     },
+///     Cash,
+/// }
+///
+/// let mut body = serde_json::Deserializer::from_str(r#"{ "card": { "number": "4111" } }"#);
+/// let error = annotated::from_deserializer::<Payment, _>(&mut body).unwrap_err();
+///
+/// assert_eq!(error.to_string(), "card.number: must be at least 16 characters long\ncard.holder: is missing");
 /// ```
 #[cfg(feature = "serde")]
 pub use annotated_derive::Deserialize;

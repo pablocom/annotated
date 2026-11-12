@@ -1,0 +1,5 @@
+error: with `#[derive(Deserialize)]`, an enum that denies unknown fields can't have a flattened field: a key meant for the flattened field can't be told from an unknown one
+  --> tests/ui/deserialize/flatten_in_an_enum_denying_unknown_fields.rs:12:17
+   |
+12 |         #[serde(flatten)]
+   |                 ^^^^^^^

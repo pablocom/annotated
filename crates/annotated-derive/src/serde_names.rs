@@ -22,8 +22,12 @@ pub struct SerdeField {
 }
 
 pub struct SerdeEnum {
+    pub name: String,
     pub tag: Tag,
     pub variants: Vec<SerdeVariant>,
+    pub is_denying_unknown_fields: bool,
+    pub expecting: Option<String>,
+    pub borrowed_lifetimes: Vec<Lifetime>,
 }
 
 pub enum Tag {
@@ -35,6 +39,7 @@ pub enum Tag {
 
 pub struct SerdeVariant {
     pub name: String,
+    pub names_read: Vec<String>,
     pub is_untagged: bool,
     pub fields: Vec<SerdeField>,
 }
@@ -97,13 +102,21 @@ impl SerdeEnum {
                 .iter()
                 .map(|variant| SerdeVariant {
                     name: variant.attrs.name().deserialize_name().value.clone(),
+                    names_read: variant.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
                     is_untagged: variant.attrs.untagged(),
                     fields: variant.fields.iter().map(SerdeField::from_serde).collect(),
                 })
                 .collect(),
             Data::Struct(..) => Vec::new(),
         };
-        Self { tag, variants }
+        Self {
+            name: container.attrs.name().deserialize_name().value.clone(),
+            tag,
+            variants,
+            is_denying_unknown_fields: container.attrs.deny_unknown_fields(),
+            expecting: container.attrs.expecting().map(ToOwned::to_owned),
+            borrowed_lifetimes: borrowed_lifetimes(container),
+        }
     }
 }
 
@@ -132,11 +145,9 @@ impl DefaultValue {
 
 // As serde's derive works it out: `'de` outlives every lifetime a field that is read borrows.
 fn borrowed_lifetimes(container: &Container) -> Vec<Lifetime> {
-    let Data::Struct(_, fields) = &container.data else {
-        return Vec::new();
-    };
-    let mut lifetimes: Vec<Lifetime> = fields
-        .iter()
+    let mut lifetimes: Vec<Lifetime> = container
+        .data
+        .all_fields()
         .filter(|field| !field.attrs.skip_deserializing())
         .flat_map(|field| field.attrs.borrowed_lifetimes().iter().cloned())
         .collect();

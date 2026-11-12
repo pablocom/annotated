@@ -351,3 +351,29 @@ fn report_all_on_an_enum_reports_every_rule_a_field_breaks() {
 
     assert_eq!(issues_of(&username), ["Chosen: required", "Chosen: length"]);
 }
+
+fn route_must_not_be_checked(_: &Route) -> Result<(), Problem> {
+    panic!("checked after failing fast found its issue")
+}
+
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+#[validate(custom(route_must_not_be_checked))]
+enum Route {
+    Direct {
+        #[validate(required)]
+        destination: String,
+    },
+}
+
+#[test]
+fn failing_fast_checks_no_enum_level_rule_after_the_first_issue() {
+    let route = Route::Direct {
+        destination: String::new(),
+    };
+
+    assert_eq!(
+        paths_and_codes(route.validate_fail_fast()),
+        ["direct.destination: required"]
+    );
+}

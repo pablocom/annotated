@@ -370,6 +370,8 @@ Both derives work on enums, with every kind of variant: unit, newtype, tuple and
 - A variant with `deserialize_with` is read by the function. Its fields' rules check what the function returns, and its nested values are checked with `Validate`, as for a field read by a function.
 - `deny_unknown_fields` applies to the keys of struct variants, and to the keys of an adjacently tagged enum other than its tag and content, as with serde.
 
+**How it's generated.** The enum gets an identifier for its variant names and a visitor that reads the variant through serde's `EnumAccess`. Each struct, tuple or newtype variant is then read by the same code a struct gets for its fields, in a block of its own, building the variant instead of a struct. Its visitor is given the location where the variant's content is. A newtype variant's value is read whole, through a seed, and a struct variant with a flattened field as a map, as serde's derive reads them.
+
 **Everything else works as for a struct:** generics and their bounds, borrowing, failing fast, and the equivalence with serde followed by `validate()`, which tests pin for each representation.
 
 **Cost.** A struct reads exactly as before, since enums generate code of their own. An externally tagged enum buffers nothing, and the other representations buffer what serde buffers. Trying an untagged variant that can't be built may allocate for its issues, which are then dropped. serde allocates an error for it too.

@@ -1,0 +1,11 @@
+error: `#[annotated(...)]` takes no options on a variant: `collect_type_errors` goes on the enum
+ --> tests/ui/deserialize/annotated_option_on_a_variant.rs:5:17
+  |
+5 |     #[annotated(collect_type_errors)]
+  |                 ^^^^^^^^^^^^^^^^^^^
+
+error: `#[annotated(...)]` takes no options on a field: `collect_type_errors` goes on the enum
+  --> tests/ui/deserialize/annotated_option_on_a_variant.rs:13:21
+   |
+13 |         #[annotated(collect_type_errors)]
+   |                     ^^^^^^^^^^^^^^^^^^^

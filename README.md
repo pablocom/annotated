@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/annotated)](https://crates.io/crates/annotated)
 [![docs.rs](https://img.shields.io/docsrs/annotated)](https://docs.rs/annotated)
 
-Validation for structs that works with serde. You write rules on a struct's fields. When the struct is deserialized, you get every problem back in one error: broken rules and missing fields together, each with the path of the field it belongs to. If you would rather stop at the first problem, the `_fail_fast` functions do that.
+Validation for structs and enums that works with serde. You write rules on a struct's fields. When the struct is deserialized, you get every problem back in one error: broken rules and missing fields together, each with the path of the field it belongs to. If you would rather stop at the first problem, the `_fail_fast` functions do that.
 
 ```rust
 use annotated::{Deserialize, ParamValue, Path, Problem, Validate};
@@ -83,13 +83,14 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 | `contains = "@"`, `prefix = "SKU-"`, `suffix = ".pdf"` | The string contains, starts with or ends with the text |
 | `pattern = r"^\d{5}$"` | The string matches the regular expression, anywhere in it unless the expression is anchored with `^` and `$`. Needs the `regex` feature |
 | `custom(function)` | Your function, any `Fn(&T) -> Result<(), Problem>`, returns `Ok(())` |
-| `nested` | The field is a struct with rules of its own, and it passes them |
+| `nested` | The field is a struct or an enum with rules of its own, and it passes them |
 | `each(...)` | Every element of the collection, or every value of the map, passes the rules inside: `each(length(max = 20))`, `each(nested)` |
 
 - **Order.** A field's rules run in the order written, and the field stops at its first broken rule. So a blank name isn't also reported as too short. Put `#[validate(report_all)]` on the struct to report every broken rule instead.
 - **`Option` fields.** `required` checks that the field is `Some`. Every other rule checks the value inside, and is skipped when the field is `None`.
 - **Messages.** Give a rule `message = "..."` to replace its English message. `{param}` placeholders are filled from the problem's parameters: `length(max = 50, message = "use {max} characters or fewer")`.
 - **Rules across fields.** `#[validate(custom(function))]` on the struct checks the whole struct, after its fields, with any `Fn(&Self) -> Result<(), Problem>`. `custom(function, field = repeated_password)` reports the problem at that field.
+- **Enums.** Rules go on the fields of an enum's variants, named or not. The variant the value holds is checked, and each issue is at the path where serde reads its value, such as `card.number` under the variant's name.
 - **Rules of your own.** Besides `custom`, a rule can be a type of yours that implements `Rule`. Write it by its path, with the same syntax as the built-in rules: `my_rules::iban(country = "ES")`.
 - **No I/O.** A rule looks at the value and nothing else. A check that needs I/O, like "is this email already taken", belongs in your application, after validation.
 

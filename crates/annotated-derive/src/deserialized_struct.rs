@@ -1,18 +1,27 @@
 use syn::punctuated::Punctuated;
-use syn::{Attribute, DeriveInput, Error, Meta, MetaNameValue, Token};
+use syn::{Attribute, DeriveInput, Error, Ident, Meta, MetaNameValue, Token};
 
 use crate::serde_names::SerdeStruct;
-use crate::validated_struct::{FieldRule, ValidatedStruct, nested_rules_in};
+use crate::validated_struct::{FieldRule, ValidatedField, ValidatedStruct, nested_rules_in};
 
 pub struct DeserializedStruct<'a> {
     pub validated: ValidatedStruct<'a>,
     pub serde: SerdeStruct,
     pub collects_type_errors: bool,
+    pub variant: Option<&'a Ident>,
+    pub form: Form,
 }
 
-struct AcceptedSerdeAttributes {
-    names: &'static [&'static str],
-    refusal: &'static str,
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Form {
+    Struct,
+    Tuple,
+    Newtype,
+}
+
+pub struct AcceptedSerdeAttributes {
+    pub names: &'static [&'static str],
+    pub refusal: &'static str,
 }
 
 const ON_A_STRUCT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
@@ -28,7 +37,7 @@ const ON_A_STRUCT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
               `deny_unknown_fields`, `expecting`, `default` and those that only change serializing",
 };
 
-const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
+pub const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
     names: &[
         "rename",
         "alias",
@@ -53,28 +62,35 @@ impl<'a> DeserializedStruct<'a> {
     pub fn from_input(input: &'a DeriveInput) -> syn::Result<Self> {
         let validated = ValidatedStruct::from_input(
             input,
-            "`Deserialize` can only be derived for a struct with named fields",
+            "`Deserialize` can only be derived for a struct with named fields or an enum",
         )?;
         let collects_type_errors = collects_type_errors(&input.attrs)?;
         refuse_serde_attributes_other_than(&ON_A_STRUCT, &input.attrs)?;
-        for field in &validated.fields {
-            refuse_options_on_a_field(field.attributes)?;
-            refuse_serde_attributes_other_than(&ON_A_FIELD, field.attributes)?;
-            refuse_nested_more_than_once(&field.rules)?;
-        }
+        refuse_what_fields_can_t_take(&validated.fields, "struct")?;
         let serde = SerdeStruct::from_input(input)?;
         if serde.is_denying_unknown_fields {
-            refuse_flatten(&validated)?;
+            refuse_flatten(&validated.fields, "a struct")?;
         }
         Ok(Self {
             validated,
             serde,
             collects_type_errors,
+            variant: None,
+            form: Form::Struct,
         })
     }
 }
 
-fn collects_type_errors(attributes: &[Attribute]) -> syn::Result<bool> {
+pub fn refuse_what_fields_can_t_take(fields: &[ValidatedField], container: &str) -> syn::Result<()> {
+    for field in fields {
+        refuse_options_on("a field", container, field.attributes)?;
+        refuse_serde_attributes_other_than(&ON_A_FIELD, field.attributes)?;
+        refuse_nested_more_than_once(&field.rules)?;
+    }
+    Ok(())
+}
+
+pub fn collects_type_errors(attributes: &[Attribute]) -> syn::Result<bool> {
     let mut collects_type_errors = false;
     for option in options_in(attributes)? {
         match option {
@@ -93,13 +109,13 @@ fn collects_type_errors(attributes: &[Attribute]) -> syn::Result<bool> {
     Ok(collects_type_errors)
 }
 
-fn refuse_options_on_a_field(attributes: &[Attribute]) -> syn::Result<()> {
+pub fn refuse_options_on(item: &str, container: &str, attributes: &[Attribute]) -> syn::Result<()> {
     let Some(option) = options_in(attributes)?.into_iter().next() else {
         return Ok(());
     };
     Err(Error::new_spanned(
         option.path(),
-        "`#[annotated(...)]` takes no options on a field: `collect_type_errors` goes on the struct",
+        format!("`#[annotated(...)]` takes no options on {item}: `collect_type_errors` goes on the {container}"),
     ))
 }
 
@@ -111,7 +127,10 @@ fn options_in(attributes: &[Attribute]) -> syn::Result<Vec<Meta>> {
     Ok(options)
 }
 
-fn refuse_serde_attributes_other_than(accepted: &AcceptedSerdeAttributes, attributes: &[Attribute]) -> syn::Result<()> {
+pub fn refuse_serde_attributes_other_than(
+    accepted: &AcceptedSerdeAttributes,
+    attributes: &[Attribute],
+) -> syn::Result<()> {
     for attribute in attributes_named("serde", attributes) {
         let serde_attributes = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         let refused = serde_attributes.iter().find(|serde_attribute| {
@@ -146,15 +165,17 @@ fn attributes_named<'a>(name: &'a str, attributes: &'a [Attribute]) -> impl Iter
         .filter(move |attribute| attribute.path().is_ident(name))
 }
 
-fn refuse_flatten(validated: &ValidatedStruct) -> syn::Result<()> {
-    for field in validated.fields.iter().filter(|field| field.is_flattened) {
+pub fn refuse_flatten(fields: &[ValidatedField], denying_unknown_fields: &str) -> syn::Result<()> {
+    for field in fields.iter().filter(|field| field.is_flattened) {
         for attribute in attributes_named("serde", field.attributes) {
             let serde_attributes = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
             if let Some(flatten) = serde_attributes.iter().find(|meta| meta.path().is_ident("flatten")) {
                 return Err(Error::new_spanned(
                     flatten.path(),
-                    "with `#[derive(Deserialize)]`, a struct that denies unknown fields can't have a flattened field: \
-                     a key meant for the flattened field can't be told from an unknown one",
+                    format!(
+                        "with `#[derive(Deserialize)]`, {denying_unknown_fields} that denies unknown fields can't have \
+                         a flattened field: a key meant for the flattened field can't be told from an unknown one"
+                    ),
                 ));
             }
         }
