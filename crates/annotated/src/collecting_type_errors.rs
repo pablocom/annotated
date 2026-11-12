@@ -162,6 +162,29 @@ where
         .map_err(|wrong_type| problem_of(wrong_type, type_name, kind_found)))
 }
 
+/// Like [`deserialize_enum_collecting_type_errors`], for an adjacently tagged enum, which is read as a struct with the
+/// `fields` of its tag and its content.
+///
+/// # Errors
+///
+/// The format's own error, when the value isn't well-formed.
+pub fn deserialize_adjacently_tagged_collecting_type_errors<'de, D, V, T>(
+    deserializer: D,
+    name: &'static str,
+    fields: &'static [&'static str],
+    visitor: V,
+    type_name: &'static str,
+) -> Result<Result<Option<T>, Problem>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Visitor<'de, Value = Option<T>>,
+{
+    let (buffered, kind_found) = buffered::<D, WrongType>(deserializer)?;
+    Ok(buffered
+        .deserialize_struct(name, fields, visitor)
+        .map_err(|wrong_type| problem_of(wrong_type, type_name, kind_found)))
+}
+
 fn buffered<'de, D: Deserializer<'de>, E>(
     deserializer: D,
 ) -> Result<(ContentDeserializer<'de, E>, ValueKind), D::Error> {

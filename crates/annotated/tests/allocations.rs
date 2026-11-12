@@ -236,6 +236,31 @@ fn deserializing_a_valid_externally_tagged_enum_buffers_nothing_and_allocates_on
 
 #[cfg(feature = "serde")]
 #[derive(annotated::Deserialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+#[allow(dead_code)]
+enum Event {
+    SignedUp {
+        #[validate(email)]
+        email: String,
+    },
+    LoggedOut,
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_a_valid_adjacently_tagged_enum_with_its_tag_first_buffers_nothing_and_allocates_only_its_string() {
+    let body = r#"{ "type": "signedUp", "data": { "email": "alex@example.com" } }"#;
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(annotated::from_deserializer::<Event, _>(&mut deserializer));
+    });
+
+    assert_eq!(allocations.count_total, 1);
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
 #[allow(dead_code)]
 struct Crew {
     #[validate(nested)]

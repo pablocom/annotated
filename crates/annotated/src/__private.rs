@@ -10,14 +10,16 @@ pub use crate::borrowed::{borrow_cow_bytes, borrow_cow_str};
 #[cfg(feature = "serde")]
 pub use crate::collecting_type_errors::{
     CollectingTypeErrorsAt, CollectingTypeErrorsOfAFunctionAt, NestedCollectingTypeErrorsAt,
-    deserialize_enum_collecting_type_errors,
+    deserialize_adjacently_tagged_collecting_type_errors, deserialize_enum_collecting_type_errors,
 };
 #[cfg(feature = "serde")]
 pub use crate::deserialize::DeserializeAt;
 #[cfg(feature = "serde")]
 pub use crate::flattened::{FlatMapDeserializer, Key, Leftovers};
 #[cfg(feature = "serde")]
-pub use crate::tagged::{Buffered, Tagged, read_internally_tagged};
+pub use crate::tagged::{
+    Buffered, TagOrContent, TagOrContentKey, TagValue, Tagged, UnitVariantVisitor, read_internally_tagged,
+};
 
 // Out of line and cold, so a rule that passes costs one branch: the benchmarks' order of 100 lines validates in
 // 357 ns instead of 429 ns with LTO, and in 581 ns instead of 1.03 µs without.
@@ -28,6 +30,13 @@ pub fn record_issue(found: &mut Report, at: &Location<'_>, problem: Problem, mes
         Some(message) => found.push_with_message(at, problem, message),
         None => found.push(at, problem),
     }
+}
+
+/// The problem of a tag that names none of the `variants` of its enum.
+#[cold]
+#[must_use]
+pub const fn unknown_variant(variants: &'static [&'static str]) -> Problem {
+    Problem::UnknownVariant { expected: variants }
 }
 
 #[cfg(feature = "serde")]

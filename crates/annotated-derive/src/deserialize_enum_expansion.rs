@@ -68,7 +68,12 @@ impl<'a> EnumExpansion<'a> {
         let variant_identifier = self.variant_identifier();
         let variant_reader = match &self.deserialized_enum.tag {
             Tag::External => self.enum_visitor(),
-            Tag::Internal { .. } | Tag::Adjacent { .. } | Tag::Untagged => self.variant_seed(),
+            Tag::Adjacent { tag, content } => {
+                let variant_seed = self.variant_seed();
+                let adjacent_visitor = self.adjacent_visitor(tag, content);
+                quote!(#variant_seed #adjacent_visitor)
+            }
+            Tag::Internal { .. } | Tag::Untagged => self.variant_seed(),
         };
         let reading = self.reading();
         quote! {
@@ -146,6 +151,7 @@ impl<'a> EnumExpansion<'a> {
         let all_names_read = names_read.iter().copied().flatten();
         let indices_expected = format!("variant index 0 <= i < {}", indices.len());
         quote! {
+            #[derive(Clone, Copy)]
             enum __Variant {
                 #(#tags,)*
             }
@@ -383,8 +389,17 @@ impl<'a> EnumExpansion<'a> {
         let tag = format_ident!("Variant{index}");
         let name = &self.deserialized_enum.input.ident;
         let ident = variant.ident;
-        let skipping_the_content = quote! {
-            #serde::Deserializer::deserialize_ignored_any(#deserializer, #serde::de::IgnoredAny)?;
+        let skipping_the_content = if let Tag::Internal { .. } = &self.deserialized_enum.tag {
+            quote!(#serde::Deserializer::deserialize_ignored_any(#deserializer, #serde::de::IgnoredAny)?;)
+        } else {
+            let enum_name = name.to_string();
+            let variant_name = ident.to_string();
+            quote! {
+                #serde::Deserializer::deserialize_any(
+                    #deserializer,
+                    ::annotated::__private::UnitVariantVisitor::new(#enum_name, #variant_name),
+                )?;
+            }
         };
         let (Some(content), Some(deserialized_content)) = (&self.contents[index], &variant.content) else {
             return quote! {
@@ -465,8 +480,13 @@ impl<'a> EnumExpansion<'a> {
     fn enum_visitor_reporting_into(&self, found_by_the_visitor: &TokenStream) -> TokenStream {
         let Expansion { at, found, .. } = &self.rules;
         let turbofish = self.turbofish();
+        let visitor = if let Tag::Adjacent { .. } = &self.deserialized_enum.tag {
+            quote!(__AdjacentVisitor)
+        } else {
+            quote!(__EnumVisitor)
+        };
         quote! {
-            __EnumVisitor #turbofish {
+            #visitor #turbofish {
                 #at,
                 #found: #found_by_the_visitor,
                 marker: ::core::marker::PhantomData,
@@ -480,6 +500,11 @@ impl<'a> EnumExpansion<'a> {
         } = self;
         let enum_name = &self.deserialized_enum.name;
         let enum_visitor = self.enum_visitor_reporting_into(found_by_the_visitor);
+        if let Tag::Adjacent { .. } = &self.deserialized_enum.tag {
+            return quote! {
+                #serde::Deserializer::deserialize_struct(#deserializer, #enum_name, __ADJACENT_FIELDS, #enum_visitor)
+            };
+        }
         quote!(#serde::Deserializer::deserialize_enum(#deserializer, #enum_name, __VARIANTS, #enum_visitor))
     }
 
@@ -495,12 +520,20 @@ impl<'a> EnumExpansion<'a> {
         let enum_name = &self.deserialized_enum.name;
         let type_name = self.deserialized_enum.input.ident.to_string();
         let enum_visitor = self.enum_visitor_reporting_into(&quote!(&mut #read_issues));
+        let (reading_collecting_type_errors, names) = if let Tag::Adjacent { .. } = &self.deserialized_enum.tag {
+            (
+                quote!(deserialize_adjacently_tagged_collecting_type_errors),
+                quote!(__ADJACENT_FIELDS),
+            )
+        } else {
+            (quote!(deserialize_enum_collecting_type_errors), quote!(__VARIANTS))
+        };
         quote! {
             let mut #read_issues = #found.new_alike();
-            let #read = match ::annotated::__private::deserialize_enum_collecting_type_errors(
+            let #read = match ::annotated::__private::#reading_collecting_type_errors(
                 #deserializer,
                 #enum_name,
-                __VARIANTS,
+                #names,
                 #enum_visitor,
                 #type_name,
             )? {
@@ -554,6 +587,354 @@ impl<'a> EnumExpansion<'a> {
                     ::core::option::Option::None
                 }
             };
+        }
+    }
+}
+
+// As with serde, an adjacently tagged enum is read as a struct of its tag and its content. Content after the tag is
+// read straight from the input, and content before it is buffered until the tag says which variant it is.
+impl EnumExpansion<'_> {
+    fn adjacent_visitor(&self, tag: &str, content: &str) -> TokenStream {
+        let Self {
+            serde,
+            formatter,
+            visitor_lifetime,
+            ..
+        } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let input = self.deserialized_enum.input;
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let visitor_generics = with_lifetime(&input.generics, visitor_lifetime);
+        let (visitor_definition_generics, visitor_type_generics, visitor_where_clause) =
+            visitor_generics.split_for_impl();
+        let generics_reading_variants = with_lifetime(&self.generics_reading_variants(), visitor_lifetime);
+        let (impl_generics, _, where_clause) = generics_reading_variants.split_for_impl();
+        let expecting = self.expecting();
+        let visit_map = self.adjacent_visit_map(tag, content);
+        let visit_seq = self.adjacent_visit_seq();
+        let finished = self.adjacent_finished(tag);
+        let buffered_content_read = self.buffered_content_read(content);
+        let missing_content = self.missing_content(content);
+        quote! {
+            const __ADJACENT_FIELDS: &[&str] = &[#tag, #content];
+
+            struct __AdjacentVisitor #visitor_definition_generics #visitor_where_clause {
+                #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
+                #found: &#visitor_lifetime mut ::annotated::Report,
+                marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
+            }
+
+            impl #impl_generics #serde::de::Visitor<'de> for __AdjacentVisitor #visitor_type_generics #where_clause {
+                type Value = ::core::option::Option<#name #type_generics>;
+
+                fn expecting(&self, #formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    ::core::fmt::Formatter::write_str(#formatter, #expecting)
+                }
+
+                #visit_map
+
+                #visit_seq
+            }
+
+            impl #impl_generics __AdjacentVisitor #visitor_type_generics #where_clause {
+                #finished
+
+                #buffered_content_read
+
+                #missing_content
+            }
+        }
+    }
+
+    fn variant_seed_for(&self, variant: &TokenStream, found_by_the_seed: &TokenStream) -> TokenStream {
+        let Expansion { at, found, .. } = &self.rules;
+        let variant_field = &self.variant;
+        let turbofish = self.turbofish();
+        quote! {
+            __VariantSeed #turbofish {
+                #variant_field: #variant,
+                #at: self.#at,
+                #found: #found_by_the_seed,
+                marker: ::core::marker::PhantomData,
+            }
+        }
+    }
+
+    fn adjacent_visit_map(&self, tag: &str, content: &str) -> TokenStream {
+        let Self { serde, variant, .. } = self;
+        let found = &self.rules.found;
+        let local = |name| Ident::new(name, Span::mixed_site());
+        let (map, key, tag_read, content_buffered, variant_read) = (
+            local("map"),
+            local("key"),
+            local("tag_read"),
+            local("content_buffered"),
+            local("variant_read"),
+        );
+        let is_denying_unknown_fields = self.deserialized_enum.is_denying_unknown_fields;
+        let content_read_after_its_tag = (!self.deserialized_enum.collects_type_errors).then(|| {
+            let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(&mut *self.#found));
+            quote! {
+                ::core::option::Option::Some(::core::option::Option::Some(#variant)) => {
+                    #variant_read = ::core::option::Option::Some(
+                        #serde::de::MapAccess::next_value_seed(&mut #map, #variant_seed)?,
+                    );
+                }
+            }
+        });
+        quote! {
+            fn visit_map<__A: #serde::de::MapAccess<'de>>(
+                self,
+                mut #map: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                let mut #tag_read = ::core::option::Option::None;
+                let mut #content_buffered = ::core::option::Option::None;
+                let mut #variant_read = ::core::option::Option::None;
+                while let ::core::option::Option::Some(#key) = #serde::de::MapAccess::next_key_seed(
+                    &mut #map,
+                    ::annotated::__private::TagOrContentKey::new(
+                        #tag,
+                        #content,
+                        __ADJACENT_FIELDS,
+                        #is_denying_unknown_fields,
+                    ),
+                )? {
+                    match #key {
+                        ::annotated::__private::TagOrContent::Tag => {
+                            if ::core::option::Option::is_some(&#tag_read) {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as #serde::de::Error>::duplicate_field(#tag),
+                                );
+                            }
+                            #tag_read = ::core::option::Option::Some(#serde::de::MapAccess::next_value_seed(
+                                &mut #map,
+                                ::annotated::__private::TagValue::<__Variant>::new(),
+                            )?);
+                        }
+                        ::annotated::__private::TagOrContent::Content => {
+                            if ::core::option::Option::is_some(&#content_buffered)
+                                || ::core::option::Option::is_some(&#variant_read)
+                            {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as #serde::de::Error>::duplicate_field(#content),
+                                );
+                            }
+                            match #tag_read {
+                                #content_read_after_its_tag
+                                ::core::option::Option::Some(::core::option::Option::None) => {
+                                    #serde::de::MapAccess::next_value::<#serde::de::IgnoredAny>(&mut #map)?;
+                                    #variant_read = ::core::option::Option::Some(::core::option::Option::None);
+                                }
+                                _ => {
+                                    #content_buffered = ::core::option::Option::Some(
+                                        #serde::de::MapAccess::next_value::<::annotated::__private::Buffered<'de>>(
+                                            &mut #map,
+                                        )?,
+                                    );
+                                }
+                            }
+                        }
+                        ::annotated::__private::TagOrContent::Other => {
+                            #serde::de::MapAccess::next_value::<#serde::de::IgnoredAny>(&mut #map)?;
+                        }
+                    }
+                }
+                self.finished(#tag_read, #content_buffered, #variant_read)
+            }
+        }
+    }
+
+    fn adjacent_visit_seq(&self) -> TokenStream {
+        let Self { serde, variant, .. } = self;
+        let found = &self.rules.found;
+        let seq = Ident::new("seq", Span::mixed_site());
+        let content_read = if self.deserialized_enum.collects_type_errors {
+            quote! {
+                match #serde::de::SeqAccess::next_element::<::annotated::__private::Buffered<'de>>(&mut #seq)? {
+                    ::core::option::Option::Some(content) => self.buffered_content_read(#variant, content),
+                    ::core::option::Option::None => self.missing_content(#variant),
+                }
+            }
+        } else {
+            let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(&mut *self.#found));
+            quote! {
+                match #serde::de::SeqAccess::next_element_seed(&mut #seq, #variant_seed)? {
+                    ::core::option::Option::Some(read) => ::core::result::Result::Ok(read),
+                    ::core::option::Option::None => self.missing_content(#variant),
+                }
+            }
+        };
+        quote! {
+            fn visit_seq<__A: #serde::de::SeqAccess<'de>>(
+                self,
+                mut #seq: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                match #serde::de::SeqAccess::next_element_seed(
+                    &mut #seq,
+                    ::annotated::__private::TagValue::<__Variant>::new(),
+                )? {
+                    ::core::option::Option::Some(::core::option::Option::Some(#variant)) => #content_read,
+                    ::core::option::Option::Some(::core::option::Option::None) => {
+                        #serde::de::SeqAccess::next_element::<#serde::de::IgnoredAny>(&mut #seq)?;
+                        self.finished(
+                            ::core::option::Option::Some(::core::option::Option::None),
+                            ::core::option::Option::None,
+                            ::core::option::Option::None,
+                        )
+                    }
+                    ::core::option::Option::None => self.finished(
+                        ::core::option::Option::None,
+                        ::core::option::Option::None,
+                        ::core::option::Option::None,
+                    ),
+                }
+            }
+        }
+    }
+
+    fn adjacent_finished(&self, tag: &str) -> TokenStream {
+        let Self { variant, .. } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let input = self.deserialized_enum.input;
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let reported_at_the_tag = |problem: TokenStream| {
+            quote! {
+                ::annotated::__private::record_issue(
+                    self.#found,
+                    &self.#at.field(#tag),
+                    #problem,
+                    ::core::option::Option::None,
+                );
+                return ::core::result::Result::Ok(::core::option::Option::None);
+            }
+        };
+        let missing_tag = reported_at_the_tag(quote!(::annotated::Problem::Missing));
+        let unknown_tag = reported_at_the_tag(quote!(::annotated::__private::unknown_variant(__VARIANTS)));
+        quote! {
+            fn finished<__E: ::annotated::__private::serde::de::Error>(
+                self,
+                tag_read: ::core::option::Option<::core::option::Option<__Variant>>,
+                content_buffered: ::core::option::Option<::annotated::__private::Buffered<'de>>,
+                variant_read: ::core::option::Option<::core::option::Option<#name #type_generics>>,
+            ) -> ::core::result::Result<::core::option::Option<#name #type_generics>, __E> {
+                let ::core::option::Option::Some(tag_read) = tag_read else {
+                    #missing_tag
+                };
+                let ::core::option::Option::Some(#variant) = tag_read else {
+                    #unknown_tag
+                };
+                if let ::core::option::Option::Some(variant_read) = variant_read {
+                    return ::core::result::Result::Ok(variant_read);
+                }
+                match content_buffered {
+                    ::core::option::Option::Some(content) => self.buffered_content_read(#variant, content),
+                    ::core::option::Option::None => self.missing_content(#variant),
+                }
+            }
+        }
+    }
+
+    fn buffered_content_read(&self, content: &str) -> TokenStream {
+        let Self {
+            serde,
+            variant,
+            read_issues,
+            ..
+        } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let input = self.deserialized_enum.input;
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let reading = if self.deserialized_enum.collects_type_errors {
+            let type_name = name.to_string();
+            let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(&mut #read_issues));
+            quote! {
+                let mut #read_issues = self.#found.new_alike();
+                match ::annotated::__private::Buffered::read_collecting_type_errors(content, #variant_seed, #type_name) {
+                    ::core::result::Result::Ok(read) => {
+                        self.#found.append(&mut #read_issues);
+                        ::core::result::Result::Ok(read)
+                    }
+                    ::core::result::Result::Err(problem) => {
+                        ::annotated::__private::record_issue(
+                            self.#found,
+                            &self.#at.field(#content),
+                            problem,
+                            ::core::option::Option::None,
+                        );
+                        ::core::result::Result::Ok(::core::option::Option::None)
+                    }
+                }
+            }
+        } else {
+            let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(self.#found));
+            quote! {
+                #serde::de::DeserializeSeed::deserialize(
+                    #variant_seed,
+                    ::annotated::__private::Buffered::deserializer::<__E>(content),
+                )
+            }
+        };
+        quote! {
+            fn buffered_content_read<__E: ::annotated::__private::serde::de::Error>(
+                self,
+                #variant: __Variant,
+                content: ::annotated::__private::Buffered<'de>,
+            ) -> ::core::result::Result<::core::option::Option<#name #type_generics>, __E> {
+                #reading
+            }
+        }
+    }
+
+    // As with serde, a unit variant needs no content, and neither does a newtype variant whose value is an `Option`,
+    // which is then `None`.
+    fn missing_content(&self, content: &str) -> TokenStream {
+        let Self { serde, variant, .. } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let input = self.deserialized_enum.input;
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let (variants_needing_none, variants_needing_content): (Vec<_>, Vec<_>) = self
+            .readable_variants()
+            .map(|(index, deserialized_variant)| (index, deserialized_variant.needs_content()))
+            .partition(|(_, needs_content)| !needs_content);
+        let tags_needing_none = variants_needing_none
+            .iter()
+            .map(|(index, _)| format_ident!("Variant{index}"));
+        let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(self.#found));
+        let read_without_content = (!variants_needing_none.is_empty()).then(|| {
+            quote! {
+                #(__Variant::#tags_needing_none)|* => #serde::de::DeserializeSeed::deserialize(
+                    #variant_seed,
+                    #serde::de::value::UnitDeserializer::<__E>::new(),
+                ),
+            }
+        });
+        let missing = (!variants_needing_content.is_empty()).then(|| {
+            quote! {
+                _ => {
+                    ::annotated::__private::record_issue(
+                        self.#found,
+                        &self.#at.field(#content),
+                        ::annotated::Problem::Missing,
+                        ::core::option::Option::None,
+                    );
+                    ::core::result::Result::Ok(::core::option::Option::None)
+                }
+            }
+        });
+        quote! {
+            fn missing_content<__E: ::annotated::__private::serde::de::Error>(
+                self,
+                #variant: __Variant,
+            ) -> ::core::result::Result<::core::option::Option<#name #type_generics>, __E> {
+                match #variant {
+                    #read_without_content
+                    #missing
+                }
+            }
         }
     }
 }

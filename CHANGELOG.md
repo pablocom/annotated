@@ -49,6 +49,12 @@ This file lists every change that users of the crates can notice. The format fol
   - The variant's fields are at the enum's own location, beside the tag.
   - A missing tag is `Problem::Missing` at the tag's name, and a tag that names no variant is `Problem::UnknownVariant` there, even without `collect_type_errors`, so reading goes on.
   - With `collect_type_errors`, a value that isn't a map or a sequence is `Problem::InvalidType` at the enum's location.
+- `#[derive(Deserialize)]` reads adjacently tagged enums, with `#[serde(tag = "type", content = "data")]`.
+  - As with serde, the content is read straight from the input when the tag comes first, and buffered when it comes after. A sequence of the tag and the content is read too.
+  - The variant's fields are under the content's name: `data.email`.
+  - A missing tag, or one that names no variant, is reported at the tag's name, as for an internally tagged enum. Missing content is `Problem::Missing` at the content's name, unless the variant needs none: a unit variant, or a newtype variant whose value is an `Option`, which is then `None`, as with serde.
+  - With `collect_type_errors`, content of the wrong type is `Problem::InvalidType` at the content's name, and a value that isn't a map or a sequence is `Problem::InvalidType` at the enum's location.
+  - With `deny_unknown_fields`, a key other than the tag and the content is the format's error. serde words it as an invalid value. annotated words it as an unknown field, as for a struct.
 
 ### Changed
 

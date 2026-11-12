@@ -13,6 +13,7 @@ pub struct DeserializedEnum<'a> {
     pub variants: Vec<DeserializedVariant<'a>>,
     pub name: String,
     pub tag: Tag,
+    pub is_denying_unknown_fields: bool,
     pub expecting: Option<String>,
     pub borrowed_lifetimes: Vec<syn::Lifetime>,
     pub enum_checks: Vec<StructCheck>,
@@ -36,8 +37,9 @@ const ON_AN_ENUM: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "expecting",
         "into",
         "tag",
+        "content",
     ],
-    refusal: "with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `rename_all`, \
+    refusal: "with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `rename_all`, \
               `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting` and those that only change serializing",
 };
 
@@ -126,11 +128,29 @@ impl<'a> DeserializedEnum<'a> {
             variants,
             name,
             tag,
+            is_denying_unknown_fields,
             expecting,
             borrowed_lifetimes,
             enum_checks,
             is_reporting_all,
             collects_type_errors,
         })
+    }
+}
+
+impl DeserializedVariant<'_> {
+    // As with serde, a unit variant reads without content, and so does a newtype variant whose value is skipped or is
+    // an `Option` serde reads.
+    pub fn needs_content(&self) -> bool {
+        let Some(content) = &self.content else {
+            return false;
+        };
+        if content.form != Form::Newtype {
+            return true;
+        }
+        let field = &content.validated.fields[0];
+        let serde_field = &content.serde.fields[0];
+        let is_an_option_serde_reads = field.is_optional && serde_field.deserialize_with.is_none();
+        !serde_field.is_skipped && !is_an_option_serde_reads
     }
 }

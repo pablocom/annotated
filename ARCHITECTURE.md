@@ -372,7 +372,10 @@ Both derives work on enums, with every kind of variant: unit, newtype, tuple and
 
 **How it's generated.** The enum gets an identifier for its variant names and a visitor that reads the variant through serde's `EnumAccess`. Each struct, tuple or newtype variant is then read by the same code a struct gets for its fields, in a block of its own, building the variant instead of a struct. Its visitor is given the location where the variant's content is. A newtype variant's value is read whole, through a seed, and a struct variant with a flattened field as a map, as serde's derive reads them.
 
-An externally tagged variant is read through the `VariantAccess` serde gives for it. Every other representation reads the variant from a deserializer of its content, through a seed that knows which variant its tag named. For an internally tagged enum, `annotated::__private::read_internally_tagged` reads the tag and buffers the other entries, and returns the variant the tag names, or the issue to report at the tag or at the enum.
+An externally tagged variant is read through the `VariantAccess` serde gives for it. Every other representation reads the variant from a deserializer of its content, through a seed that knows which variant its tag named. For an internally tagged enum, `annotated::__private::read_internally_tagged` reads the tag and buffers the other entries, and returns the variant the tag names, or the issue to report at the tag or at the enum. An adjacently tagged enum gets a visitor of its own, which reads the tag and the content as a struct of two fields. It reads content that follows a known tag through the seed, and buffers content that comes before it.
+
+- With `collect_type_errors`, an adjacently tagged enum is buffered whole, as an externally tagged one is, and so is its content, so that content of the wrong type is an issue at the content's name.
+- With `deny_unknown_fields`, an extra key is an unknown field, as for a struct. serde's derive reports it as an invalid value instead.
 
 **Everything else works as for a struct:** generics and their bounds, borrowing, failing fast, and the equivalence with serde followed by `validate()`, which tests pin for each representation.
 

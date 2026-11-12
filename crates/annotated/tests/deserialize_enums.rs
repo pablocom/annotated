@@ -786,3 +786,313 @@ fn under_collect_type_errors_a_tag_given_twice_is_the_format_s_error() {
         ["the format's error: duplicate field `type`"]
     );
 }
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+enum Event {
+    SignedUp {
+        #[validate(email)]
+        email: String,
+    },
+    Renamed(#[validate(required)] String),
+    Moved(#[validate(range(min = 1))] u32, #[validate(range(min = 1))] u32),
+    Snoozed(Option<u32>),
+    LoggedOut,
+}
+
+#[test]
+fn an_adjacently_tagged_variant_is_read_from_its_tag_and_its_content() {
+    assert_eq!(
+        read::<Event>(r#"{ "type": "signedUp", "data": { "email": "ada@example.com" } }"#),
+        Ok(Event::SignedUp {
+            email: "ada@example.com".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn the_content_of_an_adjacently_tagged_variant_may_come_before_its_tag() {
+    assert_eq!(
+        read::<Event>(r#"{ "data": { "email": "ada@example.com" }, "type": "signedUp" }"#),
+        Ok(Event::SignedUp {
+            email: "ada@example.com".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn an_issue_in_an_adjacently_tagged_variant_is_under_the_content_s_name() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "signedUp", "data": { "email": "ada" } }"#),
+        ["data.email: email"]
+    );
+}
+
+#[test]
+fn an_issue_in_content_read_before_its_tag_is_under_the_content_s_name() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "data": { "email": "ada" }, "type": "signedUp" }"#),
+        ["data.email: email"]
+    );
+}
+
+#[test]
+fn an_adjacently_tagged_newtype_variant_s_value_is_at_the_content_s_name() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "renamed", "data": "" }"#),
+        ["data: required"]
+    );
+}
+
+#[test]
+fn an_adjacently_tagged_tuple_variant_s_elements_are_at_their_index_under_the_content_s_name() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "moved", "data": [1, 0] }"#),
+        ["data[1]: range(min: 1)"]
+    );
+}
+
+#[test]
+fn an_adjacently_tagged_unit_variant_is_read_from_its_tag_alone() {
+    assert_eq!(read::<Event>(r#"{ "type": "loggedOut" }"#), Ok(Event::LoggedOut));
+}
+
+#[test]
+fn an_adjacently_tagged_unit_variant_is_read_with_null_content() {
+    assert_eq!(
+        read::<Event>(r#"{ "type": "loggedOut", "data": null }"#),
+        Ok(Event::LoggedOut)
+    );
+}
+
+#[test]
+fn missing_content_is_missing_at_the_content_s_name() {
+    assert_eq!(issues_reading::<Event>(r#"{ "type": "signedUp" }"#), ["data: missing"]);
+}
+
+#[test]
+fn missing_content_of_an_optional_newtype_variant_is_none_as_with_serde() {
+    assert_eq!(read::<Event>(r#"{ "type": "snoozed" }"#), Ok(Event::Snoozed(None)));
+}
+
+#[test]
+fn a_missing_adjacent_tag_is_missing_at_the_tag_s_name() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "data": { "email": "ada@example.com" } }"#),
+        ["type: missing"]
+    );
+}
+
+#[test]
+fn an_adjacent_tag_that_names_no_variant_is_an_issue_at_the_tag() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "deleted", "data": {} }"#),
+        ["type: unknown_variant(expected: signedUp, renamed, moved, snoozed, loggedOut)"]
+    );
+}
+
+#[test]
+fn an_adjacent_tag_after_its_content_that_names_no_variant_is_an_issue_at_the_tag() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "data": {}, "type": "deleted" }"#),
+        ["type: unknown_variant(expected: signedUp, renamed, moved, snoozed, loggedOut)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct Timeline {
+    #[validate(nested)]
+    first: Event,
+    #[validate(nested)]
+    second: Event,
+}
+
+#[test]
+fn reading_goes_on_after_an_adjacent_tag_that_names_no_variant() {
+    let body = r#"{
+        "first": { "type": "deleted", "data": { "id": 7 } },
+        "second": { "type": "renamed", "data": "" }
+    }"#;
+
+    assert_eq!(
+        issues_reading::<Timeline>(body),
+        [
+            "first.type: unknown_variant(expected: signedUp, renamed, moved, snoozed, loggedOut)",
+            "second.data: required"
+        ]
+    );
+}
+
+#[test]
+fn keys_beside_the_tag_and_the_content_are_ignored() {
+    assert_eq!(
+        read::<Event>(r#"{ "type": "loggedOut", "at": "2026-11-12" }"#),
+        Ok(Event::LoggedOut)
+    );
+}
+
+#[test]
+fn an_adjacent_tag_given_twice_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "loggedOut", "type": "loggedOut" }"#),
+        ["the format's error: duplicate field `type` at line 1 column 29"]
+    );
+}
+
+#[test]
+fn content_given_twice_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "renamed", "data": "a", "data": "b" }"#),
+        ["the format's error: duplicate field `data` at line 1 column 40"]
+    );
+}
+
+#[test]
+fn an_adjacently_tagged_variant_is_read_from_a_sequence_of_its_tag_and_its_content() {
+    assert_eq!(
+        issues_reading::<Event>(r#"["signedUp", { "email": "ada" }]"#),
+        ["data.email: email"]
+    );
+}
+
+#[test]
+fn a_sequence_without_content_is_missing_it_at_the_content_s_name() {
+    assert_eq!(issues_reading::<Event>(r#"["signedUp"]"#), ["data: missing"]);
+}
+
+#[test]
+fn without_collect_type_errors_content_of_the_wrong_type_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "renamed", "data": 12 }"#),
+        ["the format's error: invalid type: integer `12`, expected a string at line 1 column 31"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase", deny_unknown_fields)]
+#[allow(dead_code)]
+enum Command {
+    Stop,
+}
+
+#[test]
+fn an_adjacently_tagged_enum_denying_unknown_fields_denies_keys_beside_the_tag_and_the_content() {
+    assert_eq!(
+        issues_reading::<Command>(r#"{ "type": "stop", "at": "noon" }"#),
+        ["the format's error: unknown field `at`, expected `type` or `data` at line 1 column 22"]
+    );
+}
+
+#[derive(serde::Deserialize, Validate)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+#[allow(dead_code)]
+enum EventThenValidated {
+    SignedUp {
+        #[validate(email)]
+        email: String,
+    },
+    Renamed(#[validate(required)] String),
+    Moved(#[validate(range(min = 1))] u32, #[validate(range(min = 1))] u32),
+    Snoozed(Option<u32>),
+    LoggedOut,
+}
+
+#[test]
+fn a_complete_adjacently_tagged_body_is_reported_as_serde_then_validate_report_it() {
+    let body = r#"{ "type": "moved", "data": [0, 0] }"#;
+
+    assert_eq!(
+        issues_found_reading::<Event>(body),
+        issues_validating_after_serde::<EventThenValidated>(body)
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+enum Change {
+    SignedUp {
+        #[validate(email)]
+        email: String,
+    },
+    Renamed(#[validate(required)] String),
+}
+
+#[test]
+fn under_collect_type_errors_content_of_the_wrong_type_is_an_issue_at_the_content_s_name() {
+    assert_eq!(
+        issues_reading::<Change>(r#"{ "type": "renamed", "data": 12 }"#),
+        ["data: invalid_type(expected: a string, found: integer)"]
+    );
+}
+
+#[test]
+fn under_collect_type_errors_a_value_of_the_wrong_type_in_adjacent_content_is_an_issue_at_its_path() {
+    assert_eq!(
+        issues_reading::<Change>(r#"{ "type": "signedUp", "data": { "email": 12 } }"#),
+        ["data.email: invalid_type(expected: a string, found: integer)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+enum Reminder {
+    Text(#[validate(required)] String),
+}
+
+#[test]
+fn under_collect_type_errors_an_internally_tagged_variant_its_entries_don_t_fit_is_an_issue_at_the_enum_s_location() {
+    assert_eq!(
+        issues_reading::<Reminder>(r#"{ "type": "text" }"#),
+        ["invalid_type(expected: a string, found: map)"]
+    );
+}
+
+#[test]
+fn content_given_twice_after_a_tag_that_names_no_variant_is_the_format_s_error() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "deleted", "data": 1, "data": 2 }"#),
+        ["the format's error: duplicate field `data` at line 1 column 38"]
+    );
+}
+
+#[test]
+fn a_sequence_whose_tag_names_no_variant_is_an_issue_at_the_tag() {
+    assert_eq!(
+        issues_reading::<Event>(r#"["deleted", {}]"#),
+        ["type: unknown_variant(expected: signedUp, renamed, moved, snoozed, loggedOut)"]
+    );
+}
+
+#[test]
+fn an_empty_sequence_is_missing_its_tag() {
+    assert_eq!(issues_reading::<Event>("[]"), ["type: missing"]);
+}
+
+#[test]
+fn under_collect_type_errors_struct_variant_content_of_the_wrong_type_is_an_issue_at_the_content_s_name() {
+    assert_eq!(
+        issues_reading::<Change>(r#"{ "type": "signedUp", "data": 12 }"#),
+        ["data: invalid_type(expected: struct variant Change::SignedUp, found: integer)"]
+    );
+}
+
+#[test]
+fn under_collect_type_errors_a_value_that_isn_t_an_adjacently_tagged_enum_is_an_issue_at_its_location() {
+    assert_eq!(
+        issues_reading::<Change>("12"),
+        ["invalid_type(expected: adjacently tagged enum Change, found: integer)"]
+    );
+}
+
+#[test]
+fn an_adjacently_tagged_unit_variant_given_content_is_the_format_s_error_as_with_serde() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "loggedOut", "data": { "at": 1 } }"#),
+        ["the format's error: invalid type: map, expected unit variant Event::LoggedOut at line 1 column 33"]
+    );
+}

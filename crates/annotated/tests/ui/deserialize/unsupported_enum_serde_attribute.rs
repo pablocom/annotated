@@ -1,7 +1,7 @@
 use annotated::Deserialize;
 
 #[derive(Deserialize)]
-#[serde(tag = "type", content = "data")]
+#[serde(from = "String")]
 enum Payment {
     Card { number: String },
     Cash,
