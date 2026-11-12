@@ -1,6 +1,6 @@
 # annotated
 
-How we work in this repository. [README](README.md) says what the library promises, [ARCHITECTURE](ARCHITECTURE.md) how it's built. Name things with the README's [terms](README.md#terms).
+How we work in this repository. The [README](README.md) shows how to use the library. [ARCHITECTURE](ARCHITECTURE.md) holds its principles and terms, and says how it's built. Name things with its [terms](ARCHITECTURE.md#terms).
 
 ## Code
 

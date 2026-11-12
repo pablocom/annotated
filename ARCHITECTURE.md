@@ -1,6 +1,28 @@
 # Architecture
 
-This document explains how `annotated` is built and why. The [README](README.md) says what the library promises, and this file says how the code keeps those promises. Read it before changing the crates.
+The [README](README.md) shows how to use `annotated`. This document is for working on it: the principles the library keeps, the terms it uses, and how the code is built and why. Read it before changing the crates.
+
+## Principles
+
+- **Every problem at once.** A client fixing a request sees everything that is wrong with it in one response, instead of one field per round trip.
+- **serde decides the names.** A field is reported under the name serde reads it by, whatever `rename_all`, `rename` or `alias` it has. That name is worked out by the same code serde's derive uses, so the crate never has a naming scheme of its own.
+- **The format is the user's.** The library works with any serde format. It reports a path as a list of segments (field, index, key), and the user chooses how to render it: as a JSON Pointer, a dotted path or anything else.
+- **Problems are data.** Each problem has a stable code and parameters, for code that translates it or reacts to it, and an English message for people. A rule can replace that message with its own `message`.
+- **Nothing to pay on the success path.** Validating a valid value allocates nothing. A path is built only when something fails, rules are plain functions the compiler inlines, and each regular expression is compiled once.
+- **Open for the user's rules.** Built-in rules are ordinary functions, and a user's own rules work the same way: on a field with `custom(...)`, or on the whole struct.
+- **Rules are pure.** A rule looks at the value and nothing else. A check that needs I/O, like "is this email already taken", belongs in the application, after validation.
+
+## Terms
+
+Use these words, with these meanings, in code, docs and conversation.
+
+- **Rule:** a check a value must pass, written in `#[validate(...)]`: `required`, `length(max = 50)`, `email`.
+- **Violation:** one thing wrong with a value, and the path where it was found. It is a broken rule, a missing field or a value of the wrong type.
+- **Problem:** the kind of violation: a stable code, its parameters and an English message.
+- **Path:** where in the value a violation was found: a field, an element's index, a map's key, or the value itself.
+- **Violations:** all the violations found in one validation. This is the error type, and it is never empty.
+- **Validation:** checking a value that already exists against its rules, with `Validate::validate`.
+- **Collecting deserialization:** deserializing through `annotated::Deserialize`. It reports missing fields and broken rules together, and values of the wrong type too when the struct opts in.
 
 ## The two ways in
 
@@ -281,10 +303,10 @@ There is no crate for any framework. [`examples/axum`](examples/axum) shows a sh
 
 ## Crates and features
 
-| Crate | Depends on |
-|---|---|
-| `annotated` | `annotated-derive`, which it re-exports, and the optional dependencies its features add |
-| `annotated-derive` | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex-syntax`, to check patterns at compile time |
+| Crate | What it holds | Depends on |
+|---|---|---|
+| `annotated` | The `Validate` trait, violations, problems and paths, the built-in rules, and collecting deserialization | `annotated-derive`, which it re-exports, and the optional dependencies its features add |
+| `annotated-derive` | The `Validate` and `Deserialize` derive macros. Derive macros have to live in a crate of their own | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex-syntax`, to check patterns at compile time |
 
 | Feature of `annotated` | Dependency it adds | What it enables |
 |---|---|---|
