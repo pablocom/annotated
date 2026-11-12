@@ -4,6 +4,8 @@ Every change users of the crates can notice is listed here. The format follows [
 
 ## Unreleased
 
+## [0.1.0] - 2026-11-12
+
 ### Added
 
 - The `Validate` trait, with `validate()` answering every violation found, and the error model it reports with: `Violations`, `Violation`, `Problem` with its stable `code()` and `params()`, each param a `ParamValue`: an integer, a float or a text, `Path` with `json_pointer()`, and `Location` and `FoundViolations` for implementing `Validate` by hand.
@@ -29,3 +31,5 @@ Every change users of the crates can notice is listed here. The format follows [
 - `#[annotated(collect_type_errors)]` on a struct deriving `Deserialize`: each field is read in two steps, first into a buffer holding any well-formed value, borrowing the strings and bytes the format lends, then from the buffer as the field's type, so a value of the wrong type is `Problem::InvalidType` at the field, beside the other violations in declaration order, instead of the format's error. `expected` is what serde says the type expects, or, when the type refuses the value with a message of its own, the type's name (the one inside an `Option`); for a value inside the field, such as an element of a list, both params describe that value. A value of the wrong type is checked by no other rule and skips the struct-level rules; inside a nested value, it replaces the violations found there before it, and a nested struct collecting them too reports those inside it at their full paths. Failing fast still answers the first violation of the full report. Map keys written as strings, as JSON writes every key, are read as the integers or booleans their type asks for, as `serde_json` reads them. It needs a self-describing format. Any other option in `#[annotated(...)]`, and any option on a field, is refused at compile time.
 - The `json` feature, which adds `serde_json` and turns on `serde`: `annotated::json::from_str` and `from_slice` read a JSON document collecting every violation in it, refusing characters after the value as `serde_json` does, before answering any violation, and `from_str_fail_fast` and `from_slice_fail_fast` answer only the first violation.
 - `examples/axum`, an axum extractor to copy into your app: it reads a JSON body with `annotated::json::from_slice`, refuses a request it can't read as axum's `Json` does, and answers every violation with 422 as RFC 9457 problem details, each with its JSON Pointer, code, params and message.
+
+[0.1.0]: https://github.com/pablocom/annotated/releases/tag/v0.1.0

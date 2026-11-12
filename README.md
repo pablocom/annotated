@@ -38,7 +38,7 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 }
 ```
 
-> **Status:** under construction. Nothing is on crates.io yet, and the API above is where it's heading, not what's there today.
+> **Status:** 0.1, the first release. Until 1.0, a release may change the API, and its changelog says how.
 
 ## Where it fits
 
