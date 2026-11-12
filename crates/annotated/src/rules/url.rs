@@ -1,23 +1,23 @@
 use crate::{Problem, Rule};
 
-/// The rule that a string is an absolute URL with a host, whose scheme is `http`, `https` or `ftp`, or one of
-/// those [`Url::schemes`] sets.
+/// The rule that a string is an absolute URL with a host, whose scheme is `http`, `https` or `ftp`, or one of those
+/// [`Url::schemes`] sets.
 ///
-/// A URL is an absolute URI with an authority by [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
-/// (section 3 and appendix A), `scheme "://" authority path-abempty [ "?" query ] [ "#" fragment ]`, with the
-/// international characters [RFC 3987](https://www.rfc-editor.org/rfc/rfc3987#section-2.2) adds: `ucschar` in
-/// the host, path, query and fragment, and `iprivate` in the query. So `https://bücher.de/straße` is a URL. It
-/// departs from that grammar twice: the host can't be empty, as
-/// [RFC 9110 section 4.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.1) requires of `http`, and a
-/// URL with userinfo, which [RFC 9110 section 4.2.4](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.4)
-/// deprecates, breaks the rule whatever its scheme.
+/// A URL here is an absolute URI with an authority, as [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#appendix-A)
+/// defines it in section 3 and appendix A: `scheme "://" authority path-abempty [ "?" query ] [ "#" fragment ]`.
 ///
+/// - [RFC 3987](https://www.rfc-editor.org/rfc/rfc3987#section-2.2) adds international characters: `ucschar` in the
+///   host, path, query and fragment, and `iprivate` in the query. So `https://bücher.de/straße` is a URL.
+/// - The rule departs from that grammar twice. The host can't be empty, as
+///   [RFC 9110 section 4.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.1) requires of `http`. And a URL with
+///   userinfo, which [RFC 9110 section 4.2.4](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.4) deprecates, breaks
+///   the rule whatever its scheme.
 /// - The scheme is compared with the accepted ones ignoring ASCII case.
-/// - The host is an IP literal in brackets, an IPv6 address or an `IPvFuture`; an IPv4 address; or a registered
-///   name. The port is any run of digits, empty too.
-/// - A `%` is a percent-encoding only when two hexadecimal digits follow it.
-/// - Anything the grammar doesn't allow breaks the rule: whitespace anywhere, surrounding whitespace too, a
-///   backslash, a control character.
+/// - The host is an IP literal in brackets (an IPv6 address or an `IPvFuture`), an IPv4 address, or a registered name.
+///   The port is any run of digits, and can be empty.
+/// - A `%` must be followed by two hexadecimal digits.
+/// - Anything the grammar doesn't allow breaks the rule: whitespace anywhere, including around the URL, a backslash, a
+///   control character.
 ///
 /// It checks anything that is `AsRef<str>`, exactly as written, and allocates nothing.
 ///
@@ -36,14 +36,15 @@ pub const fn url() -> Url {
     }
 }
 
-/// Checks that a string is a URL of an accepted scheme; made by [`url()`].
+/// Checks that a string is a URL with an accepted scheme. Made by [`url()`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Url {
     schemes: &'static [&'static str],
 }
 
 impl Url {
-    /// The rule accepting URLs of these `schemes` instead of `http`, `https` and `ftp`: `schemes = &["https"]`.
+    /// The rule accepting URLs with one of these `schemes`, in place of `http`, `https` and `ftp`:
+    /// `schemes = &["https"]`.
     #[must_use]
     pub const fn schemes(self, schemes: &'static [&'static str]) -> Self {
         Self { schemes }

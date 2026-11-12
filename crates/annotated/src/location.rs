@@ -2,10 +2,10 @@ use std::fmt::{self, Debug, Display};
 
 use crate::{Path, PathSegment};
 
-/// Where validation is in a value, kept on the stack while validation descends into it.
+/// The place in a value that validation has reached. It is kept on the stack while validation descends into the value.
 ///
-/// A location is the root, or a parent location plus one step: a field, an element's index or a map's key.
-/// Descending costs nothing; a location becomes an owned [`Path`] only when a violation is found there.
+/// A location is the root, or a parent location plus one step: a field, an element's index or a map's key. Descending
+/// allocates nothing. A location becomes an owned [`Path`] only when a violation is found there.
 ///
 /// ```
 /// use annotated::{Location, Path};
@@ -37,7 +37,7 @@ impl Location<'static> {
 }
 
 impl<'a> Location<'a> {
-    /// The location of this value's field `name`, by the name serde reads it by.
+    /// The location of this value's field `name`, which is the name serde reads the field by.
     #[must_use]
     pub const fn field(&'a self, name: &'static str) -> Self {
         self.followed_by(Step::Field(name))
@@ -49,7 +49,7 @@ impl<'a> Location<'a> {
         self.followed_by(Step::Index(index))
     }
 
-    /// The location of this map's value at `key`, rendered with [`Display`] if a violation is found there.
+    /// The location of this map's value at `key`. The key is rendered with [`Display`] if a violation is found there.
     #[must_use]
     pub const fn key(&'a self, key: &'a dyn Display) -> Self {
         self.followed_by(Step::Key(key))

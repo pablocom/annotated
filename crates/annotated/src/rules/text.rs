@@ -12,7 +12,7 @@ pub const fn contains(text: &'static str) -> Contains {
     Contains { text }
 }
 
-/// The rule that a string starts with `prefix`, letter case included: `prefix("SKU-")`.
+/// The rule that a string starts with `prefix`, matching letter case: `prefix("SKU-")`.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -24,7 +24,7 @@ pub const fn prefix(prefix: &'static str) -> Prefix {
     Prefix { prefix }
 }
 
-/// The rule that a string ends with `suffix`, letter case included: `suffix(".pdf")`.
+/// The rule that a string ends with `suffix`, matching letter case: `suffix(".pdf")`.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -36,19 +36,19 @@ pub const fn suffix(suffix: &'static str) -> Suffix {
     Suffix { suffix }
 }
 
-/// Checks that a string contains a text; made by [`contains`].
+/// Checks that a string contains a text. Made by [`contains`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Contains {
     text: &'static str,
 }
 
-/// Checks that a string starts with a prefix; made by [`prefix()`].
+/// Checks that a string starts with a prefix. Made by [`prefix()`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Prefix {
     prefix: &'static str,
 }
 
-/// Checks that a string ends with a suffix; made by [`suffix()`].
+/// Checks that a string ends with a suffix. Made by [`suffix()`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Suffix {
     suffix: &'static str,

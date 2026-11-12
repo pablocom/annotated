@@ -5,28 +5,32 @@ use serde::de::DeserializeSeed;
 
 use crate::{DeserializeError, FoundViolations, Location};
 
-/// A value that is deserialized collecting the violations in it: missing fields and broken rules together,
+/// A value that can be deserialized while collecting the violations in it: missing fields and broken rules together,
 /// instead of stopping at the first.
 ///
-/// [`#[derive(Deserialize)]`](macro@crate::Deserialize) implements it, and serde's own `Deserialize` through it,
-/// for a struct with rules on its fields. It can also be implemented by hand: [`Deserialize::deserialize_at`]
-/// reads the value found at the location `at` and pushes every violation in it into `found`. It answers:
+/// [`#[derive(Deserialize)]`](macro@crate::Deserialize) implements it, and serde's own `Deserialize` through it, for a
+/// struct with rules on its fields. It can also be implemented by hand. [`Deserialize::deserialize_at`] reads the value
+/// at the location `at`, pushes every violation in it into `found`, and returns:
 ///
-/// - `Ok(Some(value))` when the value could be built, though rules in it may have broken: those are in
-///   `found`.
-/// - `Ok(None)` when it couldn't, because a field inside is missing, say: `found` has a violation saying why. A
-///   value that could be built is answered even once `found` is finished
-///   [failing fast](FoundViolations::failing_fast), since the value around it may still have to check it.
-/// - `Err` with the format's own error, such as a syntax error, which ends deserialization as it would end
-///   serde's.
+/// - `Ok(Some(value))` when the value could be built. Rules in it may still have been broken, and those violations are
+///   in `found`.
+/// - `Ok(None)` when the value couldn't be built, for example because a field inside it is missing. `found` has a
+///   violation that says why.
+/// - `Err` with the format's own error, such as a syntax error. It ends deserialization, as it would end serde's.
 ///
-/// The crate implements it for the containers a nested value is held in, whenever what they hold implements it:
-/// `Option<T>`, `Box<T>`, and `Box<[T]>`, `Vec<T>` and `VecDeque<T>`, whose elements are read at their index, and
-/// `BTreeMap<K, V>` and `HashMap<K, V, S>`, whose values are read at their key. A container is built only when
-/// everything in it is. A map reports its values' violations in the order it goes through them, and a value given
-/// again for a key replaces the one before, with its violations.
+/// A value that could be built is returned even when `found` is already finished from
+/// [failing fast](FoundViolations::failing_fast), because the value around it may still have to check it.
 ///
-/// [`from_deserializer`] reads a value from the root and answers it, or every violation found.
+/// The crate implements the trait for the containers that hold a nested value, whenever what they hold implements it:
+///
+/// - `Option<T>` and `Box<T>`.
+/// - `Box<[T]>`, `Vec<T>` and `VecDeque<T>`, whose elements are read at their index.
+/// - `BTreeMap<K, V>` and `HashMap<K, V, S>`, whose values are read at their key.
+///
+/// A container is built only when everything in it could be built. A map reports its values' violations in the order it
+/// iterates over them. When a key appears twice, the later value replaces the earlier one, along with its violations.
+///
+/// [`from_deserializer`] reads a value from the root, and returns it or every violation found.
 ///
 /// ```
 /// use annotated::{FoundViolations, Location, Problem};
@@ -59,12 +63,12 @@ use crate::{DeserializeError, FoundViolations, Location};
     note = "derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand"
 )]
 pub trait Deserialize<'de>: Sized {
-    /// Reads this value, found at the location `at`, from `deserializer`, and pushes every violation in it
-    /// into `found`.
+    /// Reads this value, which is at the location `at`, from `deserializer`, and pushes every violation in it into
+    /// `found`.
     ///
     /// # Errors
     ///
-    /// The format's own error, which ends deserialization.
+    /// Returns the format's own error, which ends deserialization.
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
@@ -72,8 +76,8 @@ pub trait Deserialize<'de>: Sized {
     ) -> Result<Option<Self>, D::Error>;
 }
 
-/// Reads a `T` found at a location, pushing its violations into a report: the `DeserializeSeed` a collection
-/// reads its elements with, and a struct its nested fields.
+/// A `DeserializeSeed` that reads a `T` at a location and pushes its violations into a report. A collection reads its
+/// elements with it, and a struct its nested fields.
 pub struct DeserializeAt<'a, 'l, T> {
     at: &'a Location<'l>,
     found: &'a mut FoundViolations,
@@ -81,7 +85,7 @@ pub struct DeserializeAt<'a, 'l, T> {
 }
 
 impl<'a, 'l, T> DeserializeAt<'a, 'l, T> {
-    /// Reads a `T` found at `at`, pushing its violations into `found`.
+    /// A seed that reads a `T` at `at` and pushes its violations into `found`.
     pub fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
     where
         T: Deserialize<'de>,
@@ -106,7 +110,7 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for DeserializeAt<'_, '_, T>
 ///
 /// # Errors
 ///
-/// [`DeserializeError::Violations`] with every violation found, in the order found, or
+/// Returns [`DeserializeError::Violations`] with every violation found, in the order found, or
 /// [`DeserializeError::Format`] with the format's own error, which ends deserialization at once.
 pub fn from_deserializer<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
@@ -114,16 +118,16 @@ pub fn from_deserializer<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserialize_reporting_to(deserializer, FoundViolations::new())
 }
 
-/// Reads a `T` from `deserializer`, and answers only its first violation.
+/// Reads a `T` from `deserializer`, and returns only its first violation.
 ///
-/// The value is read and checked as by [`from_deserializer`], so the violation answered is the first that
-/// `from_deserializer` answers. No rule runs after it, but the input is still read to its end, since a field
-/// is known to be missing only then.
+/// The value is read and checked as by [`from_deserializer`], so the violation returned is the one `from_deserializer`
+/// would list first. The input is still read to its end, because a field is known to be missing only then. Once it is
+/// read, checking stops at the first violation. A nested value is checked while it is read, so its rules may still run.
 ///
 /// # Errors
 ///
-/// [`DeserializeError::Violations`] with the first violation found, alone, or [`DeserializeError::Format`]
-/// with the format's own error.
+/// Returns [`DeserializeError::Violations`] with the first violation found, alone, or [`DeserializeError::Format`] with
+/// the format's own error.
 pub fn from_deserializer_fail_fast<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<T, DeserializeError<D::Error>> {

@@ -40,8 +40,8 @@ where
     })
 }
 
-/// The violations a collection's elements reported as they were read, waiting for each element's `nested` rule,
-/// in the order `HasElements` goes through the elements.
+/// The violations that a collection's elements reported while they were read. They wait here for each element's
+/// `nested` rule, in the order `HasElements` goes through the elements.
 pub struct ElementViolations {
     waiting: std::vec::IntoIter<Violation>,
 }
@@ -54,8 +54,7 @@ impl ElementViolations {
         }
     }
 
-    /// Moves the violations waiting first that are at `at` or under it into `found`, and answers whether there
-    /// was any.
+    /// Moves the next waiting violations that are at `at` or under it into `found`, and returns whether there were any.
     pub fn join_those_at(&mut self, at: &Location<'_>, found: &mut FoundViolations) -> bool {
         let mut has_joined_any = false;
         while let Some(violation) = self.next_at(at) {
@@ -65,7 +64,7 @@ impl ElementViolations {
         has_joined_any
     }
 
-    /// Drops the violations waiting first that are at `at` or under it: those of an element whose `nested` rule
+    /// Drops the next waiting violations that are at `at` or under it. They belong to an element whose `nested` rule
     /// didn't run.
     pub fn skip_those_at(&mut self, at: &Location<'_>) {
         while self.next_at(at).is_some() {}

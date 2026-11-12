@@ -1,11 +1,11 @@
 //! The built-in rules.
 //!
-//! Each rule is made by a function named after it, like [`length`], and set up with builder methods, like
-//! [`Length::max`]. `#[validate(length(max = 50))]` becomes `annotated::rules::length().max(50)`, so a rule
-//! can be used by hand just the same, through [`Rule::check`](crate::Rule::check).
+//! A function named after each rule makes it, like [`length`], and builder methods set it up, like [`Length::max`].
+//! `#[validate(length(max = 50))]` becomes `annotated::rules::length().max(50)`, so you can use a rule by hand in the
+//! same way, through [`Rule::check`](crate::Rule::check).
 //!
-//! Rules are generic over small capability traits, like [`Required`] and [`HasLength`], so they check your
-//! own types once those implement them.
+//! Rules are generic over small capability traits, like [`Required`] and [`HasLength`]. Implement one for a type of
+//! your own, and the rules that use it check that type too.
 
 mod custom;
 mod elements;

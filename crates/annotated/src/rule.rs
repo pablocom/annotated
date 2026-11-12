@@ -1,9 +1,9 @@
 use crate::Problem;
 
-/// A check a value of type `T` must pass, written in `#[validate(...)]`.
+/// A check that a value of type `T` must pass, written in `#[validate(...)]`.
 ///
-/// Built-in rules are made by the functions in [`rules`](crate::rules); a rule of your own is a type that
-/// implements this trait, made by a function of the same name.
+/// The functions in [`rules`](crate::rules) make the built-in rules. A rule of your own is a type that implements this
+/// trait, with a function that makes it: `#[validate(my_rules::nif)]` calls `my_rules::nif()`.
 ///
 /// ```
 /// use annotated::{Problem, Rule, rules};
@@ -20,6 +20,6 @@ pub trait Rule<T: ?Sized> {
     ///
     /// # Errors
     ///
-    /// The [`Problem`] with `value`, when it breaks this rule.
+    /// Returns the [`Problem`] with `value`, when it breaks this rule.
     fn check(&self, value: &T) -> Result<(), Problem>;
 }

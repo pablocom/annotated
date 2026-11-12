@@ -8,10 +8,10 @@ use crate::{Bounds, LengthUnit, Problem, Rule};
 
 /// The rule that a value's length is within bounds: `length().min(1).max(50)`.
 ///
-/// It counts the `char`s of a string (Unicode scalar values) and the elements of a collection, anything that
-/// implements [`HasLength`]. A string can be counted in another unit with [`Length::in_bytes`],
-/// [`Length::in_chars`] or, with the `unicode` feature, `Length::in_graphemes`; a collection can't. Bounds
-/// are inclusive, and a length with no bounds accepts any value.
+/// It checks anything that implements [`HasLength`]. A string is counted in `char`s (Unicode scalar values), and a
+/// collection in elements. To count a string in another unit, use [`Length::in_bytes`], [`Length::in_chars`] or, with
+/// the `unicode` feature, `Length::in_graphemes`. A collection can't be counted in another unit. The bounds are
+/// included, and a length with no bounds accepts any value.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -28,14 +28,15 @@ pub const fn length() -> Length {
     }
 }
 
-/// Checks the length of a string, in `char`s, or of a collection, in elements; made by [`length`].
+/// Checks the length of a string, in `char`s, or of a collection, in elements. Made by [`length`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Length {
     bounds: LengthBounds,
 }
 
-/// Checks the length of a string in a unit asked for: `char`s, UTF-8 bytes or grapheme clusters; made by
-/// [`Length::in_chars`], [`Length::in_bytes`] or `Length::in_graphemes`. It refuses to check a collection.
+/// Checks the length of a string in a chosen unit: `char`s, UTF-8 bytes or grapheme clusters. Made by
+/// [`Length::in_chars`], [`Length::in_bytes`] or `Length::in_graphemes`. It checks only strings, so using it on a
+/// collection doesn't compile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StringLength {
     bounds: LengthBounds,
@@ -158,20 +159,20 @@ impl Length {
         self.min(equal).max(equal)
     }
 
-    /// The rule counting a string's `char`s, and refusing to check a collection.
+    /// The rule counting a string's `char`s. It then checks only strings, not collections.
     #[must_use]
     pub const fn in_chars(self) -> StringLength {
         self.counting(StringUnit::Chars)
     }
 
-    /// The rule counting a string's UTF-8 bytes, and refusing to check a collection.
+    /// The rule counting a string's UTF-8 bytes. It then checks only strings, not collections.
     #[must_use]
     pub const fn in_bytes(self) -> StringLength {
         self.counting(StringUnit::Bytes)
     }
 
-    /// The rule counting a string's grapheme clusters, what a person sees as one character, and refusing to
-    /// check a collection.
+    /// The rule counting a string's grapheme clusters, which are what a person sees as one character. It then checks
+    /// only strings, not collections.
     #[cfg(feature = "unicode")]
     #[must_use]
     pub const fn in_graphemes(self) -> StringLength {
@@ -235,7 +236,7 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for StringLength {
 
 /// A value with a length that [`length`] can check.
 ///
-/// Implement it for a type of your own to say how long a value of it is, and in what unit.
+/// Implement it for a type of your own to say how long one of its values is, and in what unit.
 #[diagnostic::on_unimplemented(
     message = "`length` can't check a value of type `{Self}`",
     label = "`{Self}` doesn't implement `annotated::rules::HasLength`",

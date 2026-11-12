@@ -2,10 +2,10 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::{self, Display};
 
-/// The value of one of a [`Problem`](crate::Problem)'s named parameters: a number or a text.
+/// The value of one of a [`Problem`](crate::Problem)'s named parameters: a number or text.
 ///
-/// Code that translates a message reads it to pick a plural form or compare a bound without parsing. A
-/// message quotes it as it reads: `{max}` becomes `50`.
+/// Because it is typed, code that translates a message can pick a plural form or compare a bound without parsing text.
+/// In a message, a placeholder is replaced by the value as [`Display`] prints it: `{max}` becomes `50`.
 ///
 /// ```
 /// use annotated::{ParamValue, Problem};
@@ -17,8 +17,8 @@ use std::fmt::{self, Display};
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ParamValue {
-    /// A whole number, like a length's `max`. Every primitive integer is one, exactly, but for a `u128` beyond
-    /// what an `i128` holds, which is kept as its digits in [`ParamValue::Text`].
+    /// A whole number, like a length's `max`. Every primitive integer is kept exactly, except a `u128` too large for an
+    /// `i128`, which is kept as its digits in [`ParamValue::Text`].
     Integer(i128),
     /// A floating-point number, like a `range` bound on an `f64`.
     Float(f64),

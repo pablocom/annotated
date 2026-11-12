@@ -3,12 +3,12 @@ use std::mem;
 
 use crate::{Location, Problem, Violation, Violations};
 
-/// The violations found so far in one validation, gathered as validation goes through a value.
+/// The violations found so far in one validation. Validation adds to it as it goes through a value.
 ///
-/// It allocates on its first violation, not before, so validating a valid value costs nothing.
+/// It allocates when it records its first violation, not before, so a valid value never pays for it.
 ///
-/// A report started with [`FoundViolations::failing_fast`] keeps only its first violation: once it has
-/// it, it [is finished](FoundViolations::is_finished) and records nothing more.
+/// A report started with [`FoundViolations::failing_fast`] keeps only its first violation. Once it has that violation,
+/// it [is finished](FoundViolations::is_finished) and records nothing more.
 #[derive(Debug, Default)]
 pub struct FoundViolations {
     violations: Vec<Violation>,
@@ -16,7 +16,7 @@ pub struct FoundViolations {
 }
 
 impl FoundViolations {
-    /// No violations yet, gathering every violation found.
+    /// An empty report that keeps every violation found.
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -25,7 +25,7 @@ impl FoundViolations {
         }
     }
 
-    /// No violations yet, keeping only the first violation found.
+    /// An empty report that keeps only the first violation found.
     #[must_use]
     pub const fn failing_fast() -> Self {
         Self {
@@ -34,11 +34,11 @@ impl FoundViolations {
         }
     }
 
-    /// No violations yet, gathering them as this report does: every violation, or only the first when this
-    /// report is failing fast.
+    /// An empty report that gathers as this one does: every violation, or only the first when this report is failing
+    /// fast.
     ///
-    /// It keeps the violations found in one part of a value apart, until they join this report with
-    /// [`append`](FoundViolations::append).
+    /// Use it to keep the violations found in one part of a value apart, until [`append`](FoundViolations::append)
+    /// moves them into this report.
     #[must_use]
     pub const fn new_alike(&self) -> Self {
         Self {
@@ -47,8 +47,8 @@ impl FoundViolations {
         }
     }
 
-    /// Whether validation should stop: the report is failing fast and has its violation. A report of every
-    /// violation is never finished.
+    /// Whether validation should stop, because the report is failing fast and already has its violation. A report that
+    /// keeps every violation is never finished.
     #[must_use]
     pub fn is_finished(&self) -> bool {
         self.is_failing_fast && !self.violations.is_empty()
@@ -62,10 +62,10 @@ impl FoundViolations {
         self.violations.push(Violation::new(at.to_path(), problem));
     }
 
-    /// Records `problem` at the location `at`, with `message` instead of the problem's own, unless the report
+    /// Records `problem` at the location `at`, with `message` in place of the problem's own message, unless the report
     /// is finished.
     ///
-    /// `{name}` in the message is filled with the problem's parameter `name`; `{{` and `}}` are literal braces.
+    /// `{name}` in the message is replaced by the problem's parameter `name`. Write `{{` and `}}` for literal braces.
     pub fn push_with_message(&mut self, at: &Location<'_>, problem: Problem, message: impl Into<Cow<'static, str>>) {
         if self.is_finished() {
             return;
@@ -74,10 +74,10 @@ impl FoundViolations {
             .push(Violation::new(at.to_path(), problem).with_message(message));
     }
 
-    /// Moves the violations in `other` to the end of this report, in their order, leaving `other` empty.
+    /// Moves the violations in `other` to the end of this report, keeping their order, and leaves `other` empty.
     ///
-    /// A finished report takes none of them, and a report failing fast only the first. An empty report takes
-    /// them without copying them.
+    /// A finished report takes none of them, and a report that is failing fast takes only the first. An empty report
+    /// takes them without copying them.
     pub fn append(&mut self, other: &mut FoundViolations) {
         if self.is_finished() {
             other.violations.clear();
@@ -100,7 +100,8 @@ impl FoundViolations {
         self.violations.push(violation);
     }
 
-    /// Moves the violations found after the first `kept` into a report alike this one, leaving those first.
+    /// Moves every violation after the first `kept` into a new report that gathers as this one does, and leaves the
+    /// first `kept` here.
     pub(crate) fn take_those_after(&mut self, kept: usize) -> FoundViolations {
         let taken = if kept == 0 {
             mem::take(&mut self.violations)
@@ -129,11 +130,11 @@ impl FoundViolations {
         self.violations.is_empty()
     }
 
-    /// `Ok(())` when no violation was found, or every violation found, in the order they were found.
+    /// Turns the report into a result: `Ok(())` when no violation was found.
     ///
     /// # Errors
     ///
-    /// The [`Violations`] found, when there is at least one.
+    /// Returns the [`Violations`] found, in the order they were found, when there is at least one.
     pub fn into_result(self) -> Result<(), Violations> {
         Violations::of(self.violations).map_or(Ok(()), Err)
     }

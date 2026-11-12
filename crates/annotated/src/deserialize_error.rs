@@ -5,23 +5,24 @@ use crate::{Violation, Violations};
 
 /// Why a value couldn't be deserialized: the format's own error, or the violations found in it.
 ///
-/// [`DeserializeError::violations`] answers the violations, and none for the format's error, so a caller
-/// reads them without matching. It reads as the error it holds: the format's message, or the violations one
-/// per line.
+/// [`DeserializeError::violations`] returns the violations, and an empty slice for the format's error, so a caller can
+/// read them without matching. Its `Display` is that of the error it holds: the format's message, or one violation per
+/// line.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum DeserializeError<E> {
-    /// The format's own error, which ends deserialization as it ends serde's: input that isn't well formed, an
-    /// unknown field under `#[serde(deny_unknown_fields)]`, a field given twice or a value of the wrong type, unless
-    /// the struct collects those with `#[annotated(collect_type_errors)]`.
+    /// The format's own error, which ends deserialization as it would end serde's. It can be input that isn't well
+    /// formed, an unknown field under `#[serde(deny_unknown_fields)]`, a field that appears twice, or a value of the
+    /// wrong type. A struct with `#[annotated(collect_type_errors)]` reports values of the wrong type as violations
+    /// instead.
     Format(E),
-    /// Every violation found in the value, missing fields, broken rules and values of the wrong type when they are
-    /// collected, in the order found.
+    /// Every violation found in the value, in the order found: missing fields, broken rules, and values of the wrong
+    /// type when the struct collects them.
     Violations(Violations),
 }
 
 impl<E> DeserializeError<E> {
-    /// The violations found, in the order found, or none for the format's error.
+    /// The violations found, in the order found. The slice is empty for the format's error.
     #[must_use]
     pub fn violations(&self) -> &[Violation] {
         match self {

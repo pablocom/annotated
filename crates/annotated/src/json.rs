@@ -1,7 +1,7 @@
-//! Reading JSON with collecting deserialization: every missing field and broken rule in one answer.
+//! Reading JSON with collecting deserialization: every missing field and broken rule in one error.
 //!
-//! These read a whole JSON document, as `serde_json::from_str` and `from_slice` do, so characters after the
-//! value are the format's error, answered before any violation.
+//! These functions read a whole JSON document, as `serde_json::from_str` and `from_slice` do. So characters after the
+//! value are the format's error, and that error is returned before any violation.
 //!
 //! ```
 //! use annotated::Deserialize;
@@ -28,8 +28,8 @@ use crate::{Deserialize, DeserializeError, FoundViolations, Location};
 ///
 /// # Errors
 ///
-/// [`DeserializeError::Violations`] with every violation found, in the order found, or
-/// [`DeserializeError::Format`] when the text isn't a JSON document `T` can be read from.
+/// Returns [`DeserializeError::Violations`] with every violation found, in the order found, or
+/// [`DeserializeError::Format`] when the text isn't a JSON document that `T` can be read from.
 pub fn from_str<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
     read_whole_document(StrRead::new(json), FoundViolations::new())
 }
@@ -38,28 +38,28 @@ pub fn from_str<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Deseriali
 ///
 /// # Errors
 ///
-/// [`DeserializeError::Violations`] with every violation found, in the order found, or
-/// [`DeserializeError::Format`] when the bytes aren't a JSON document `T` can be read from.
+/// Returns [`DeserializeError::Violations`] with every violation found, in the order found, or
+/// [`DeserializeError::Format`] when the bytes aren't a JSON document that `T` can be read from.
 pub fn from_slice<'de, T: Deserialize<'de>>(json: &'de [u8]) -> Result<T, DeserializeError<serde_json::Error>> {
     read_whole_document(SliceRead::new(json), FoundViolations::new())
 }
 
-/// Reads a `T` from JSON text, and answers only its first violation: the first that [`from_str`] answers.
+/// Reads a `T` from JSON text, and returns only its first violation: the one [`from_str`] would list first.
 ///
 /// # Errors
 ///
-/// [`DeserializeError::Violations`] with the first violation found, alone, or [`DeserializeError::Format`]
-/// when the text isn't a JSON document `T` can be read from.
+/// Returns [`DeserializeError::Violations`] with the first violation found, alone, or [`DeserializeError::Format`] when
+/// the text isn't a JSON document that `T` can be read from.
 pub fn from_str_fail_fast<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
     read_whole_document(StrRead::new(json), FoundViolations::failing_fast())
 }
 
-/// Reads a `T` from JSON bytes, and answers only its first violation: the first that [`from_slice`] answers.
+/// Reads a `T` from JSON bytes, and returns only its first violation: the one [`from_slice`] would list first.
 ///
 /// # Errors
 ///
-/// [`DeserializeError::Violations`] with the first violation found, alone, or [`DeserializeError::Format`]
-/// when the bytes aren't a JSON document `T` can be read from.
+/// Returns [`DeserializeError::Violations`] with the first violation found, alone, or [`DeserializeError::Format`] when
+/// the bytes aren't a JSON document that `T` can be read from.
 pub fn from_slice_fail_fast<'de, T: Deserialize<'de>>(
     json: &'de [u8],
 ) -> Result<T, DeserializeError<serde_json::Error>> {

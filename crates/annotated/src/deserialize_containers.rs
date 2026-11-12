@@ -75,7 +75,8 @@ where
     }
 }
 
-/// A key is cloned for a value with violations, so they are reported in the order the map goes through its values.
+/// A key is cloned when its value was built but has violations, so that they can be reported in the order the map
+/// iterates over its values.
 impl<'de, K, V, S> Deserialize<'de> for HashMap<K, V, S>
 where
     K: serde::Deserialize<'de> + Display + Eq + Hash + Clone,

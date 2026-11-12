@@ -5,17 +5,17 @@ use std::sync::Arc;
 
 use crate::{Problem, Rule};
 
-/// The rule that a value is present: an `Option` is `Some`, a string is neither empty nor only whitespace,
-/// and a collection is not empty.
+/// The rule that a value is present: an `Option` is `Some`, a string is not empty and not only whitespace, and a
+/// collection is not empty.
 ///
-/// It checks anything that implements [`Required`]. On an `Option` field, `#[derive(Validate)]` checks the
-/// `Option` itself with it, while every other rule checks the value inside.
+/// It checks anything that implements [`Required`]. On an `Option` field, `#[derive(Validate)]` applies it to the
+/// `Option` itself, while every other rule checks the value inside.
 #[must_use]
 pub const fn required() -> Presence {
     Presence
 }
 
-/// Checks that a value is present; made by [`required`].
+/// Checks that a value is present. Made by [`required`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Presence;
 
@@ -28,9 +28,9 @@ impl<T: Required + ?Sized> Rule<T> for Presence {
     }
 }
 
-/// A value that can be present or not, so [`required`] can check it.
+/// A value that can be present or absent, which lets [`required`] check it.
 ///
-/// Implement it for a type of your own to say when a value of it counts as present.
+/// Implement it for a type of your own to say when one of its values counts as present.
 #[diagnostic::on_unimplemented(
     message = "`required` can't check a value of type `{Self}`",
     label = "`{Self}` doesn't implement `annotated::rules::Required`",

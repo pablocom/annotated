@@ -3,7 +3,8 @@ use std::fmt::{self, Display, Write};
 
 use crate::{ParamValue, Path, Problem};
 
-/// One broken rule, at the path where it happened.
+/// One thing wrong with a value, and the path where it was found: a broken rule, a missing field or a value of the
+/// wrong type.
 ///
 /// ```
 /// use annotated::{Path, Problem, Violation};
@@ -21,7 +22,7 @@ pub struct Violation {
 }
 
 impl Violation {
-    /// The violation of `problem` at `path`, with the problem's own message.
+    /// A violation of `problem` at `path`, with the problem's own message.
     #[must_use]
     pub fn new(path: Path, problem: Problem) -> Self {
         Self {
@@ -31,16 +32,16 @@ impl Violation {
         }
     }
 
-    /// This violation, with `message` instead of the problem's own.
+    /// This violation, with `message` in place of the problem's own message.
     ///
-    /// `{name}` in the message is filled with the problem's parameter `name`; `{{` and `}}` are literal braces.
+    /// `{name}` in the message is replaced by the problem's parameter `name`. Write `{{` and `}}` for literal braces.
     #[must_use]
     pub fn with_message(mut self, message: impl Into<Cow<'static, str>>) -> Self {
         self.message_override = Some(message.into());
         self
     }
 
-    /// Where in the value it happened.
+    /// Where in the value it was found.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
@@ -52,8 +53,8 @@ impl Violation {
         &self.problem
     }
 
-    /// The message for people: the override, with its placeholders filled from the problem's parameters,
-    /// or else the problem's English message.
+    /// The message for people. It is the override when there is one, with its placeholders filled from the problem's
+    /// parameters, or else the problem's English message.
     #[must_use]
     pub fn message(&self) -> String {
         match &self.message_override {

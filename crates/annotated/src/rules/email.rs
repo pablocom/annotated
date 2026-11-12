@@ -1,10 +1,13 @@
 use crate::{Problem, Rule};
 
-/// The rule that a string is an email address, as HTML's `<input type="email">` accepts one: a local part of
-/// letters, digits, dots and the symbols `` !#$%&'*+/=?^_`{|}~- ``, an `@`, and a domain of labels made of
-/// letters, digits and hyphens. The address is at most 254 bytes and its local part at most 64.
+/// The rule that a string is an email address, as HTML's `<input type="email">` accepts one.
 ///
-/// It checks anything that is `AsRef<str>`, exactly as written: surrounding whitespace breaks it.
+/// - The local part is made of letters, digits, dots and the symbols `` !#$%&'*+/=?^_`{|}~- ``.
+/// - An `@` follows it.
+/// - The domain is made of labels separated by dots, each of letters, digits and hyphens.
+/// - The address is at most 254 bytes long, and its local part at most 64.
+///
+/// It checks anything that is `AsRef<str>`, exactly as written, so whitespace around the address breaks the rule.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -17,7 +20,7 @@ pub const fn email() -> Email {
     Email
 }
 
-/// Checks that a string is an email address; made by [`email`].
+/// Checks that a string is an email address. Made by [`email`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Email;
 

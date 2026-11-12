@@ -17,7 +17,7 @@ pub(crate) struct ContentDeserializer<'de, E> {
 }
 
 impl<'de, E> ContentDeserializer<'de, E> {
-    /// Reads `content`, answering `is_human_readable` as the format it came from does.
+    /// Reads `content`, and reports `is_human_readable` as the format it came from does.
     pub(crate) const fn new(content: Content<'de>, is_human_readable: bool) -> Self {
         Self {
             content,
@@ -344,8 +344,8 @@ impl<'de, E: de::Error> IntoDeserializer<'de, E> for ContentDeserializer<'de, E>
     }
 }
 
-/// Reads a map's key, taking an integer or a boolean written as a string, as JSON writes every key and `serde_json`
-/// reads it.
+/// Reads a map's key. It accepts an integer or a boolean written as a string, because JSON writes every key as a string
+/// and `serde_json` reads keys that way.
 struct MapKeyDeserializer<'de, E> {
     key: ContentDeserializer<'de, E>,
 }

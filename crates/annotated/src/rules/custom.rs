@@ -3,10 +3,10 @@ use std::marker::PhantomData;
 
 use crate::{Problem, Rule};
 
-/// The rule that `check` accepts a value: any `Fn(&V) -> Result<(), Problem>`, reporting with
-/// [`Problem::custom`].
+/// The rule that a function of your own accepts a value. `check` is any `Fn(&V) -> Result<(), Problem>`, and reports
+/// with [`Problem::custom`].
 ///
-/// It checks any value that borrows as a `V`, so a check of `&str` checks a `String` field too.
+/// It checks any value that borrows as a `V`, so a function that takes `&str` checks a `String` field too.
 ///
 /// ```
 /// use annotated::{Problem, Rule, rules};
@@ -28,7 +28,7 @@ pub const fn custom<V: ?Sized, F: Fn(&V) -> Result<(), Problem>>(check: F) -> Cu
     }
 }
 
-/// Checks a value with a function of your own; made by [`custom`].
+/// Checks a value with a function of your own. Made by [`custom`].
 pub struct Custom<F, V: ?Sized> {
     check: F,
     checked: PhantomData<fn(&V)>,

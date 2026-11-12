@@ -4,9 +4,10 @@ use std::slice;
 
 use crate::Violation;
 
-/// Every violation found in one validation: the error type. It is never empty.
+/// Every violation found in one validation. This is the error type, and it is never empty.
 ///
-/// It iterates over its violations in the order they were found, and reads as one violation per line.
+/// Iterating over it yields the violations in the order they were found, and its [`Display`] prints one violation per
+/// line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Violations {
     violations: Vec<Violation>,

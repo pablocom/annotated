@@ -4,7 +4,7 @@ use crate::{Problem, Rule};
 
 /// The rule that a string is an IP address of either version, v4 or v6: `192.0.2.1`, `2001:db8::1`.
 ///
-/// It checks anything that is `AsRef<str>`, in the forms `std::net` parses. [`ipv4`] and [`ipv6`] accept only
+/// It checks anything that is `AsRef<str>`, and accepts the forms `std::net` parses. [`ipv4`] and [`ipv6`] accept only
 /// one version.
 ///
 /// ```
@@ -22,7 +22,7 @@ pub const fn ip() -> Ip {
 
 /// The rule that a string is an IPv4 address: `192.0.2.1`.
 ///
-/// It checks anything that is `AsRef<str>`, in the form `std::net` parses.
+/// It checks anything that is `AsRef<str>`, and accepts the form `std::net` parses.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -37,7 +37,7 @@ pub const fn ipv4() -> Ip {
 
 /// The rule that a string is an IPv6 address: `2001:db8::1`.
 ///
-/// It checks anything that is `AsRef<str>`, in the forms `std::net` parses.
+/// It checks anything that is `AsRef<str>`, and accepts the forms `std::net` parses.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -50,7 +50,7 @@ pub const fn ipv6() -> Ip {
     Ip { version: IpVersion::V6 }
 }
 
-/// Checks that a string is an IP address; made by [`ip`], [`ipv4`] or [`ipv6`].
+/// Checks that a string is an IP address. Made by [`ip`], [`ipv4`] or [`ipv6`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ip {
     version: IpVersion,

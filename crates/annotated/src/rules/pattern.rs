@@ -2,11 +2,12 @@ use regex::Regex;
 
 use crate::{Problem, Rule};
 
-/// The rule that a string matches a regular expression, anywhere in it unless the expression is anchored
-/// with `^` and `$`.
+/// The rule that a string matches a regular expression. A match anywhere in the string passes, unless the expression is
+/// anchored with `^` and `$`.
 ///
-/// `#[validate(pattern = r"^\d{5}$")]` compiles the expression once, into a `static` at the field, and
-/// refuses at compile time one that doesn't parse. By hand, keep the [`Regex`] in a `static` the same way.
+/// `#[validate(pattern = r"^\d{5}$")]` compiles the expression once, into a `static` at the field, and an expression
+/// that doesn't parse is a compile error. When you use the rule by hand, keep the [`Regex`] in a `static` in the same
+/// way.
 ///
 /// ```
 /// use std::sync::LazyLock;
@@ -23,7 +24,7 @@ pub const fn pattern(regex: &'static Regex) -> Pattern {
     Pattern { regex }
 }
 
-/// Checks that a string matches a regular expression; made by [`pattern()`].
+/// Checks that a string matches a regular expression. Made by [`pattern()`].
 #[derive(Debug, Clone, Copy)]
 pub struct Pattern {
     regex: &'static Regex,

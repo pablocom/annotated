@@ -3,12 +3,13 @@ use std::fmt::{self, Display};
 
 use crate::ParamValue;
 
-/// What kind of violation happened: a stable code, its named parameters and an English message.
+/// The kind of violation: a stable code, its named parameters and an English message.
 ///
-/// Code that translates messages or reacts to a violation reads [`Problem::code`] and [`Problem::params`], each
-/// param a [`ParamValue`], a number or a text;
-/// people read its [`Display`], the English message. New kinds of problem may be added without a breaking
-/// change, so a `match` on it needs a wildcard arm.
+/// - Code that translates messages or reacts to a violation reads [`Problem::code`] and [`Problem::params`]. Each
+///   parameter is a [`ParamValue`]: a number or text.
+/// - People read its [`Display`], the English message.
+///
+/// New kinds of problem may be added without a breaking change, so a `match` on it needs a wildcard arm.
 ///
 /// A rule of your own reports with [`Problem::custom`]:
 ///
@@ -23,23 +24,23 @@ use crate::ParamValue;
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Problem {
-    /// A required value is missing: `required`, code `required`.
+    /// A required value is not present. Reported by `required`, with the code `required`.
     Required,
-    /// A field is absent from the input: reported by collecting deserialization, code `missing`.
+    /// A field is absent from the input. Reported by collecting deserialization, with the code `missing`.
     Missing,
-    /// A value is of the wrong type for its field: reported by collecting deserialization of a struct with
-    /// `#[annotated(collect_type_errors)]`, code `invalid_type`, with the params `expected` and `found`.
+    /// A value has the wrong type for its field. Reported by collecting deserialization of a struct with
+    /// `#[annotated(collect_type_errors)]`, with the code `invalid_type` and the parameters `expected` and `found`.
     #[non_exhaustive]
     InvalidType {
         /// What the field's type accepts, as serde describes it (`u8`, `a string`, `struct Address`), or the
         /// type's short name when serde doesn't say.
         expected: Cow<'static, str>,
-        /// The kind of value that came: `boolean`, `integer`, `float`, `character`, `string`, `bytes`, `null`,
-        /// `sequence` or `map`. Never the value itself, so nothing the input held is repeated back.
+        /// The kind of value in the input: `boolean`, `integer`, `float`, `character`, `string`, `bytes`, `null`,
+        /// `sequence` or `map`. It is never the value itself, so nothing from the input is repeated back.
         found: &'static str,
     },
-    /// A length is out of bounds: `length`, code `length`, with the params `min` and `max` it has, `equal`
-    /// when they are the same, and `unit`.
+    /// A length is out of bounds. Reported by `length`, with the code `length`. Its parameters are the `min` and `max`
+    /// the rule has, `equal` as well when the two are the same, and `unit`.
     #[non_exhaustive]
     Length {
         /// The lengths accepted.
@@ -47,47 +48,50 @@ pub enum Problem {
         /// What the length was counted in.
         unit: LengthUnit,
     },
-    /// A value is out of bounds: `range`, code `range`, with the params `min` and `max` it has.
+    /// A value is out of bounds. Reported by `range`, with the code `range` and the parameters `min` and `max`,
+    /// whichever the rule has.
     #[non_exhaustive]
     Range {
-        /// The values accepted: numbers when the value checked is of a primitive number type, or else text,
-        /// rendered with [`Display`].
+        /// The values accepted. They are numbers when the checked value is of a primitive number type, and otherwise
+        /// text rendered with [`Display`].
         bounds: Bounds<ParamValue>,
     },
-    /// A string isn't an email address: `email`, code `email`.
+    /// A string isn't an email address. Reported by `email`, with the code `email`.
     Email,
-    /// A string isn't a URL of an accepted scheme: `url`, code `url`, with the param `schemes`, comma
-    /// separated: `http, https, ftp` unless the rule was given others.
+    /// A string isn't a URL with an accepted scheme. Reported by `url`, with the code `url` and the parameter
+    /// `schemes`, a comma-separated list: `http, https, ftp` unless the rule was given others.
     #[non_exhaustive]
     Url {
         /// The schemes accepted: `http`, `https` and `ftp`, or those the rule was given.
         schemes: &'static [&'static str],
     },
-    /// A string isn't an IP address of either version: `ip`, code `ip`.
+    /// A string isn't an IP address of either version. Reported by `ip`, with the code `ip`.
     Ip,
-    /// A string isn't an IPv4 address: `ipv4`, code `ipv4`.
+    /// A string isn't an IPv4 address. Reported by `ipv4`, with the code `ipv4`.
     Ipv4,
-    /// A string isn't an IPv6 address: `ipv6`, code `ipv6`.
+    /// A string isn't an IPv6 address. Reported by `ipv6`, with the code `ipv6`.
     Ipv6,
-    /// A string doesn't match a regular expression: `pattern`, code `pattern`, with the param `pattern`.
+    /// A string doesn't match a regular expression. Reported by `pattern`, with the code `pattern` and the parameter
+    /// `pattern`.
     #[non_exhaustive]
     Pattern {
         /// The regular expression it must match.
         pattern: &'static str,
     },
-    /// A string doesn't contain a text: `contains`, code `contains`, with the param `text`.
+    /// A string doesn't contain a given text. Reported by `contains`, with the code `contains` and the parameter
+    /// `text`.
     #[non_exhaustive]
     Contains {
         /// The text it must contain.
         text: &'static str,
     },
-    /// A string doesn't start with a prefix: `prefix`, code `prefix`, with the param `prefix`.
+    /// A string doesn't start with a prefix. Reported by `prefix`, with the code `prefix` and the parameter `prefix`.
     #[non_exhaustive]
     Prefix {
         /// The text it must start with.
         prefix: &'static str,
     },
-    /// A string doesn't end with a suffix: `suffix`, code `suffix`, with the param `suffix`.
+    /// A string doesn't end with a suffix. Reported by `suffix`, with the code `suffix` and the parameter `suffix`.
     #[non_exhaustive]
     Suffix {
         /// The text it must end with.
@@ -96,7 +100,7 @@ pub enum Problem {
     /// A problem reported by a rule of your own, made with [`Problem::custom`].
     #[non_exhaustive]
     Custom {
-        /// The stable code it is known by.
+        /// The stable code that identifies it.
         code: &'static str,
         /// The English message for people.
         message: Cow<'static, str>,
@@ -105,9 +109,10 @@ pub enum Problem {
     },
 }
 
-/// The values a rule accepts, inclusive at both ends.
+/// The values a rule accepts. Both ends are included.
 ///
-/// They read as `at least 1`, `at most 50`, `between 1 and 50`, or `exactly 5` when both ends are the same.
+/// [`Display`] prints them as `at least 1`, `at most 50`, `between 1 and 50`, or `exactly 5` when both ends are the
+/// same.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Bounds<T> {
     /// No less than this.
@@ -207,7 +212,8 @@ impl LengthUnit {
 }
 
 impl Problem {
-    /// A problem of a rule of your own, known by the stable `code` and explained to people by `message`.
+    /// A problem for a rule of your own. `code` is the stable code that identifies it, and `message` explains it to
+    /// people.
     #[must_use]
     pub fn custom(code: &'static str, message: impl Into<Cow<'static, str>>) -> Self {
         Self::Custom {
@@ -217,11 +223,11 @@ impl Problem {
         }
     }
 
-    /// This problem with the named parameter `name` added, for messages to quote and code to read: a number,
-    /// like `50` or `0.5`, or a text, like `"admin"`.
+    /// This problem with the named parameter `name` added, for messages to quote and code to read. The value is a
+    /// number, like `50` or `0.5`, or text, like `"admin"`.
     ///
-    /// Only a [custom](Problem::custom) problem takes parameters; a built-in problem's parameters are fixed,
-    /// and it is returned unchanged.
+    /// Only a [custom](Problem::custom) problem takes parameters. A built-in problem's parameters are fixed, so it is
+    /// returned unchanged.
     #[must_use]
     pub fn with_param(mut self, name: &'static str, value: impl Into<ParamValue>) -> Self {
         if let Self::Custom { params, .. } = &mut self {
@@ -230,7 +236,7 @@ impl Problem {
         self
     }
 
-    /// The stable code this kind of problem is known by, in `snake_case`.
+    /// The stable code that identifies this kind of problem, in `snake_case`.
     #[must_use]
     pub fn code(&self) -> &str {
         match self {
@@ -252,7 +258,7 @@ impl Problem {
         }
     }
 
-    /// The named parameters of this problem, such as a length's `max`, each a number or a text.
+    /// The named parameters of this problem, such as a length's `max`, each a number or text.
     #[must_use]
     pub fn params(&self) -> Vec<(&'static str, ParamValue)> {
         match self {

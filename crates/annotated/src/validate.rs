@@ -2,11 +2,13 @@ use crate::{FoundViolations, Location, Violations};
 
 /// A value that can be checked against its rules.
 ///
-/// `#[derive(Validate)]` implements it from the rules on a struct's fields. It can also be implemented by
-/// hand: [`Validate::validate_into`] pushes every violation it finds, at the location of the value it
-/// found it in, and [`Validate::validate`] answers them all. [`Validate::validate_fail_fast`] answers only
-/// the first, and once a push leaves the report [finished](FoundViolations::is_finished), `validate_into`
-/// should return, since nothing more would be kept.
+/// `#[derive(Validate)]` implements it from the rules on a struct's fields. It can also be implemented by hand:
+///
+/// - [`Validate::validate_into`] pushes every violation it finds into the report, each at the location of the value it
+///   was found in.
+/// - [`Validate::validate`] returns all of them, and [`Validate::validate_fail_fast`] only the first.
+/// - When failing fast, the report is [finished](FoundViolations::is_finished) after its first violation and keeps
+///   nothing more. So once a push leaves the report finished, `validate_into` should return.
 ///
 /// ```
 /// use annotated::{FoundViolations, Location, Problem, Validate};
@@ -44,31 +46,30 @@ use crate::{FoundViolations, Location, Violations};
     note = "derive it with `#[derive(Validate)]`, or implement it by hand"
 )]
 pub trait Validate {
-    /// Checks this value, found at the location `at`, and pushes every violation into `found`, returning
-    /// once `found` is finished.
+    /// Checks this value, which is at the location `at`, and pushes every violation into `found`. It should return as
+    /// soon as `found` is finished.
     fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations);
 
-    /// Checks this value from the root.
+    /// Checks this value, starting at the root.
     ///
     /// # Errors
     ///
-    /// Every violation found, in the order it was found.
+    /// Returns every violation found, in the order they were found.
     fn validate(&self) -> Result<(), Violations> {
         let mut found = FoundViolations::new();
         self.validate_into(&Location::root(), &mut found);
         found.into_result()
     }
 
-    /// Checks this value from the root, and answers only its first violation.
+    /// Checks this value, starting at the root, and returns only its first violation.
     ///
-    /// The value is checked by the same rules, in the same order, as by [`Validate::validate`], so the
-    /// violation answered is the first that `validate` answers. Checking stops right after it, but a nested
-    /// value that found it doesn't stop its parent at once: the parent records nothing more and stops at its
-    /// own next violation or its end.
+    /// The value is checked by the same rules, in the same order, as by [`Validate::validate`]. So the violation
+    /// returned is the one `validate` would list first. Checking stops right after it, with one exception: when a
+    /// nested value finds it, the parent may check more before it stops. It records nothing more.
     ///
     /// # Errors
     ///
-    /// The first violation found, alone.
+    /// Returns the first violation found, alone.
     fn validate_fail_fast(&self) -> Result<(), Violations> {
         let mut found = FoundViolations::failing_fast();
         self.validate_into(&Location::root(), &mut found);

@@ -3,8 +3,8 @@ use std::fmt::Display;
 
 use crate::Location;
 
-/// A collection whose elements `#[validate(each(...))]` checks: a sequence's elements at their index, or a
-/// map's values at their key.
+/// A collection whose elements `#[validate(each(...))]` can check: the elements of a sequence, each at its index, or
+/// the values of a map, each at its key.
 ///
 /// Implement it for a collection of your own to let `each` go through it:
 ///
@@ -35,8 +35,8 @@ pub trait HasElements {
     /// An element of the collection, or a value of the map.
     type Element;
 
-    /// Calls `check` with every element and its location under `at`, in the collection's order, while it
-    /// answers `true`: once it answers `false`, the elements after are skipped.
+    /// Calls `check` with each element and its location under `at`, in the collection's order, for as long as `check`
+    /// returns `true`. Once it returns `false`, the remaining elements are skipped.
     fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&Self::Element, &Location<'_>) -> bool);
 }
 

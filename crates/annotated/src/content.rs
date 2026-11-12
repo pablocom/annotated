@@ -4,8 +4,8 @@ use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Unexpected, Vis
 
 use crate::deserialize_containers::room_for;
 
-/// Any well-formed value, as a self-describing format presents it, kept to be read again as the type it's meant to
-/// be. Strings and bytes the format lends are borrowed, not copied.
+/// Any well-formed value, as a self-describing format presents it. It is kept so that it can be read again as the type
+/// it is meant to be. Strings and bytes the format lends are borrowed, not copied.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Content<'de> {
     Bool(bool),
@@ -34,7 +34,7 @@ pub(crate) enum Content<'de> {
     Map(Vec<(Content<'de>, Content<'de>)>),
 }
 
-/// The kind of a value, as a violation names what came where something else was expected.
+/// The kind of a value. A violation uses it to name what was found where something else was expected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ValueKind {
     Boolean,

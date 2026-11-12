@@ -1,11 +1,11 @@
 use std::fmt::{self, Debug, Display};
 use std::hash::{Hash, Hasher};
 
-/// Where in a value a violation happened: the segments leading from the validated value down to it.
+/// Where in a value a violation was found: the segments that lead from the validated value down to it.
 ///
-/// The root path, with no segments, is the validated value itself; a violation of a struct-level rule
-/// has it. A path renders as a dotted path through [`Display`], and as an RFC 6901 JSON Pointer through
-/// [`Path::json_pointer`].
+/// The root path has no segments and stands for the validated value itself. A violation of a struct-level rule on that
+/// value has the root path. [`Display`] prints a path in dotted form, and [`Path::json_pointer`] returns it as an RFC
+/// 6901 JSON Pointer.
 ///
 /// ```
 /// use annotated::Path;
@@ -34,9 +34,9 @@ enum Segments {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PathSegment {
-    /// A struct's field, by the name serde reads it by.
+    /// A struct's field, under the name serde reads it by.
     Field(&'static str),
-    /// An element of a sequence, by its position from zero.
+    /// An element of a sequence, by its position, counting from zero.
     Index(usize),
     /// A value of a map, by its key rendered with [`Display`].
     Key(String),

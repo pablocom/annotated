@@ -8,9 +8,11 @@ use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, WrongType};
 use crate::{Deserialize, FoundViolations, Location, Problem};
 
-/// Reads a `T` found at a location in two steps, first into a buffer holding any well-formed value, then from the
-/// buffer as a `T`, so a value of the wrong type is pushed into a report as a [`Problem::InvalidType`]
-/// instead of ending deserialization: the `DeserializeSeed` a struct collecting type errors reads a field with.
+/// The `DeserializeSeed` that a struct collecting type errors reads a field with.
+///
+/// It reads a `T` at a location in two steps: first into a buffer that holds any well-formed value, then from the
+/// buffer as a `T`. A value of the wrong type is then pushed into a report as a [`Problem::InvalidType`], instead of
+/// ending deserialization.
 pub struct CollectingTypeErrorsAt<'a, 'l, T> {
     type_name: &'static str,
     at: &'a Location<'l>,
@@ -19,8 +21,8 @@ pub struct CollectingTypeErrorsAt<'a, 'l, T> {
 }
 
 impl<'a, 'l, T> CollectingTypeErrorsAt<'a, 'l, T> {
-    /// Reads a `T` found at `at`, pushing a value of the wrong type into `found`, where `type_name` says what was
-    /// expected when serde doesn't.
+    /// A seed that reads a `T` at `at` and pushes a value of the wrong type into `found`. `type_name` says what was
+    /// expected when serde's error doesn't.
     pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
     where
         T: serde::Deserialize<'de>,
@@ -50,8 +52,8 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
     }
 }
 
-/// Reads a `T` found at a location as [`CollectingTypeErrorsAt`] does, through [`Deserialize`], so the violations
-/// inside it are pushed into the report too; a value of the wrong type replaces those found in it before.
+/// Like [`CollectingTypeErrorsAt`], but it reads the `T` through [`Deserialize`], so the violations inside the `T` are
+/// pushed into the report too. A value of the wrong type replaces the violations found in the `T` before it.
 pub struct NestedCollectingTypeErrorsAt<'a, 'l, T> {
     type_name: &'static str,
     at: &'a Location<'l>,
@@ -60,8 +62,8 @@ pub struct NestedCollectingTypeErrorsAt<'a, 'l, T> {
 }
 
 impl<'a, 'l, T> NestedCollectingTypeErrorsAt<'a, 'l, T> {
-    /// Reads a `T` found at `at`, pushing its violations, or it being of the wrong type, into `found`, where
-    /// `type_name` says what was expected when serde doesn't.
+    /// A seed that reads a `T` at `at` and pushes its violations into `found`, or a single violation when it has the
+    /// wrong type. `type_name` says what was expected when serde's error doesn't.
     pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
     where
         T: Deserialize<'de>,

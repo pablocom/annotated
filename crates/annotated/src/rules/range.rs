@@ -2,14 +2,14 @@ use std::fmt::Display;
 
 use crate::{Bounds, ParamValue, Problem, Rule};
 
-/// The rule that a value is within bounds, inclusive: `range().min(18).max(120)`.
+/// The rule that a value is within bounds, both included: `range().min(18).max(120)`.
 ///
-/// It checks anything `PartialOrd` and `Display`, against bounds of the same type; `#[validate(range(min =
-/// 18))]` takes the bounds' type from the field. A value that can't be compared with a bound, like a float's
-/// NaN, is out of range. A range with no bounds accepts any value.
+/// It checks anything that is `PartialOrd` and `Display`, against bounds of the same type. In
+/// `#[validate(range(min = 18))]`, the bounds take their type from the field. A value that can't be compared with a
+/// bound, like a float's NaN, is out of range. A range with no bounds accepts any value.
 ///
-/// Its problem's bounds are [`ParamValue`] numbers when the type is a primitive number type, like `u8` or
-/// `f64`, and text rendered with `Display` for any other type.
+/// Its problem reports the bounds as [`ParamValue`] numbers when the type is a primitive number type, like `u8` or
+/// `f64`, and as text rendered with `Display` for any other type.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -24,7 +24,7 @@ pub const fn range<T>() -> Range<T> {
     Range { min: None, max: None }
 }
 
-/// Checks that a value is within bounds; made by [`range`].
+/// Checks that a value is within bounds. Made by [`range`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Range<T> {
     min: Option<T>,
