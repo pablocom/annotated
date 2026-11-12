@@ -93,6 +93,8 @@ To see what a change costs, count its instructions against the commit before:
 
 It lists every case of annotated that runs more than 1% more instructions, or allocates more blocks or bytes, and then exits with status 3. It builds and runs both from one checkout, with the same toolchain, so only annotated's code differs, and the same code counts the same. The 1% leaves room for a change that moves code or data and so shifts other cases a little, as running from another directory did, by up to 0.5%. It needs Valgrind, and gungraun-runner at the version of `gungraun` in `Cargo.lock`: `cargo install gungraun-runner --version 0.20.0 --locked`.
 
+CI runs it on every push against the commit before, and on a pull request against its base. A case that got slower is a warning, not a failure: whether the cost is worth paying is for the change to say.
+
 To measure what a change gains, time the commit before it and the change in the same sitting, on the same core: check the commit before out into a worktree (`git worktree add ../annotated-before HEAD`), and run the same cases in each, alternating.
 
 ## Adding a library
