@@ -191,20 +191,26 @@ where
         let mut values = BTreeMap::new();
         let mut values_with_violations = BTreeMap::new();
         while let Some(key) = map.next_key::<K>()? {
-            let mut found_in_value = self.found.new_alike();
-            let value = map.next_value_seed(DeserializeAt::<V>::new(&self.at.key(&key), &mut found_in_value))?;
+            let violations_before = self.found.len();
+            let value = map.next_value_seed(DeserializeAt::<V>::new(&self.at.key(&key), self.found))?;
+            let has_violations = self.found.len() > violations_before;
             match value {
-                Some(value) if found_in_value.is_empty() => {
-                    values_with_violations.remove(&key);
+                Some(value) if !has_violations => {
                     values.insert(key, value);
                 }
                 value => {
+                    let found_in_value = self.found.take_those_after(violations_before);
+                    values.remove(&key);
                     values_with_violations.insert(key, (value, found_in_value));
                 }
             }
         }
         let mut is_every_value_built = true;
         for (key, (value, mut found_in_value)) in values_with_violations {
+            let is_given_again_without_violations = values.contains_key(&key);
+            if is_given_again_without_violations {
+                continue;
+            }
             self.found.append(&mut found_in_value);
             match value {
                 Some(value) => {

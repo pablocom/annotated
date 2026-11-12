@@ -262,6 +262,26 @@ fn a_valid_value_given_again_for_a_key_leaves_no_violation_of_the_one_before() {
     );
 }
 
+#[test]
+fn a_value_with_violations_given_again_for_a_key_replaces_the_valid_one_before() {
+    let body = r#"{
+        "home": { "street": "Gran Vía 1", "postalCode": "28013" },
+        "home": { "street": "Gran Vía 1", "postalCode": "280" }
+    }"#;
+
+    let short_postal_code = Address {
+        street: "Gran Vía 1".to_owned(),
+        postal_code: "280".to_owned(),
+    };
+    assert_eq!(
+        read::<BTreeMap<String, Address>>(body),
+        (
+            Some(BTreeMap::from([("home".to_owned(), short_postal_code)])),
+            vec!["[home].postalCode: length".to_owned()]
+        )
+    );
+}
+
 #[derive(Default)]
 struct KeyAsItsOwnHash(u64);
 
@@ -361,6 +381,20 @@ fn a_map_of_lists_reads_every_element_at_its_key_and_index() {
     assert_eq!(
         violations_reading::<BTreeMap<String, Vec<Line>>>(body),
         ["[tuesday][1].quantity: range"]
+    );
+}
+
+#[test]
+fn a_list_of_maps_reports_each_maps_values_in_the_order_of_their_keys_after_the_maps_before() {
+    let body = r#"[{ "monday": { "quantity": 0 } }, { "wednesday": { "quantity": 0 }, "tuesday": { "quantity": 0 } }]"#;
+
+    assert_eq!(
+        violations_reading::<Vec<BTreeMap<String, Line>>>(body),
+        [
+            "[0][monday].quantity: range",
+            "[1][tuesday].quantity: range",
+            "[1][wednesday].quantity: range"
+        ]
     );
 }
 

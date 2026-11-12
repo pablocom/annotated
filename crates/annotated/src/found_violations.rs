@@ -100,6 +100,19 @@ impl FoundViolations {
         self.violations.push(violation);
     }
 
+    /// Moves the violations found after the first `kept` into a report alike this one, leaving those first.
+    pub(crate) fn take_those_after(&mut self, kept: usize) -> FoundViolations {
+        let taken = if kept == 0 {
+            mem::take(&mut self.violations)
+        } else {
+            self.violations.split_off(kept)
+        };
+        Self {
+            violations: taken,
+            is_failing_fast: self.is_failing_fast,
+        }
+    }
+
     pub(crate) fn into_violations(self) -> Vec<Violation> {
         self.violations
     }
