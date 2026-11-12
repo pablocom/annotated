@@ -1,7 +1,7 @@
 //! An axum extractor that reads a JSON body with [collecting deserialization](annotated::Deserialize), and responds
-//! with every violation in it at once, as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details.
+//! with every issue in it at once, as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details.
 
-use annotated::{DeserializeError, ParamValue, Violation};
+use annotated::{DeserializeError, Issue, ParamValue};
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::rejection::MissingJsonContentType;
@@ -18,7 +18,7 @@ use serde::{Serialize, Serializer};
 /// - 400 when the body isn't JSON.
 /// - 422 when a value has the wrong type, in a struct that doesn't collect type errors.
 ///
-/// A body with violations gets a 422 response with [`ProblemDetails`] listing every one of them.
+/// A body with issues gets a 422 response with [`ProblemDetails`] listing every one of them.
 pub struct ValidJson<T>(pub T);
 
 impl<T, S> FromRequest<S> for ValidJson<T>
@@ -38,7 +38,7 @@ where
         match annotated::json::from_slice(&body) {
             Ok(value) => Ok(Self(value)),
             Err(DeserializeError::Format(error)) => Err(refusal_of_unreadable_json(&error)),
-            Err(error) => Err(ProblemDetails::from(error.violations()).into_response()),
+            Err(error) => Err(ProblemDetails::from(error.issues()).into_response()),
         }
     }
 }
@@ -63,19 +63,19 @@ fn refusal_of_unreadable_json(error: &serde_json::Error) -> Response {
     (StatusCode::BAD_REQUEST, message).into_response()
 }
 
-/// Every violation in a body, as the response to send: 422 with [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)
-/// problem details (`application/problem+json`), whose `errors` member lists each violation's JSON Pointer, code,
+/// Every issue in a body, as the response to send: 422 with [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)
+/// problem details (`application/problem+json`), whose `errors` member lists each issue's JSON Pointer, code,
 /// params and message.
 #[derive(Serialize)]
 pub struct ProblemDetails {
     r#type: &'static str,
     title: &'static str,
     status: u16,
-    errors: Vec<ViolationDetails>,
+    errors: Vec<IssueDetails>,
 }
 
 #[derive(Serialize)]
-struct ViolationDetails {
+struct IssueDetails {
     pointer: String,
     code: String,
     #[serde(serialize_with = "params_as_object")]
@@ -83,24 +83,24 @@ struct ViolationDetails {
     message: String,
 }
 
-impl From<&[Violation]> for ProblemDetails {
-    fn from(violations: &[Violation]) -> Self {
+impl From<&[Issue]> for ProblemDetails {
+    fn from(issues: &[Issue]) -> Self {
         Self {
             r#type: "about:blank",
             title: "Unprocessable Content",
             status: StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
-            errors: violations.iter().map(ViolationDetails::from).collect(),
+            errors: issues.iter().map(IssueDetails::from).collect(),
         }
     }
 }
 
-impl From<&Violation> for ViolationDetails {
-    fn from(violation: &Violation) -> Self {
+impl From<&Issue> for IssueDetails {
+    fn from(issue: &Issue) -> Self {
         Self {
-            pointer: violation.path().json_pointer(),
-            code: violation.problem().code().to_owned(),
-            params: violation.problem().params(),
-            message: violation.message(),
+            pointer: issue.path().json_pointer(),
+            code: issue.problem().code().to_owned(),
+            params: issue.problem().params(),
+            message: issue.message(),
         }
     }
 }

@@ -21,7 +21,7 @@ pub struct Expansion {
 #[derive(Clone)]
 enum NestedValues {
     Validated,
-    ReadWithViolationsIn(Ident),
+    ReadWithIssuesIn(Ident),
 }
 
 pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
@@ -41,7 +41,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
     quote! {
         impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
-            fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::FoundViolations) {
+            fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::FoundIssues) {
                 #(#field_checks)*
                 #(#struct_checks)*
             }
@@ -70,15 +70,15 @@ impl Expansion {
         Self { stop, ..self.clone() }
     }
 
-    pub fn reading_nested_violations_from(&self, read_violations: &Ident) -> Self {
+    pub fn reading_nested_issues_from(&self, read_issues: &Ident) -> Self {
         Self {
-            nested_values: NestedValues::ReadWithViolationsIn(read_violations.clone()),
+            nested_values: NestedValues::ReadWithIssuesIn(read_issues.clone()),
             ..self.clone()
         }
     }
 
     fn has_read_nested_values(&self) -> bool {
-        matches!(self.nested_values, NestedValues::ReadWithViolationsIn(_))
+        matches!(self.nested_values, NestedValues::ReadWithIssuesIn(_))
     }
 
     fn within_an_element(&self) -> Self {
@@ -184,7 +184,7 @@ impl Expansion {
             found_before,
             ..
         } = self;
-        let NestedValues::ReadWithViolationsIn(read_violations) = &self.nested_values else {
+        let NestedValues::ReadWithIssuesIn(read_issues) = &self.nested_values else {
             return quote_spanned! {span=>
                 {
                     let #found_before = #found.len();
@@ -193,22 +193,22 @@ impl Expansion {
                 }
             };
         };
-        let after_a_violation = self.after_a_violation();
+        let after_an_issue = self.after_an_issue();
         if self.is_within_an_element {
             return quote! {
-                if #read_violations.join_those_at(#value_at, #found) {
-                    #after_a_violation
+                if #read_issues.join_those_at(#value_at, #found) {
+                    #after_an_issue
                 } else {
                     true
                 }
             };
         }
         quote! {
-            if #read_violations.is_empty() {
+            if #read_issues.is_empty() {
                 true
             } else {
-                #found.append(&mut #read_violations);
-                #after_a_violation
+                #found.append(&mut #read_issues);
+                #after_an_issue
             }
         }
     }
@@ -229,11 +229,11 @@ impl Expansion {
         } = self;
         let within_an_element = self.within_an_element();
         let element_checks = within_an_element.checks(element_rules, are_elements_optional, &quote!(#element_at));
-        let after_a_violation = self.after_a_violation();
-        let (skipping_the_element_s_read_violations, joining_the_read_violations_left) = match &self.nested_values {
-            NestedValues::ReadWithViolationsIn(read_violations) if !nested_rules_in(element_rules).is_empty() => (
-                quote!(#read_violations.skip_those_at(#element_at);),
-                quote!(#read_violations.join_those_at(#value_at, #found);),
+        let after_an_issue = self.after_an_issue();
+        let (skipping_the_element_s_read_issues, joining_the_read_issues_left) = match &self.nested_values {
+            NestedValues::ReadWithIssuesIn(read_issues) if !nested_rules_in(element_rules).is_empty() => (
+                quote!(#read_issues.skip_those_at(#element_at);),
+                quote!(#read_issues.join_those_at(#value_at, #found);),
             ),
             _ => (TokenStream::new(), TokenStream::new()),
         };
@@ -242,14 +242,14 @@ impl Expansion {
                 let #found_before = #found.len();
                 ::annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
                     #element_checks
-                    #skipping_the_element_s_read_violations
+                    #skipping_the_element_s_read_issues
                     true
                 });
-                #joining_the_read_violations_left
+                #joining_the_read_issues_left
                 if #found.len() == #found_before {
                     true
                 } else {
-                    #after_a_violation
+                    #after_an_issue
                 }
             }
         }
@@ -273,19 +273,19 @@ impl Expansion {
     ) -> TokenStream {
         let Self { found, problem, .. } = self;
         let message = message_override(message);
-        let after_a_violation = self.after_a_violation();
+        let after_an_issue = self.after_an_issue();
         quote_spanned! {span=>
             match #outcome {
                 ::core::result::Result::Ok(()) => true,
                 ::core::result::Result::Err(#problem) => {
-                    ::annotated::__private::record_violation(#found, #reported_at, #problem, #message);
-                    #after_a_violation
+                    ::annotated::__private::record_issue(#found, #reported_at, #problem, #message);
+                    #after_an_issue
                 }
             }
         }
     }
 
-    fn after_a_violation(&self) -> TokenStream {
+    fn after_an_issue(&self) -> TokenStream {
         let stop_if_finished = self.stop_if_finished();
         quote! {
             #stop_if_finished

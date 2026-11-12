@@ -34,7 +34,7 @@ pub(crate) enum Content<'de> {
     Map(Vec<(Content<'de>, Content<'de>)>),
 }
 
-/// The kind of a value. A violation uses it to name what was found where something else was expected.
+/// The kind of a value. An issue uses it to name what was found where something else was expected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ValueKind {
     Boolean,

@@ -6,7 +6,7 @@ use serde::de::DeserializeSeed;
 
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, WrongType};
-use crate::{Deserialize, FoundViolations, Location, Problem};
+use crate::{Deserialize, FoundIssues, Location, Problem};
 
 /// The `DeserializeSeed` that a struct collecting type errors reads a field with.
 ///
@@ -16,14 +16,14 @@ use crate::{Deserialize, FoundViolations, Location, Problem};
 pub struct CollectingTypeErrorsAt<'a, 'l, T> {
     type_name: &'static str,
     at: &'a Location<'l>,
-    found: &'a mut FoundViolations,
+    found: &'a mut FoundIssues,
     read: PhantomData<fn() -> T>,
 }
 
 impl<'a, 'l, T> CollectingTypeErrorsAt<'a, 'l, T> {
     /// A seed that reads a `T` at `at` and pushes a value of the wrong type into `found`. `type_name` says what was
     /// expected when serde's error doesn't.
-    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
+    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self
     where
         T: serde::Deserialize<'de>,
     {
@@ -52,19 +52,19 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
     }
 }
 
-/// Like [`CollectingTypeErrorsAt`], but it reads the `T` through [`Deserialize`], so the violations inside the `T` are
-/// pushed into the report too. A value of the wrong type replaces the violations found in the `T` before it.
+/// Like [`CollectingTypeErrorsAt`], but it reads the `T` through [`Deserialize`], so the issues inside the `T` are
+/// pushed into the report too. A value of the wrong type replaces the issues found in the `T` before it.
 pub struct NestedCollectingTypeErrorsAt<'a, 'l, T> {
     type_name: &'static str,
     at: &'a Location<'l>,
-    found: &'a mut FoundViolations,
+    found: &'a mut FoundIssues,
     read: PhantomData<fn() -> T>,
 }
 
 impl<'a, 'l, T> NestedCollectingTypeErrorsAt<'a, 'l, T> {
-    /// A seed that reads a `T` at `at` and pushes its violations into `found`, or a single violation when it has the
+    /// A seed that reads a `T` at `at` and pushes its issues into `found`, or a single issue when it has the
     /// wrong type. `type_name` says what was expected when serde's error doesn't.
-    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self
+    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self
     where
         T: Deserialize<'de>,
     {
@@ -118,7 +118,7 @@ mod tests {
     use serde::de::IgnoredAny;
     use serde_test::{Configure, Token, assert_de_tokens};
 
-    use crate::{Path, Violation, Violations};
+    use crate::{Issue, Issues, Path};
 
     use super::*;
 
@@ -126,8 +126,8 @@ mod tests {
         json: &'de str,
         type_name: &'static str,
         at: &Location<'_>,
-    ) -> (Result<Option<T>, String>, Result<(), Violations>) {
-        let mut found = FoundViolations::new();
+    ) -> (Result<Option<T>, String>, Result<(), Issues>) {
+        let mut found = FoundIssues::new();
         let read = CollectingTypeErrorsAt::<T>::new(type_name, at, &mut found)
             .deserialize(&mut serde_json::Deserializer::from_str(json))
             .map_err(|format_error| format_error.to_string());
@@ -138,8 +138,8 @@ mod tests {
         json: &'de str,
         type_name: &'static str,
         at: &Location<'_>,
-    ) -> (Result<Option<T>, String>, Result<(), Violations>) {
-        let mut found = FoundViolations::new();
+    ) -> (Result<Option<T>, String>, Result<(), Issues>) {
+        let mut found = FoundIssues::new();
         let read = NestedCollectingTypeErrorsAt::<T>::new(type_name, at, &mut found)
             .deserialize(&mut serde_json::Deserializer::from_str(json))
             .map_err(|format_error| format_error.to_string());
@@ -153,8 +153,8 @@ mod tests {
         }
     }
 
-    fn violations(violations: Vec<Violation>) -> Result<(), Violations> {
-        Err(Violations::of(violations).expect("at least one violation"))
+    fn issues(issues: Vec<Issue>) -> Result<(), Issues> {
+        Err(Issues::of(issues).expect("at least one issue"))
     }
 
     #[derive(Debug, PartialEq)]
@@ -174,7 +174,7 @@ mod tests {
         fn deserialize_at<D: Deserializer<'de>>(
             deserializer: D,
             at: &Location<'_>,
-            found: &mut FoundViolations,
+            found: &mut FoundIssues,
         ) -> Result<Option<Self>, D::Error> {
             let handle = String::deserialize(deserializer)?;
             if !handle.starts_with('@') {
@@ -191,7 +191,7 @@ mod tests {
         fn deserialize_at<D: Deserializer<'de>>(
             deserializer: D,
             _: &Location<'_>,
-            _: &mut FoundViolations,
+            _: &mut FoundIssues,
         ) -> Result<Option<Self>, D::Error> {
             IgnoredAny::deserialize(deserializer)?;
             Err(D::Error::custom("refused"))
@@ -214,7 +214,7 @@ mod tests {
 
     impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for ReadCollectingTypeErrors<T> {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            let mut found = FoundViolations::new();
+            let mut found = FoundIssues::new();
             let read =
                 CollectingTypeErrorsAt::<T>::new("T", &Location::root(), &mut found).deserialize(deserializer)?;
             Ok(Self(read))
@@ -236,7 +236,7 @@ mod tests {
             reading::<u8>(r#""twelve""#, "u8", &root.field("age")),
             (
                 Ok(None),
-                violations(vec![Violation::new(
+                issues(vec![Issue::new(
                     Path::root().field("age"),
                     invalid_type("u8", "string")
                 )])
@@ -252,7 +252,7 @@ mod tests {
             reading::<Handle>(r#""lucia""#, "Handle", &root.field("handle")),
             (
                 Ok(None),
-                violations(vec![Violation::new(
+                issues(vec![Issue::new(
                     Path::root().field("handle"),
                     invalid_type("Handle", "string")
                 )])
@@ -279,14 +279,14 @@ mod tests {
     }
 
     #[test]
-    fn a_nested_value_of_its_type_is_read_with_its_violations_at_their_paths() {
+    fn a_nested_value_of_its_type_is_read_with_its_issues_at_their_paths() {
         let root = Location::root();
 
         assert_eq!(
             reading_nested::<Vec<Handle>>(r#"["@lucia", "marcos"]"#, "Vec", &root.field("handles")),
             (
                 Ok(Some(vec![Handle("@lucia".to_owned()), Handle("marcos".to_owned())])),
-                violations(vec![Violation::new(
+                issues(vec![Issue::new(
                     Path::root().field("handles").index(1),
                     Problem::custom("handle", "must start with @")
                 )])
@@ -302,7 +302,7 @@ mod tests {
             reading_nested::<Vec<Handle>>(r#"["marcos", 5]"#, "Vec", &root.field("handles")),
             (
                 Ok(None),
-                violations(vec![Violation::new(
+                issues(vec![Issue::new(
                     Path::root().field("handles"),
                     invalid_type("a string", "integer")
                 )])
@@ -318,7 +318,7 @@ mod tests {
             reading_nested::<Refused>("[1, 2]", "Refused", &root.field("refused")),
             (
                 Ok(None),
-                violations(vec![Violation::new(
+                issues(vec![Issue::new(
                     Path::root().field("refused"),
                     invalid_type("Refused", "sequence")
                 )])

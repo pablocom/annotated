@@ -3,7 +3,7 @@
 mod support;
 
 use annotated::Validate;
-use support::violations_of;
+use support::issues_of;
 
 #[derive(Validate)]
 struct Profile {
@@ -33,7 +33,7 @@ fn required_on_an_option_is_broken_by_none() {
         ..profile()
     };
 
-    assert_eq!(violations_of(&profile), ["nickname: required"]);
+    assert_eq!(issues_of(&profile), ["nickname: required"]);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn a_rule_on_an_option_checks_the_value_inside() {
         ..profile()
     };
 
-    assert_eq!(violations_of(&profile), ["bio: length"]);
+    assert_eq!(issues_of(&profile), ["bio: length"]);
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn a_rule_after_required_on_an_option_checks_the_value_inside() {
         ..profile()
     };
 
-    assert_eq!(violations_of(&profile), ["city: length"]);
+    assert_eq!(issues_of(&profile), ["city: length"]);
 }
 
 #[test]
@@ -80,5 +80,5 @@ fn an_option_written_with_its_full_path_is_an_option_too() {
         ..profile()
     };
 
-    assert_eq!(violations_of(&profile), ["website: length"]);
+    assert_eq!(issues_of(&profile), ["website: length"]);
 }

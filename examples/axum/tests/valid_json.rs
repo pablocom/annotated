@@ -1,4 +1,4 @@
-//! `ValidJson` reads a JSON body as axum's `Json` does, and answers every violation in it with 422 as RFC 9457
+//! `ValidJson` reads a JSON body as axum's `Json` does, and answers every issue in it with 422 as RFC 9457
 //! problem details.
 
 use annotated::Deserialize;
@@ -46,7 +46,7 @@ async fn a_new_member_keeping_every_rule_is_created() {
 }
 
 #[tokio::test]
-async fn every_violation_in_a_body_is_answered_with_422_as_problem_details() {
+async fn every_issue_in_a_body_is_answered_with_422_as_problem_details() {
     let response = send_json::<NewMember>(r#"{ "fullName": "  ", "age": 12 }"#).await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -89,7 +89,7 @@ async fn a_bound_with_a_fraction_is_answered_as_a_number() {
 }
 
 #[tokio::test]
-async fn a_rule_s_own_message_is_answered_as_the_violation_s_message() {
+async fn a_rule_s_own_message_is_answered_as_the_issue_s_message() {
     let response = send_json::<NewExpense>(r#"{ "description": " ", "amount": 12.5 }"#).await;
 
     assert_eq!(
@@ -106,7 +106,7 @@ async fn a_rule_s_own_message_is_answered_as_the_violation_s_message() {
 }
 
 #[tokio::test]
-async fn a_value_of_the_wrong_type_is_answered_as_a_violation_when_its_struct_collects_type_errors() {
+async fn a_value_of_the_wrong_type_is_answered_as_an_issue_when_its_struct_collects_type_errors() {
     let response = send_json::<NewExpense>(r#"{ "description": "Lunch", "amount": "twelve" }"#).await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);

@@ -1,42 +1,42 @@
 //! `#[derive(Deserialize)]` reads a field checked with `nested`, or `each(nested)`, through `annotated::Deserialize`,
-//! so the violations inside it are found at their full path, in the order `validate()` reports them.
+//! so the issues inside it are found at their full path, in the order `validate()` reports them.
 
 #![cfg(feature = "serde")]
 
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{BuildHasherDefault, DefaultHasher};
 
-use annotated::{Deserialize, DeserializeError, FoundViolations, Location, Problem, Validate, Violation};
+use annotated::{Deserialize, DeserializeError, FoundIssues, Issue, Location, Problem, Validate};
 
 fn deserialize<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
     annotated::from_deserializer(&mut serde_json::Deserializer::from_str(json))
 }
 
-fn violations_found_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<Violation> {
+fn issues_found_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<Issue> {
     match deserialize::<T>(json) {
         Ok(_) => Vec::new(),
-        Err(DeserializeError::Violations(violations)) => violations.into_iter().collect(),
-        Err(error) => panic!("expected violations, got the format's error: {error}"),
+        Err(DeserializeError::Issues(issues)) => issues.into_iter().collect(),
+        Err(error) => panic!("expected issues, got the format's error: {error}"),
     }
 }
 
-fn violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
-    violations_found_reading::<T>(json).iter().map(path_and_code).collect()
+fn issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
+    issues_found_reading::<T>(json).iter().map(path_and_code).collect()
 }
 
-fn path_and_code(violation: &Violation) -> String {
-    let code = violation.problem().code();
-    if violation.path().is_root() {
+fn path_and_code(issue: &Issue) -> String {
+    let code = issue.problem().code();
+    if issue.path().is_root() {
         return code.to_owned();
     }
-    format!("{}: {code}", violation.path())
+    format!("{}: {code}", issue.path())
 }
 
-fn violations_validating_after_serde<T: serde::de::DeserializeOwned + Validate>(json: &str) -> Vec<Violation> {
+fn issues_validating_after_serde<T: serde::de::DeserializeOwned + Validate>(json: &str) -> Vec<Issue> {
     let value = serde_json::from_str::<T>(json).unwrap();
     value
         .validate()
-        .map_or_else(|violations| violations.into_iter().collect(), |()| Vec::new())
+        .map_or_else(|issues| issues.into_iter().collect(), |()| Vec::new())
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
@@ -71,7 +71,7 @@ fn a_field_missing_inside_a_nested_struct_is_reported_at_its_full_path_in_declar
     let body = r#"{ "weightInGrams": 0, "reference": "", "sender": { "postalCode": "28013" } }"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         ["reference: required", "sender.street: missing", "weightInGrams: range"]
     );
 }
@@ -96,7 +96,7 @@ fn a_nested_struct_breaking_no_rule_is_deserialized() {
 #[test]
 fn a_missing_nested_struct_is_missing() {
     assert_eq!(
-        violations_reading::<Parcel>(r#"{ "reference": "PX-1", "weightInGrams": 900 }"#),
+        issues_reading::<Parcel>(r#"{ "reference": "PX-1", "weightInGrams": 900 }"#),
         ["sender: missing"]
     );
 }
@@ -118,7 +118,7 @@ struct Member {
 fn every_element_of_a_list_checked_with_each_nested_is_read_at_its_index() {
     let body = r#"{ "members": [{ "name": "Alex" }, {}] }"#;
 
-    assert_eq!(violations_reading::<Team>(body), ["members[1].name: missing"]);
+    assert_eq!(issues_reading::<Team>(body), ["members[1].name: missing"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -138,7 +138,7 @@ struct Stock {
 fn every_value_of_a_map_checked_with_each_nested_is_read_at_its_key() {
     let body = r#"{ "stock": { "sku-2": { "quantity": 3 }, "sku-1": { "quantity": 300 } } }"#;
 
-    assert_eq!(violations_reading::<Warehouse>(body), ["stock[sku-1].quantity: range"]);
+    assert_eq!(issues_reading::<Warehouse>(body), ["stock[sku-1].quantity: range"]);
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
@@ -150,23 +150,23 @@ struct Order {
 
 #[test]
 fn an_optional_nested_struct_that_is_required_and_absent_breaks_the_required_rule() {
-    assert_eq!(violations_reading::<Order>("{}"), ["billingAddress: required"]);
+    assert_eq!(issues_reading::<Order>("{}"), ["billingAddress: required"]);
 }
 
 #[test]
 fn an_optional_nested_struct_that_is_required_and_null_breaks_the_required_rule() {
     assert_eq!(
-        violations_reading::<Order>(r#"{ "billingAddress": null }"#),
+        issues_reading::<Order>(r#"{ "billingAddress": null }"#),
         ["billingAddress: required"]
     );
 }
 
 #[test]
-fn an_optional_nested_struct_that_is_present_reports_the_violations_inside_it() {
+fn an_optional_nested_struct_that_is_present_reports_the_issues_inside_it() {
     let body = r#"{ "billingAddress": { "street": "", "postalCode": "280" } }"#;
 
     assert_eq!(
-        violations_reading::<Order>(body),
+        issues_reading::<Order>(body),
         ["billingAddress.street: required", "billingAddress.postalCode: length"]
     );
 }
@@ -204,7 +204,7 @@ fn a_struct_nested_two_levels_deep_is_reported_at_its_full_path() {
     let body = r#"{ "headquarters": { "address": { "postalCode": "28013" } } }"#;
 
     assert_eq!(
-        violations_reading::<Company>(body),
+        issues_reading::<Company>(body),
         ["headquarters.address.street: missing"]
     );
 }
@@ -220,7 +220,7 @@ fn every_element_of_an_optional_list_is_read_at_its_index() {
     let body =
         r#"{ "stops": [{ "street": "Gran Vía 1", "postalCode": "28013" }, { "street": "", "postalCode": "28013" }] }"#;
 
-    assert_eq!(violations_reading::<Route>(body), ["stops[1].street: required"]);
+    assert_eq!(issues_reading::<Route>(body), ["stops[1].street: required"]);
 }
 
 #[test]
@@ -252,7 +252,7 @@ fn a_nested_value_that_could_not_be_built_skips_the_other_rules_of_its_field_and
     let body = r#"{ "destination": { "postalCode": "28013" }, "carrier": "" }"#;
 
     assert_eq!(
-        violations_reading::<Shipment>(body),
+        issues_reading::<Shipment>(body),
         ["destination.street: missing", "carrier: required"]
     );
 }
@@ -262,7 +262,7 @@ fn a_nested_value_breaking_only_rules_is_built_so_the_struct_s_rules_run() {
     let body = r#"{ "destination": { "street": "", "postalCode": "28013" }, "carrier": "Correos" }"#;
 
     assert_eq!(
-        violations_reading::<Shipment>(body),
+        issues_reading::<Shipment>(body),
         ["destination.street: required", "holiday"]
     );
 }
@@ -272,7 +272,7 @@ fn the_rules_after_a_valid_nested_value_are_checked() {
     let body = r#"{ "destination": { "street": "Gran Vía 1", "postalCode": "28013" }, "carrier": "Correos" }"#;
 
     assert_eq!(
-        violations_reading::<Shipment>(body),
+        issues_reading::<Shipment>(body),
         ["destination: restricted_area", "holiday"]
     );
 }
@@ -284,7 +284,7 @@ impl<'de> annotated::Deserialize<'de> for Handle {
     fn deserialize_at<D: serde::Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         let handle: String = serde::Deserialize::deserialize(deserializer)?;
         if !handle.starts_with('@') {
@@ -301,9 +301,9 @@ struct Profile {
 }
 
 #[test]
-fn a_nested_value_deserialized_by_hand_reports_its_violations_under_its_field() {
+fn a_nested_value_deserialized_by_hand_reports_its_issues_under_its_field() {
     assert_eq!(
-        violations_reading::<Profile>(r#"{ "handle": "lucia" }"#),
+        issues_reading::<Profile>(r#"{ "handle": "lucia" }"#),
         ["handle: handle"]
     );
 }
@@ -336,7 +336,7 @@ struct Depot {
 fn every_value_of_a_hash_map_with_its_own_hasher_is_read_at_its_key() {
     let body = r#"{ "stock": { "sku-1": { "quantity": 300 } }, "docks": [] }"#;
 
-    assert_eq!(violations_reading::<Depot>(body), ["stock[sku-1].quantity: range"]);
+    assert_eq!(issues_reading::<Depot>(body), ["stock[sku-1].quantity: range"]);
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn every_element_of_a_boxed_slice_is_read_at_its_index() {
     let body =
         r#"{ "stock": {}, "docks": [{ "street": "Gran Vía 1", "postalCode": "28013" }, { "postalCode": "28013" }] }"#;
 
-    assert_eq!(violations_reading::<Depot>(body), ["docks[1].street: missing"]);
+    assert_eq!(issues_reading::<Depot>(body), ["docks[1].street: missing"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -359,7 +359,7 @@ fn every_element_of_every_list_in_a_map_is_read_at_its_key_and_index() {
     let body = r#"{ "shifts": { "tuesday": [{ "name": "Alex" }, { "name": "" }], "monday": [{ "name": "" }] } }"#;
 
     assert_eq!(
-        violations_reading::<Rota>(body),
+        issues_reading::<Rota>(body),
         ["shifts[monday][0].name: required", "shifts[tuesday][1].name: required"]
     );
 }
@@ -373,7 +373,7 @@ struct Page<T> {
 #[test]
 fn a_type_parameter_checked_with_each_nested_is_read_through_annotated_deserialize() {
     assert_eq!(
-        violations_reading::<Page<Member>>(r#"{ "items": [{ "name": "" }] }"#),
+        issues_reading::<Page<Member>>(r#"{ "items": [{ "name": "" }] }"#),
         ["items[0].name: required"]
     );
 }
@@ -386,10 +386,10 @@ struct Tour {
 }
 
 #[test]
-fn the_violations_inside_an_element_are_reported_when_an_each_without_nested_comes_before_the_one_with_it() {
+fn the_issues_inside_an_element_are_reported_when_an_each_without_nested_comes_before_the_one_with_it() {
     let body = r#"{ "stops": [{ "street": "", "postalCode": "28013" }] }"#;
 
-    assert_eq!(violations_reading::<Tour>(body), ["stops[0].street: required"]);
+    assert_eq!(issues_reading::<Tour>(body), ["stops[0].street: required"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -401,11 +401,11 @@ struct Delivery {
 }
 
 #[test]
-fn report_all_checks_the_rules_after_a_nested_value_with_violations() {
+fn report_all_checks_the_rules_after_a_nested_value_with_issues() {
     let body = r#"{ "drop_off": { "street": "", "postalCode": "28013" } }"#;
 
     assert_eq!(
-        violations_reading::<Delivery>(body),
+        issues_reading::<Delivery>(body),
         ["drop_off.street: required", "drop_off: restricted_area"]
     );
 }
@@ -518,8 +518,8 @@ fn a_complete_nested_body_breaking_every_rule_is_reported_as_serde_then_validate
     }"#;
 
     assert_eq!(
-        violations_found_reading::<Consignment>(body),
-        violations_validating_after_serde::<ConsignmentThenValidated>(body)
+        issues_found_reading::<Consignment>(body),
+        issues_validating_after_serde::<ConsignmentThenValidated>(body)
     );
 }
 
@@ -539,8 +539,8 @@ fn a_complete_nested_body_breaking_a_rule_before_each_is_reported_as_serde_then_
     }"#;
 
     assert_eq!(
-        violations_found_reading::<Consignment>(body),
-        violations_validating_after_serde::<ConsignmentThenValidated>(body)
+        issues_found_reading::<Consignment>(body),
+        issues_validating_after_serde::<ConsignmentThenValidated>(body)
     );
 }
 
@@ -557,8 +557,8 @@ fn a_complete_nested_body_breaking_no_rule_is_valid_as_serde_then_validate_find_
     }"#;
 
     assert_eq!(
-        violations_found_reading::<Consignment>(body),
-        violations_validating_after_serde::<ConsignmentThenValidated>(body)
+        issues_found_reading::<Consignment>(body),
+        issues_validating_after_serde::<ConsignmentThenValidated>(body)
     );
 }
 
@@ -567,7 +567,7 @@ fn a_struct_written_as_a_sequence_reads_its_nested_values() {
     let body = r#"["", { "postalCode": "28013" }, 0]"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         ["reference: required", "sender.street: missing", "weightInGrams: range"]
     );
 }
@@ -591,7 +591,7 @@ impl<'de, T: Deserialize<'de>> annotated::Deserialize<'de> for Pair<T> {
     fn deserialize_at<D: serde::Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         let [first, second]: [serde_json::Value; 2] = serde::Deserialize::deserialize(deserializer)?;
         let mut found_in_first = found.new_alike();
@@ -610,11 +610,11 @@ struct Duel {
 }
 
 #[test]
-fn the_violations_a_collection_reports_out_of_the_order_of_its_elements_are_still_reported() {
+fn the_issues_a_collection_reports_out_of_the_order_of_its_elements_are_still_reported() {
     let body = r#"{ "rivals": [{ "name": "" }, { "name": "" }] }"#;
 
     assert_eq!(
-        violations_reading::<Duel>(body),
+        issues_reading::<Duel>(body),
         ["rivals[1].name: required", "rivals[0].name: required"]
     );
 }

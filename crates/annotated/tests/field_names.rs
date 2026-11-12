@@ -3,7 +3,7 @@
 mod support;
 
 use annotated::Validate;
-use support::violations_of;
+use support::issues_of;
 
 #[derive(Validate)]
 struct LogIn {
@@ -15,7 +15,7 @@ struct LogIn {
 fn a_field_without_serde_attributes_is_reported_by_its_rust_name() {
     let log_in = LogIn { email: String::new() };
 
-    assert_eq!(violations_of(&log_in), ["email: required"]);
+    assert_eq!(issues_of(&log_in), ["email: required"]);
 }
 
 #[derive(Validate)]
@@ -28,7 +28,7 @@ struct Expense {
 fn a_raw_identifier_is_reported_without_its_prefix() {
     let expense = Expense { r#type: String::new() };
 
-    assert_eq!(violations_of(&expense), ["type: required"]);
+    assert_eq!(issues_of(&expense), ["type: required"]);
 }
 
 #[derive(Validate)]
@@ -44,7 +44,7 @@ fn a_field_is_reported_by_the_name_its_struct_s_rename_all_gives_it() {
         full_name: String::new(),
     };
 
-    assert_eq!(violations_of(&member), ["fullName: required"]);
+    assert_eq!(issues_of(&member), ["fullName: required"]);
 }
 
 #[derive(Validate)]
@@ -58,7 +58,7 @@ struct Contact {
 fn a_renamed_field_is_reported_by_its_new_name() {
     let contact = Contact { email: String::new() };
 
-    assert_eq!(violations_of(&contact), ["e-mail: required"]);
+    assert_eq!(issues_of(&contact), ["e-mail: required"]);
 }
 
 #[derive(Validate)]
@@ -72,7 +72,7 @@ struct Subscription {
 fn a_field_renamed_apart_for_deserializing_is_reported_by_the_name_it_is_read_by() {
     let subscription = Subscription { email: String::new() };
 
-    assert_eq!(violations_of(&subscription), ["e-mail: required"]);
+    assert_eq!(issues_of(&subscription), ["e-mail: required"]);
 }
 
 #[derive(Validate)]
@@ -86,5 +86,5 @@ struct Invite {
 fn a_field_with_an_alias_is_reported_by_its_name() {
     let invite = Invite { email: String::new() };
 
-    assert_eq!(violations_of(&invite), ["email: required"]);
+    assert_eq!(issues_of(&invite), ["email: required"]);
 }

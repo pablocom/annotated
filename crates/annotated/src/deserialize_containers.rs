@@ -7,13 +7,13 @@ use serde::Deserializer;
 use serde::de::{MapAccess, SeqAccess, Visitor};
 
 use crate::deserialize::DeserializeAt;
-use crate::{Deserialize, FoundViolations, Location};
+use crate::{Deserialize, FoundIssues, Location};
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Option<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_option(VisitorAt::<Self>::new(at, found))
     }
@@ -23,7 +23,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         let value = T::deserialize_at(deserializer, at, found)?;
         Ok(value.map(Box::new))
@@ -34,7 +34,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<[T]> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         let elements = Vec::<T>::deserialize_at(deserializer, at, found)?;
         Ok(elements.map(Vec::into_boxed_slice))
@@ -45,7 +45,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Vec<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_seq(VisitorAt::<Self>::new(at, found))
     }
@@ -55,7 +55,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for VecDeque<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_seq(VisitorAt::<Self>::new(at, found))
     }
@@ -69,13 +69,13 @@ where
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_map(VisitorAt::<Self>::new(at, found))
     }
 }
 
-/// A key is cloned when its value was built but has violations, so that they can be reported in the order the map
+/// A key is cloned when its value was built but has issues, so that they can be reported in the order the map
 /// iterates over its values.
 impl<'de, K, V, S> Deserialize<'de> for HashMap<K, V, S>
 where
@@ -86,7 +86,7 @@ where
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_map(VisitorAt::<Self>::new(at, found))
     }
@@ -94,12 +94,12 @@ where
 
 struct VisitorAt<'a, 'l, C> {
     at: &'a Location<'l>,
-    found: &'a mut FoundViolations,
+    found: &'a mut FoundIssues,
     container: PhantomData<fn() -> C>,
 }
 
 impl<'a, 'l, C> VisitorAt<'a, 'l, C> {
-    fn new(at: &'a Location<'l>, found: &'a mut FoundViolations) -> Self {
+    fn new(at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self {
         Self {
             at,
             found,
@@ -190,26 +190,26 @@ where
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut values = BTreeMap::new();
-        let mut values_with_violations = BTreeMap::new();
+        let mut values_with_issues = BTreeMap::new();
         while let Some(key) = map.next_key::<K>()? {
-            let violations_before = self.found.len();
+            let issues_before = self.found.len();
             let value = map.next_value_seed(DeserializeAt::<V>::new(&self.at.key(&key), self.found))?;
-            let has_violations = self.found.len() > violations_before;
+            let has_issues = self.found.len() > issues_before;
             match value {
-                Some(value) if !has_violations => {
+                Some(value) if !has_issues => {
                     values.insert(key, value);
                 }
                 value => {
-                    let found_in_value = self.found.take_those_after(violations_before);
+                    let found_in_value = self.found.take_those_after(issues_before);
                     values.remove(&key);
-                    values_with_violations.insert(key, (value, found_in_value));
+                    values_with_issues.insert(key, (value, found_in_value));
                 }
             }
         }
         let mut is_every_value_built = true;
-        for (key, (value, mut found_in_value)) in values_with_violations {
-            let is_given_again_without_violations = values.contains_key(&key);
-            if is_given_again_without_violations {
+        for (key, (value, mut found_in_value)) in values_with_issues {
+            let is_given_again_without_issues = values.contains_key(&key);
+            if is_given_again_without_issues {
                 continue;
             }
             self.found.append(&mut found_in_value);
@@ -238,71 +238,69 @@ where
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut values = HashMap::with_capacity_and_hasher(room_for::<(K, V)>(map.size_hint()), S::default());
-        let mut violations_by_key = ViolationsByKey::<K, S>::none();
+        let mut issues_by_key = IssuesByKey::<K, S>::none();
         while let Some(key) = map.next_key::<K>()? {
             let mut found_in_value = self.found.new_alike();
             let value = map.next_value_seed(DeserializeAt::<V>::new(&self.at.key(&key), &mut found_in_value))?;
             match value {
                 Some(value) if found_in_value.is_empty() => {
-                    violations_by_key.forget(&key);
+                    issues_by_key.forget(&key);
                     values.insert(key, value);
                 }
                 Some(value) => {
-                    violations_by_key.keep(key.clone(), found_in_value);
+                    issues_by_key.keep(key.clone(), found_in_value);
                     values.insert(key, value);
                 }
                 None => {
                     values.remove(&key);
-                    violations_by_key.keep(key, found_in_value);
+                    issues_by_key.keep(key, found_in_value);
                 }
             }
         }
-        let is_every_value_built = violations_by_key.has_only_keys_of(&values);
-        violations_by_key.join_in_the_order_of(&values, self.found);
+        let is_every_value_built = issues_by_key.has_only_keys_of(&values);
+        issues_by_key.join_in_the_order_of(&values, self.found);
         Ok(is_every_value_built.then_some(values))
     }
 }
 
-struct ViolationsByKey<K, S> {
-    violations_by_key: Option<HashMap<K, FoundViolations, S>>,
+struct IssuesByKey<K, S> {
+    issues_by_key: Option<HashMap<K, FoundIssues, S>>,
 }
 
-impl<K: Eq + Hash, S: BuildHasher + Default> ViolationsByKey<K, S> {
+impl<K: Eq + Hash, S: BuildHasher + Default> IssuesByKey<K, S> {
     const fn none() -> Self {
-        Self {
-            violations_by_key: None,
-        }
+        Self { issues_by_key: None }
     }
 
-    fn keep(&mut self, key: K, found_in_value: FoundViolations) {
-        self.violations_by_key
+    fn keep(&mut self, key: K, found_in_value: FoundIssues) {
+        self.issues_by_key
             .get_or_insert_with(|| HashMap::with_hasher(S::default()))
             .insert(key, found_in_value);
     }
 
     fn forget(&mut self, key: &K) {
-        if let Some(violations_by_key) = &mut self.violations_by_key {
-            violations_by_key.remove(key);
+        if let Some(issues_by_key) = &mut self.issues_by_key {
+            issues_by_key.remove(key);
         }
     }
 
     fn has_only_keys_of<V>(&self, values: &HashMap<K, V, S>) -> bool {
-        self.violations_by_key
+        self.issues_by_key
             .iter()
             .flat_map(HashMap::keys)
             .all(|key| values.contains_key(key))
     }
 
-    fn join_in_the_order_of<V>(self, values: &HashMap<K, V, S>, found: &mut FoundViolations) {
-        let Some(mut violations_by_key) = self.violations_by_key else {
+    fn join_in_the_order_of<V>(self, values: &HashMap<K, V, S>, found: &mut FoundIssues) {
+        let Some(mut issues_by_key) = self.issues_by_key else {
             return;
         };
         for key in values.keys() {
-            if let Some(mut found_in_value) = violations_by_key.remove(key) {
+            if let Some(mut found_in_value) = issues_by_key.remove(key) {
                 found.append(&mut found_in_value);
             }
         }
-        for mut found_in_value in violations_by_key.into_values() {
+        for mut found_in_value in issues_by_key.into_values() {
             found.append(&mut found_in_value);
         }
     }

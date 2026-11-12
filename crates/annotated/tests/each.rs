@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::RandomState;
 
 use annotated::Validate;
-use support::violations_of;
+use support::issues_of;
 
 #[derive(Validate)]
 struct Author {
@@ -47,7 +47,7 @@ fn post() -> Post {
 }
 
 #[test]
-fn a_value_whose_elements_follow_their_rules_has_no_violations() {
+fn a_value_whose_elements_follow_their_rules_has_no_issues() {
     assert_eq!(post().validate(), Ok(()));
 }
 
@@ -58,7 +58,7 @@ fn each_reports_an_element_at_its_index() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["tags[1]: length"]);
+    assert_eq!(issues_of(&post), ["tags[1]: length"]);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn each_checks_every_element() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["tags[0]: length", "tags[1]: required"]);
+    assert_eq!(issues_of(&post), ["tags[0]: length", "tags[1]: required"]);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn the_first_rule_an_element_breaks_stops_its_other_rules() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["tags[0]: required"]);
+    assert_eq!(issues_of(&post), ["tags[0]: required"]);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn a_rule_after_required_on_optional_elements_checks_the_value_inside() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["reviewers[0]: length"]);
+    assert_eq!(issues_of(&post), ["reviewers[0]: length"]);
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn each_reports_a_map_value_at_its_key() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["titles[fr]: length"]);
+    assert_eq!(issues_of(&post), ["titles[fr]: length"]);
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn each_nested_validates_every_element_as_a_struct() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["authors[1].name: required"]);
+    assert_eq!(issues_of(&post), ["authors[1].name: required"]);
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn required_on_optional_elements_checks_each_option() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["reviewers[1]: required"]);
+    assert_eq!(issues_of(&post), ["reviewers[1]: required"]);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn each_on_an_optional_collection_checks_the_elements_inside() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["keywords[0]: length"]);
+    assert_eq!(issues_of(&post), ["keywords[0]: length"]);
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn each_inside_each_checks_the_elements_of_every_element() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["grid[0][1]: length"]);
+    assert_eq!(issues_of(&post), ["grid[0][1]: length"]);
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn a_collection_breaking_a_rule_before_each_has_its_elements_skipped() {
         ..post()
     };
 
-    assert_eq!(violations_of(&post), ["codes: length"]);
+    assert_eq!(issues_of(&post), ["codes: length"]);
 }
 
 #[derive(Validate)]
@@ -187,7 +187,7 @@ fn each_checks_the_value_inside_every_optional_element_of_an_array() {
         ..shelf()
     };
 
-    assert_eq!(violations_of(&shelf), ["slots[1]: length"]);
+    assert_eq!(issues_of(&shelf), ["slots[1]: length"]);
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn each_checks_every_element_of_a_queue() {
         ..shelf()
     };
 
-    assert_eq!(violations_of(&shelf), ["queue[1]: length"]);
+    assert_eq!(issues_of(&shelf), ["queue[1]: length"]);
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn each_checks_every_value_of_a_hash_map() {
         ..shelf()
     };
 
-    assert_eq!(violations_of(&shelf), ["labels[top]: length"]);
+    assert_eq!(issues_of(&shelf), ["labels[top]: length"]);
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn each_checks_the_value_inside_every_optional_value_of_a_map_written_with_its_h
         ..shelf()
     };
 
-    assert_eq!(violations_of(&shelf), ["notes[bottom]: length"]);
+    assert_eq!(issues_of(&shelf), ["notes[bottom]: length"]);
 }
 
 #[derive(Validate)]
@@ -249,7 +249,7 @@ fn each_checks_every_element_of_a_borrowed_slice() {
         ..draft()
     };
 
-    assert_eq!(violations_of(&draft), ["labels[1]: length"]);
+    assert_eq!(issues_of(&draft), ["labels[1]: length"]);
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn each_checks_every_element_of_a_boxed_slice() {
         ..draft()
     };
 
-    assert_eq!(violations_of(&draft), ["stickers[0]: length"]);
+    assert_eq!(issues_of(&draft), ["stickers[0]: length"]);
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn each_checks_the_value_inside_every_optional_element_of_a_borrowed_slice() {
     let pins = [None, Some("jars".to_owned())];
     let draft = Draft { pins: &pins, ..draft() };
 
-    assert_eq!(violations_of(&draft), ["pins[1]: length"]);
+    assert_eq!(issues_of(&draft), ["pins[1]: length"]);
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn each_checks_the_value_inside_every_optional_element_of_a_boxed_slice() {
         ..draft()
     };
 
-    assert_eq!(violations_of(&draft), ["stamps[0]: length"]);
+    assert_eq!(issues_of(&draft), ["stamps[0]: length"]);
 }
 
 #[derive(Validate)]
@@ -293,5 +293,5 @@ fn report_all_reports_every_rule_an_element_breaks() {
         tags: vec!["#rust".to_owned(), "a".to_owned()],
     };
 
-    assert_eq!(violations_of(&labels), ["tags[1]: length", "tags[1]: prefix"]);
+    assert_eq!(issues_of(&labels), ["tags[1]: length", "tags[1]: prefix"]);
 }

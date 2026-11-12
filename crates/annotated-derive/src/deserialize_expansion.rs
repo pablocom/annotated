@@ -80,7 +80,7 @@ impl<'a> DeserializeExpansion<'a> {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
                     #at: &::annotated::Location<'_>,
-                    #found: &mut ::annotated::FoundViolations,
+                    #found: &mut ::annotated::FoundIssues,
                 ) -> ::core::result::Result<::core::option::Option<Self>, __D::Error> {
                     #field_identifier
                     #visitor
@@ -272,7 +272,7 @@ impl<'a> DeserializeExpansion<'a> {
 
             struct __Visitor #visitor_definition_generics #visitor_where_clause {
                 #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
-                #found: &#visitor_lifetime mut ::annotated::FoundViolations,
+                #found: &#visitor_lifetime mut ::annotated::FoundIssues,
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
@@ -301,26 +301,26 @@ impl<'a> DeserializeExpansion<'a> {
             let slot = slot_of(field);
             let slot_type = self.slot_type_of(field);
             let field_type = field.field_type;
-            if !self.is_read_with_violations(field) {
+            if !self.is_read_with_issues(field) {
                 return quote! {
                     let #slot: #slot_type = #serde::de::SeqAccess::next_element::<#field_type>(&mut #seq)?;
                 };
             }
-            let read_violations = read_violations_of(field);
-            let reading_with_its_violations = self.reading_with_its_violations(field);
+            let read_issues = read_issues_of(field);
+            let reading_with_its_issues = self.reading_with_its_issues(field);
             let element = quote_spanned! {field_type.span()=>
                 ::annotated::__private::serde::de::SeqAccess::next_element_seed(
                     &mut #seq,
-                    #reading_with_its_violations,
+                    #reading_with_its_issues,
                 )?
             };
             quote! {
-                let mut #read_violations = self.#found.new_alike();
+                let mut #read_issues = self.#found.new_alike();
                 let #slot: #slot_type = #element;
             }
         });
         let slots = self.fields().iter().map(slot_of);
-        let read_violations = self.fields_read_with_violations().map(read_violations_of);
+        let read_issues = self.fields_read_with_issues().map(read_issues_of);
         quote! {
             #[inline]
             fn visit_seq<__A: #serde::de::SeqAccess<'de>>(
@@ -328,20 +328,20 @@ impl<'a> DeserializeExpansion<'a> {
                 mut #seq: __A,
             ) -> ::core::result::Result<Self::Value, __A::Error> {
                 #(#elements)*
-                ::core::result::Result::Ok(self.checked_value((#(#slots,)*), (#(#read_violations,)*)))
+                ::core::result::Result::Ok(self.checked_value((#(#slots,)*), (#(#read_issues,)*)))
             }
         }
     }
 
-    fn reading_with_its_violations(&self, field: &ValidatedField) -> TokenStream {
+    fn reading_with_its_issues(&self, field: &ValidatedField) -> TokenStream {
         let Expansion { at, .. } = &self.rules;
         let field_type = field.field_type;
         let name = &field.name;
-        let read_violations = read_violations_of(field);
+        let read_issues = read_issues_of(field);
         let at_the_field = quote!(&self.#at.field(#name));
         if !self.deserialized_struct.collects_type_errors {
             return quote_spanned! {field_type.span()=>
-                ::annotated::__private::DeserializeAt::<#field_type>::new(#at_the_field, &mut #read_violations)
+                ::annotated::__private::DeserializeAt::<#field_type>::new(#at_the_field, &mut #read_issues)
             };
         }
         let type_name = type_name_of(field_type);
@@ -351,16 +351,16 @@ impl<'a> DeserializeExpansion<'a> {
             quote!(CollectingTypeErrorsAt)
         };
         quote_spanned! {field_type.span()=>
-            ::annotated::__private::#seed::<#field_type>::new(#type_name, #at_the_field, &mut #read_violations)
+            ::annotated::__private::#seed::<#field_type>::new(#type_name, #at_the_field, &mut #read_issues)
         }
     }
 
-    fn is_read_with_violations(&self, field: &ValidatedField) -> bool {
+    fn is_read_with_issues(&self, field: &ValidatedField) -> bool {
         field.has_nested_values() || self.deserialized_struct.collects_type_errors
     }
 
-    fn fields_read_with_violations(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
-        self.fields().iter().filter(|field| self.is_read_with_violations(field))
+    fn fields_read_with_issues(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
+        self.fields().iter().filter(|field| self.is_read_with_issues(field))
     }
 
     fn visit_map(&self) -> TokenStream {
@@ -374,12 +374,12 @@ impl<'a> DeserializeExpansion<'a> {
             let slot = slot_of(field);
             let field_type = field.field_type;
             let name = &field.name;
-            let value = if self.is_read_with_violations(field) {
-                let reading_with_its_violations = self.reading_with_its_violations(field);
+            let value = if self.is_read_with_issues(field) {
+                let reading_with_its_issues = self.reading_with_its_issues(field);
                 quote_spanned! {field_type.span()=>
                     ::annotated::__private::serde::de::MapAccess::next_value_seed(
                         &mut #map,
-                        #reading_with_its_violations,
+                        #reading_with_its_issues,
                     )?
                 }
             } else {
@@ -404,7 +404,7 @@ impl<'a> DeserializeExpansion<'a> {
             }
         });
         let read_slots = fields.iter().map(slot_of);
-        let read_violations: Vec<_> = self.fields_read_with_violations().map(read_violations_of).collect();
+        let read_issues: Vec<_> = self.fields_read_with_issues().map(read_issues_of).collect();
         quote! {
             #[inline]
             fn visit_map<__A: #serde::de::MapAccess<'de>>(
@@ -412,7 +412,7 @@ impl<'a> DeserializeExpansion<'a> {
                 mut #map: __A,
             ) -> ::core::result::Result<Self::Value, __A::Error> {
                 #(let mut #slots: #slot_types = ::core::option::Option::None;)*
-                #(let mut #read_violations = self.#found.new_alike();)*
+                #(let mut #read_issues = self.#found.new_alike();)*
                 while let ::core::option::Option::Some(#key) =
                     #serde::de::MapAccess::next_key::<__Field>(&mut #map)?
                 {
@@ -421,7 +421,7 @@ impl<'a> DeserializeExpansion<'a> {
                         #unknown_field_arm
                     }
                 }
-                ::core::result::Result::Ok(self.checked_value((#(#read_slots,)*), (#(#read_violations,)*)))
+                ::core::result::Result::Ok(self.checked_value((#(#read_slots,)*), (#(#read_issues,)*)))
             }
         }
     }
@@ -444,10 +444,8 @@ impl<'a> DeserializeExpansion<'a> {
         let fields = self.fields();
         let slots = fields.iter().map(slot_of);
         let slot_types = fields.iter().map(|field| self.slot_type_of(field));
-        let read_violations = self.fields_read_with_violations().map(read_violations_of);
-        let read_violations_types = self
-            .fields_read_with_violations()
-            .map(|_| quote!(::annotated::FoundViolations));
+        let read_issues = self.fields_read_with_issues().map(read_issues_of);
+        let read_issues_types = self.fields_read_with_issues().map(|_| quote!(::annotated::FoundIssues));
         let values_of_slots = fields.iter().map(|field| self.value_of_slot(field));
         let validities = self.fields_keeping_their_validity().map(validity_of);
         let field_checks = self.field_checks();
@@ -479,7 +477,7 @@ impl<'a> DeserializeExpansion<'a> {
             fn checked_value(
                 self,
                 (#(#slots,)*): (#(#slot_types,)*),
-                (#(mut #read_violations,)*): (#(#read_violations_types,)*),
+                (#(mut #read_issues,)*): (#(#read_issues_types,)*),
             ) -> ::core::option::Option<#name #type_generics> {
                 let #at = self.#at;
                 let #found = self.#found;
@@ -503,7 +501,7 @@ impl<'a> DeserializeExpansion<'a> {
             .enumerate()
             .map(|(index, field)| {
                 let keeps_validity = self.rules.keeps_validity_of(validated_struct, index);
-                if field.is_optional && !self.is_read_with_violations(field) {
+                if field.is_optional && !self.is_read_with_issues(field) {
                     let slot = slot_of(field);
                     let value_of_field = quote!(&#slot);
                     if keeps_validity {
@@ -526,7 +524,7 @@ impl<'a> DeserializeExpansion<'a> {
             not_built,
             missing,
         } = self.slot_states(field);
-        if field.rules.is_empty() && !self.is_read_with_violations(field) {
+        if field.rules.is_empty() && !self.is_read_with_issues(field) {
             return quote! {
                 if ::core::option::Option::is_none(&#slot) {
                     #missing
@@ -610,7 +608,7 @@ impl<'a> DeserializeExpansion<'a> {
         if !field.has_nested_values() {
             return self.rules.clone();
         }
-        self.rules.reading_nested_violations_from(&read_violations_of(field))
+        self.rules.reading_nested_issues_from(&read_issues_of(field))
     }
 
     fn slot_states(&self, field: &ValidatedField) -> SlotStates {
@@ -621,17 +619,17 @@ impl<'a> DeserializeExpansion<'a> {
         };
         let found = &self.rules.found;
         let missing = self.missing(field);
-        if !self.is_read_with_violations(field) {
+        if !self.is_read_with_issues(field) {
             return SlotStates {
                 built: quote!(::core::option::Option::Some(#value)),
                 not_built: None,
                 missing,
             };
         }
-        let read_violations = read_violations_of(field);
+        let read_issues = read_issues_of(field);
         let stop_if_finished = self.rules.stop_if_finished();
         let not_built = quote! {
-            #found.append(&mut #read_violations);
+            #found.append(&mut #read_issues);
             #stop_if_finished
         };
         let (built, not_built_pattern) = if field.is_optional {
@@ -657,7 +655,7 @@ impl<'a> DeserializeExpansion<'a> {
         let missing_at = self.rules.field_location(field);
         let stop_if_finished = self.rules.stop_if_finished();
         quote! {
-            ::annotated::__private::record_violation(
+            ::annotated::__private::record_issue(
                 #found,
                 #missing_at,
                 ::annotated::Problem::Missing,
@@ -672,7 +670,7 @@ impl<'a> DeserializeExpansion<'a> {
         let fields = self.fields().iter().map(|field| {
             let member = field.member;
             let slot = slot_of(field);
-            match (self.is_read_with_violations(field), field.is_optional) {
+            match (self.is_read_with_issues(field), field.is_optional) {
                 (false, true) => quote!(#member: #slot),
                 (false, false) | (true, true) => quote!(#member: #slot?),
                 (true, false) => quote!(#member: ::core::option::Option::flatten(#slot)?),
@@ -686,7 +684,7 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn slot_type_of(&self, field: &ValidatedField) -> TokenStream {
         let field_type = field.field_type;
-        if self.is_read_with_violations(field) {
+        if self.is_read_with_issues(field) {
             return quote!(::core::option::Option<::core::option::Option<#field_type>>);
         }
         quote!(::core::option::Option<#field_type>)
@@ -694,7 +692,7 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn value_of_slot(&self, field: &ValidatedField) -> TokenStream {
         let slot = slot_of(field);
-        match (self.is_read_with_violations(field), field.is_optional) {
+        match (self.is_read_with_issues(field), field.is_optional) {
             (_, false) => TokenStream::new(),
             (false, true) => quote!(let #slot = ::core::option::Option::flatten(#slot);),
             (true, true) => quote! {
@@ -725,12 +723,12 @@ fn slot_of(field: &ValidatedField) -> Ident {
 }
 
 fn waiting_for_the_elements(field: &ValidatedField) -> TokenStream {
-    if !field.joins_nested_violations_element_by_element() {
+    if !field.joins_nested_issues_element_by_element() {
         return TokenStream::new();
     }
-    let read_violations = read_violations_of(field);
+    let read_issues = read_issues_of(field);
     quote! {
-        let mut #read_violations = ::annotated::__private::ElementViolations::new(#read_violations);
+        let mut #read_issues = ::annotated::__private::ElementIssues::new(#read_issues);
     }
 }
 
@@ -751,8 +749,8 @@ fn type_name_of(field_type: &Type) -> String {
     }
 }
 
-fn read_violations_of(field: &ValidatedField) -> Ident {
-    format_ident!("{}_read_violations", field.member, span = Span::mixed_site())
+fn read_issues_of(field: &ValidatedField) -> Ident {
+    format_ident!("{}_read_issues", field.member, span = Span::mixed_site())
 }
 
 fn with_lifetime(generics: &Generics, lifetime: &Lifetime) -> Generics {

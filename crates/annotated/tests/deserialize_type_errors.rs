@@ -1,31 +1,31 @@
 //! `#[annotated(collect_type_errors)]` reads each field of a struct in two steps, so a value of the wrong type is one
-//! more violation, `invalid_type`, beside the missing fields and broken rules, instead of the format's error.
+//! more issue, `invalid_type`, beside the missing fields and broken rules, instead of the format's error.
 
 #![cfg(feature = "serde")]
 
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr};
 
-use annotated::{Deserialize, DeserializeError, Problem, Violation};
+use annotated::{Deserialize, DeserializeError, Issue, Problem};
 use serde_test::{Readable, Token, assert_de_tokens_error};
 
 fn deserialize<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
     annotated::from_deserializer(&mut serde_json::Deserializer::from_str(json))
 }
 
-fn violations_found_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<Violation> {
+fn issues_found_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<Issue> {
     match deserialize::<T>(json) {
         Ok(_) => Vec::new(),
-        Err(DeserializeError::Violations(violations)) => violations.into_iter().collect(),
-        Err(error) => panic!("expected violations, got the format's error: {error}"),
+        Err(DeserializeError::Issues(issues)) => issues.into_iter().collect(),
+        Err(error) => panic!("expected issues, got the format's error: {error}"),
     }
 }
 
-fn violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
+fn issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
     described_outcome(deserialize::<T>(json))
 }
 
-fn fail_fast_violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
+fn fail_fast_issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
     described_outcome(annotated::from_deserializer_fail_fast::<T, _>(
         &mut serde_json::Deserializer::from_str(json),
     ))
@@ -34,26 +34,26 @@ fn fail_fast_violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec
 fn described_outcome<T>(outcome: Result<T, DeserializeError<serde_json::Error>>) -> Vec<String> {
     match outcome {
         Ok(_) => Vec::new(),
-        Err(DeserializeError::Violations(violations)) => violations.iter().map(described).collect(),
+        Err(DeserializeError::Issues(issues)) => issues.iter().map(described).collect(),
         Err(error) => vec![format!("the format's error: {error}")],
     }
 }
 
-fn described(violation: &Violation) -> String {
-    let params = violation.problem().params();
+fn described(issue: &Issue) -> String {
+    let params = issue.problem().params();
     let params = params
         .iter()
         .map(|(name, value)| format!("{name}: {value}"))
         .collect::<Vec<_>>();
     let code_and_params = if params.is_empty() {
-        violation.problem().code().to_owned()
+        issue.problem().code().to_owned()
     } else {
-        format!("{}({})", violation.problem().code(), params.join(", "))
+        format!("{}({})", issue.problem().code(), params.join(", "))
     };
-    if violation.path().is_root() {
+    if issue.path().is_root() {
         return code_and_params;
     }
-    format!("{}: {code_and_params}", violation.path())
+    format!("{}: {code_and_params}", issue.path())
 }
 
 fn format_error_reading<'de, T: Deserialize<'de>>(json: &'de str) -> String {
@@ -88,11 +88,11 @@ struct NewMemberStoppingAtATypeError {
 }
 
 #[test]
-fn a_value_of_the_wrong_type_is_reported_beside_the_other_violations_in_declaration_order() {
+fn a_value_of_the_wrong_type_is_reported_beside_the_other_issues_in_declaration_order() {
     let body = r#"{ "age": "twelve", "email": "x" }"#;
 
     assert_eq!(
-        violations_reading::<NewMember>(body),
+        issues_reading::<NewMember>(body),
         [
             "fullName: missing",
             "email: email",
@@ -152,7 +152,7 @@ struct Preferences {
 #[test]
 fn a_boolean_where_a_number_is_expected_is_found_as_a_boolean() {
     assert_eq!(
-        violations_reading::<Preferences>(r#"{ "age": true }"#),
+        issues_reading::<Preferences>(r#"{ "age": true }"#),
         ["age: invalid_type(expected: u8, found: boolean)"]
     );
 }
@@ -160,7 +160,7 @@ fn a_boolean_where_a_number_is_expected_is_found_as_a_boolean() {
 #[test]
 fn an_integer_where_a_string_is_expected_is_found_as_an_integer() {
     assert_eq!(
-        violations_reading::<Preferences>(r#"{ "name": 5 }"#),
+        issues_reading::<Preferences>(r#"{ "name": 5 }"#),
         ["name: invalid_type(expected: a string, found: integer)"]
     );
 }
@@ -168,7 +168,7 @@ fn an_integer_where_a_string_is_expected_is_found_as_an_integer() {
 #[test]
 fn a_float_where_an_integer_is_expected_is_found_as_a_float() {
     assert_eq!(
-        violations_reading::<Preferences>(r#"{ "age": 1.5 }"#),
+        issues_reading::<Preferences>(r#"{ "age": 1.5 }"#),
         ["age: invalid_type(expected: u8, found: float)"]
     );
 }
@@ -176,7 +176,7 @@ fn a_float_where_an_integer_is_expected_is_found_as_a_float() {
 #[test]
 fn a_string_where_an_optional_number_is_expected_is_found_as_a_string() {
     assert_eq!(
-        violations_reading::<Preferences>(r#"{ "age": "x" }"#),
+        issues_reading::<Preferences>(r#"{ "age": "x" }"#),
         ["age: invalid_type(expected: u8, found: string)"]
     );
 }
@@ -184,7 +184,7 @@ fn a_string_where_an_optional_number_is_expected_is_found_as_a_string() {
 #[test]
 fn a_sequence_where_a_number_is_expected_is_found_as_a_sequence() {
     assert_eq!(
-        violations_reading::<Preferences>(r#"{ "age": [30] }"#),
+        issues_reading::<Preferences>(r#"{ "age": [30] }"#),
         ["age: invalid_type(expected: u8, found: sequence)"]
     );
 }
@@ -192,7 +192,7 @@ fn a_sequence_where_a_number_is_expected_is_found_as_a_sequence() {
 #[test]
 fn a_map_where_a_number_is_expected_is_found_as_a_map() {
     assert_eq!(
-        violations_reading::<Preferences>(r#"{ "age": { "years": 30 } }"#),
+        issues_reading::<Preferences>(r#"{ "age": { "years": 30 } }"#),
         ["age: invalid_type(expected: u8, found: map)"]
     );
 }
@@ -200,7 +200,7 @@ fn a_map_where_a_number_is_expected_is_found_as_a_map() {
 #[test]
 fn null_where_a_value_is_required_is_found_as_null() {
     assert_eq!(
-        violations_reading::<Age>(r#"{ "age": null }"#),
+        issues_reading::<Age>(r#"{ "age": null }"#),
         ["age: invalid_type(expected: u8, found: null)"]
     );
 }
@@ -208,7 +208,7 @@ fn null_where_a_value_is_required_is_found_as_null() {
 #[test]
 fn null_where_an_optional_value_is_expected_is_none() {
     assert_eq!(
-        violations_reading::<Preferences>(r#"{ "age": null }"#),
+        issues_reading::<Preferences>(r#"{ "age": null }"#),
         Vec::<String>::new()
     );
 }
@@ -248,7 +248,7 @@ fn bytes_where_a_number_is_expected_are_found_as_bytes() {
 #[test]
 fn an_integer_out_of_the_range_of_its_type_is_of_the_wrong_type() {
     assert_eq!(
-        violations_reading::<Age>(r#"{ "age": 300 }"#),
+        issues_reading::<Age>(r#"{ "age": 300 }"#),
         ["age: invalid_type(expected: u8, found: integer)"]
     );
 }
@@ -264,7 +264,7 @@ struct Scores {
 #[test]
 fn an_element_of_the_wrong_type_is_reported_at_its_collection_by_what_the_element_must_be() {
     assert_eq!(
-        violations_reading::<Scores>(r#"{ "scores": [1, "x"] }"#),
+        issues_reading::<Scores>(r#"{ "scores": [1, "x"] }"#),
         ["scores: invalid_type(expected: u8, found: string)"]
     );
 }
@@ -294,7 +294,7 @@ struct Profile {
 #[test]
 fn a_value_its_type_refuses_with_a_message_of_its_own_must_be_that_type() {
     assert_eq!(
-        violations_reading::<Profile>(r#"{ "handle": "lucia" }"#),
+        issues_reading::<Profile>(r#"{ "handle": "lucia" }"#),
         ["handle: invalid_type(expected: Handle, found: string)"]
     );
 }
@@ -302,7 +302,7 @@ fn a_value_its_type_refuses_with_a_message_of_its_own_must_be_that_type() {
 #[test]
 fn an_optional_value_its_type_refuses_with_a_message_of_its_own_must_be_the_type_inside_the_option() {
     assert_eq!(
-        violations_reading::<Profile>(r#"{ "handle": "@lucia", "previous_handle": "lucia" }"#),
+        issues_reading::<Profile>(r#"{ "handle": "@lucia", "previous_handle": "lucia" }"#),
         ["previous_handle: invalid_type(expected: Handle, found: string)"]
     );
 }
@@ -382,7 +382,7 @@ fn a_nested_struct_given_a_number_is_of_the_wrong_type_at_its_field() {
         "weightInGrams": 0 }"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         [
             "reference: required",
             "sender: invalid_type(expected: struct Address, found: integer)",
@@ -396,7 +396,7 @@ fn a_field_missing_inside_a_nested_struct_is_reported_at_its_full_path() {
     let body = r#"{ "reference": "PX-1", "sender": { "postalCode": "28013" },
         "recipient": { "street": "Atocha 2", "postalCode": "28012" }, "weightInGrams": 900 }"#;
 
-    assert_eq!(violations_reading::<Parcel>(body), ["sender.street: missing"]);
+    assert_eq!(issues_reading::<Parcel>(body), ["sender.street: missing"]);
 }
 
 #[test]
@@ -405,7 +405,7 @@ fn a_value_of_the_wrong_type_inside_a_nested_struct_collecting_them_is_reported_
         "recipient": { "street": "Atocha 2", "postalCode": "28012" }, "weightInGrams": 900 }"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         [
             "sender.street: invalid_type(expected: a string, found: integer)",
             "sender.postalCode: length(min: 5, unit: chars)"
@@ -419,7 +419,7 @@ fn a_value_of_the_wrong_type_inside_a_nested_struct_not_collecting_them_is_repor
         "recipient": { "street": 5, "postalCode": "1" }, "weightInGrams": 900 }"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         ["recipient: invalid_type(expected: a string, found: integer)"]
     );
 }
@@ -436,11 +436,11 @@ struct Route {
 }
 
 #[test]
-fn an_element_of_the_wrong_type_replaces_the_violations_found_in_its_collection_before_it() {
+fn an_element_of_the_wrong_type_replaces_the_issues_found_in_its_collection_before_it() {
     let body = r#"{ "stops": [{ "street": "", "postalCode": "28013" }, 5], "depots": {} }"#;
 
     assert_eq!(
-        violations_reading::<Route>(body),
+        issues_reading::<Route>(body),
         ["stops: invalid_type(expected: struct Address, found: integer)"]
     );
 }
@@ -450,7 +450,7 @@ fn a_value_of_the_wrong_type_inside_an_element_collecting_them_is_reported_at_it
     let body = r#"{ "stops": [], "depots": { "north": { "street": "Alcalá 1", "postalCode": 28014 } } }"#;
 
     assert_eq!(
-        violations_reading::<Route>(body),
+        issues_reading::<Route>(body),
         ["depots[north].postalCode: invalid_type(expected: a string, found: integer)"]
     );
 }
@@ -478,7 +478,7 @@ struct Stay {
 #[test]
 fn a_value_of_the_wrong_type_skips_its_other_rules_and_the_struct_level_rules() {
     assert_eq!(
-        violations_reading::<Stay>(r#"{ "guest": 5, "nights": 0 }"#),
+        issues_reading::<Stay>(r#"{ "guest": 5, "nights": 0 }"#),
         [
             "guest: invalid_type(expected: a string, found: integer)",
             "nights: range(min: 1)"
@@ -489,7 +489,7 @@ fn a_value_of_the_wrong_type_skips_its_other_rules_and_the_struct_level_rules() 
 #[test]
 fn a_struct_written_as_a_sequence_collects_its_values_of_the_wrong_type() {
     assert_eq!(
-        violations_reading::<NewMember>(r#"["", "alex", "twelve"]"#),
+        issues_reading::<NewMember>(r#"["", "alex", "twelve"]"#),
         [
             "fullName: required",
             "email: email",
@@ -533,13 +533,13 @@ struct Page<T> {
 #[test]
 fn a_struct_with_a_type_parameter_collects_its_values_of_the_wrong_type() {
     assert_eq!(
-        violations_reading::<Page<u8>>(r#"{ "items": ["x"] }"#),
+        issues_reading::<Page<u8>>(r#"{ "items": ["x"] }"#),
         ["items: invalid_type(expected: u8, found: string)"]
     );
 }
 
 #[test]
-fn plain_serde_json_refuses_a_value_of_the_wrong_type_with_every_violation_in_its_message() {
+fn plain_serde_json_refuses_a_value_of_the_wrong_type_with_every_issue_in_its_message() {
     let error = serde_json::from_str::<NewMember>(r#"{ "fullName": "", "email": "x", "age": "twelve" }"#).unwrap_err();
 
     assert_eq!(
@@ -553,7 +553,7 @@ fn failing_fast_answers_a_value_of_the_wrong_type_declared_first() {
     let body = r#"{ "fullName": 5, "email": "x", "age": 12 }"#;
 
     assert_eq!(
-        violations_reading::<NewMember>(body),
+        issues_reading::<NewMember>(body),
         [
             "fullName: invalid_type(expected: a string, found: integer)",
             "email: email",
@@ -561,7 +561,7 @@ fn failing_fast_answers_a_value_of_the_wrong_type_declared_first() {
         ]
     );
     assert_eq!(
-        fail_fast_violations_reading::<NewMember>(body),
+        fail_fast_issues_reading::<NewMember>(body),
         ["fullName: invalid_type(expected: a string, found: integer)"]
     );
 }
@@ -571,14 +571,14 @@ fn failing_fast_answers_a_broken_rule_declared_before_a_value_of_the_wrong_type(
     let body = r#"{ "fullName": "", "email": "x", "age": "twelve" }"#;
 
     assert_eq!(
-        violations_reading::<NewMember>(body),
+        issues_reading::<NewMember>(body),
         [
             "fullName: required",
             "email: email",
             "age: invalid_type(expected: u8, found: string)"
         ]
     );
-    assert_eq!(fail_fast_violations_reading::<NewMember>(body), ["fullName: required"]);
+    assert_eq!(fail_fast_issues_reading::<NewMember>(body), ["fullName: required"]);
 }
 
 #[test]
@@ -587,7 +587,7 @@ fn failing_fast_answers_a_value_of_the_wrong_type_inside_a_nested_struct() {
         "recipient": { "street": "Atocha 2", "postalCode": "28012" }, "weightInGrams": 0 }"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         [
             "reference: required",
             "sender.street: invalid_type(expected: a string, found: integer)",
@@ -595,16 +595,16 @@ fn failing_fast_answers_a_value_of_the_wrong_type_inside_a_nested_struct() {
             "weightInGrams: range(min: 1)"
         ]
     );
-    assert_eq!(fail_fast_violations_reading::<Parcel>(body), ["reference: required"]);
+    assert_eq!(fail_fast_issues_reading::<Parcel>(body), ["reference: required"]);
 }
 
 #[test]
-fn failing_fast_answers_the_first_violation_inside_a_nested_struct_when_it_is_of_the_wrong_type() {
+fn failing_fast_answers_the_first_issue_inside_a_nested_struct_when_it_is_of_the_wrong_type() {
     let body = r#"{ "reference": "PX-1", "sender": { "street": 5, "postalCode": "1" },
         "recipient": { "street": "Atocha 2", "postalCode": "28012" }, "weightInGrams": 0 }"#;
 
     assert_eq!(
-        fail_fast_violations_reading::<Parcel>(body),
+        fail_fast_issues_reading::<Parcel>(body),
         ["sender.street: invalid_type(expected: a string, found: integer)"]
     );
 }
@@ -614,7 +614,7 @@ fn failing_fast_answers_a_nested_struct_of_the_wrong_type() {
     let body = r#"{ "reference": "PX-1", "sender": 5, "recipient": 5, "weightInGrams": 0 }"#;
 
     assert_eq!(
-        fail_fast_violations_reading::<Parcel>(body),
+        fail_fast_issues_reading::<Parcel>(body),
         ["sender: invalid_type(expected: struct Address, found: integer)"]
     );
 }
@@ -687,8 +687,8 @@ fn a_well_typed_body_breaking_every_rule_is_reported_as_without_collect_type_err
         "tags": ["a", "b", "Alexandra Morgan"] }"#;
 
     assert_eq!(
-        violations_found_reading::<SignUp>(body),
-        violations_found_reading::<SignUpStoppingAtATypeError>(body)
+        issues_found_reading::<SignUp>(body),
+        issues_found_reading::<SignUpStoppingAtATypeError>(body)
     );
 }
 
@@ -697,8 +697,8 @@ fn a_well_typed_body_missing_fields_is_reported_as_without_collect_type_errors()
     let body = r#"{ "nickname": "A" }"#;
 
     assert_eq!(
-        violations_found_reading::<SignUp>(body),
-        violations_found_reading::<SignUpStoppingAtATypeError>(body)
+        issues_found_reading::<SignUp>(body),
+        issues_found_reading::<SignUpStoppingAtATypeError>(body)
     );
 }
 
@@ -708,8 +708,8 @@ fn a_well_typed_body_breaking_a_struct_level_rule_is_reported_as_without_collect
         "tags": ["Alex"] }"#;
 
     assert_eq!(
-        violations_found_reading::<SignUp>(body),
-        violations_found_reading::<SignUpStoppingAtATypeError>(body)
+        issues_found_reading::<SignUp>(body),
+        issues_found_reading::<SignUpStoppingAtATypeError>(body)
     );
 }
 
@@ -718,8 +718,8 @@ fn a_well_typed_body_breaking_no_rule_is_valid_as_without_collect_type_errors() 
     let body = r#"{ "fullName": "Alex", "mail": "alex@example.com", "phone": "600 000 000", "age": 30, "tags": [] }"#;
 
     assert_eq!(
-        violations_found_reading::<SignUp>(body),
-        violations_found_reading::<SignUpStoppingAtATypeError>(body)
+        issues_found_reading::<SignUp>(body),
+        issues_found_reading::<SignUpStoppingAtATypeError>(body)
     );
 }
 
@@ -750,8 +750,8 @@ fn a_well_typed_map_keyed_by_numbers_written_as_strings_is_read_as_without_colle
     let body = r#"{ "stock_by_shelf": { "1": "rice", "2": "beans", "3": "lentils" }, "labels": { "1": true } }"#;
 
     assert_eq!(
-        violations_reading::<Shelves>(body),
-        violations_reading::<ShelvesStoppingAtATypeError>(body)
+        issues_reading::<Shelves>(body),
+        issues_reading::<ShelvesStoppingAtATypeError>(body)
     );
 }
 
@@ -917,8 +917,8 @@ fn a_well_typed_nested_body_breaking_every_rule_is_reported_as_without_collect_t
     }"#;
 
     assert_eq!(
-        violations_found_reading::<Consignment>(body),
-        violations_found_reading::<ConsignmentStoppingAtATypeError>(body)
+        issues_found_reading::<Consignment>(body),
+        issues_found_reading::<ConsignmentStoppingAtATypeError>(body)
     );
 }
 
@@ -934,8 +934,8 @@ fn a_well_typed_nested_body_missing_fields_inside_is_reported_as_without_collect
     }"#;
 
     assert_eq!(
-        violations_found_reading::<Consignment>(body),
-        violations_found_reading::<ConsignmentStoppingAtATypeError>(body)
+        issues_found_reading::<Consignment>(body),
+        issues_found_reading::<ConsignmentStoppingAtATypeError>(body)
     );
 }
 
@@ -949,8 +949,8 @@ fn a_well_typed_nested_body_breaking_a_struct_level_rule_is_reported_as_without_
     }"#;
 
     assert_eq!(
-        violations_found_reading::<Consignment>(body),
-        violations_found_reading::<ConsignmentStoppingAtATypeError>(body)
+        issues_found_reading::<Consignment>(body),
+        issues_found_reading::<ConsignmentStoppingAtATypeError>(body)
     );
 }
 
@@ -967,8 +967,8 @@ fn a_well_typed_nested_body_breaking_no_rule_is_valid_as_without_collect_type_er
     }"#;
 
     assert_eq!(
-        violations_found_reading::<Consignment>(body),
-        violations_found_reading::<ConsignmentStoppingAtATypeError>(body)
+        issues_found_reading::<Consignment>(body),
+        issues_found_reading::<ConsignmentStoppingAtATypeError>(body)
     );
 }
 
@@ -983,7 +983,7 @@ fn failing_fast_on_a_well_typed_nested_body_answers_as_without_collect_type_erro
     }"#;
 
     assert_eq!(
-        fail_fast_violations_reading::<Consignment>(body),
-        fail_fast_violations_reading::<ConsignmentStoppingAtATypeError>(body)
+        fail_fast_issues_reading::<Consignment>(body),
+        fail_fast_issues_reading::<ConsignmentStoppingAtATypeError>(body)
     );
 }

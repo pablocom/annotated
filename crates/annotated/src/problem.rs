@@ -3,9 +3,9 @@ use std::fmt::{self, Display};
 
 use crate::ParamValue;
 
-/// The kind of violation: a stable code, its named parameters and an English message.
+/// The kind of issue: a stable code, its named parameters and an English message.
 ///
-/// - Code that translates messages or reacts to a violation reads [`Problem::code`] and [`Problem::params`]. Each
+/// - Code that translates messages or reacts to an issue reads [`Problem::code`] and [`Problem::params`]. Each
 ///   parameter is a [`ParamValue`]: a number or text.
 /// - People read its [`Display`], the English message.
 ///

@@ -3,7 +3,7 @@
 mod support;
 
 use annotated::{Problem, Validate};
-use support::violations_of;
+use support::issues_of;
 
 #[derive(Validate)]
 #[serde(rename_all = "camelCase")]
@@ -48,7 +48,7 @@ fn order() -> Order {
 }
 
 #[test]
-fn a_nested_struct_s_violations_are_reported_under_its_field() {
+fn a_nested_struct_s_issues_are_reported_under_its_field() {
     let order = Order {
         shipping_address: Address {
             street: String::new(),
@@ -58,13 +58,13 @@ fn a_nested_struct_s_violations_are_reported_under_its_field() {
     };
 
     assert_eq!(
-        violations_of(&order),
+        issues_of(&order),
         ["shippingAddress.street: required", "pickupPoint.street: required"]
     );
 }
 
 #[test]
-fn every_violation_of_a_nested_struct_is_reported() {
+fn every_issue_of_a_nested_struct_is_reported() {
     let order = Order {
         billing_address: Some(Address {
             street: String::new(),
@@ -74,7 +74,7 @@ fn every_violation_of_a_nested_struct_is_reported() {
     };
 
     assert_eq!(
-        violations_of(&order),
+        issues_of(&order),
         [
             "billingAddress.street: required",
             "billingAddress.postalCode: length",
@@ -90,12 +90,12 @@ fn a_nested_struct_in_an_option_is_skipped_when_there_is_none() {
         ..order()
     };
 
-    assert_eq!(violations_of(&order), ["pickupPoint.street: required"]);
+    assert_eq!(issues_of(&order), ["pickupPoint.street: required"]);
 }
 
 #[test]
-fn rules_after_a_nested_struct_with_violations_are_skipped() {
-    assert_eq!(violations_of(&order()), ["pickupPoint.street: required"]);
+fn rules_after_a_nested_struct_with_issues_are_skipped() {
+    assert_eq!(issues_of(&order()), ["pickupPoint.street: required"]);
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn rules_after_a_valid_nested_struct_are_checked() {
         ..order()
     };
 
-    assert_eq!(violations_of(&order), ["pickupPoint: unknown_address"]);
+    assert_eq!(issues_of(&order), ["pickupPoint: unknown_address"]);
 }
 
 #[derive(Validate)]
@@ -117,7 +117,7 @@ struct Delivery {
 }
 
 #[test]
-fn report_all_checks_the_rules_after_a_nested_struct_with_violations() {
+fn report_all_checks_the_rules_after_a_nested_struct_with_issues() {
     let delivery = Delivery {
         drop_off: Address {
             street: String::new(),
@@ -126,7 +126,7 @@ fn report_all_checks_the_rules_after_a_nested_struct_with_violations() {
     };
 
     assert_eq!(
-        violations_of(&delivery),
+        issues_of(&delivery),
         ["dropOff.street: required", "dropOff: unknown_address"]
     );
 }

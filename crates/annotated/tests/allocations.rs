@@ -1,9 +1,9 @@
 //! Validating a valid value allocates nothing, deserializing one allocates only what its fields hold, even when it
-//! collects type errors, and finding a violation allocates little.
+//! collects type errors, and finding an issue allocates little.
 
 use std::hint::black_box;
 
-use annotated::{FoundViolations, Location, Problem, Validate};
+use annotated::{FoundIssues, Location, Problem, Validate};
 
 struct Team {
     members: Vec<Member>,
@@ -14,7 +14,7 @@ struct Member {
 }
 
 impl Validate for Team {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut FoundIssues) {
         let members = at.field("members");
         for (index, member) in self.members.iter().enumerate() {
             member.validate_into(&members.index(index), found);
@@ -23,7 +23,7 @@ impl Validate for Team {
 }
 
 impl Validate for Member {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut FoundIssues) {
         if self.name.is_empty() {
             found.push(&at.field("name"), Problem::custom("empty_name", "is empty"));
         }
@@ -240,11 +240,11 @@ fn deserializing_a_valid_nested_value_allocates_only_its_three_strings_and_its_l
 }
 
 #[test]
-fn violations_appended_to_an_empty_report_are_moved_without_allocating() {
+fn issues_appended_to_an_empty_report_are_moved_without_allocating() {
     let root = Location::root();
-    let mut found_in_a_part = FoundViolations::new();
+    let mut found_in_a_part = FoundIssues::new();
     found_in_a_part.push(&root.field("name"), Problem::custom("empty_name", "is empty"));
-    let mut found = FoundViolations::new();
+    let mut found = FoundIssues::new();
 
     let allocations = allocation_counter::measure(|| {
         found.append(black_box(&mut found_in_a_part));
@@ -254,7 +254,7 @@ fn violations_appended_to_an_empty_report_are_moved_without_allocating() {
 }
 
 #[test]
-fn a_violation_three_segments_deep_allocates_nothing_but_the_report() {
+fn an_issue_three_segments_deep_allocates_nothing_but_the_report() {
     let team = Team {
         members: vec![Member { name: String::new() }],
     };

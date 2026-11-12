@@ -3,7 +3,7 @@
 mod support;
 
 use annotated::{Problem, Validate};
-use support::violations_of;
+use support::issues_of;
 
 #[derive(Validate)]
 struct NewMember {
@@ -40,7 +40,7 @@ fn a_range_on_an_option_checks_the_number_inside() {
         ..new_member()
     };
 
-    assert_eq!(violations_of(&member), ["balance: range"]);
+    assert_eq!(issues_of(&member), ["balance: range"]);
 }
 
 #[derive(Validate)]
@@ -71,7 +71,7 @@ fn email_checks_that_a_field_is_an_email_address() {
         ..contact()
     };
 
-    assert_eq!(violations_of(&contact), ["email: email"]);
+    assert_eq!(issues_of(&contact), ["email: email"]);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn ip_checks_that_a_field_is_an_ip_address() {
         ..contact()
     };
 
-    assert_eq!(violations_of(&contact), ["server: ip"]);
+    assert_eq!(issues_of(&contact), ["server: ip"]);
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn ipv4_checks_that_a_field_is_an_ipv4_address() {
         ..contact()
     };
 
-    assert_eq!(violations_of(&contact), ["gateway: ipv4"]);
+    assert_eq!(issues_of(&contact), ["gateway: ipv4"]);
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn ipv6_checks_that_a_field_is_an_ipv6_address() {
         ..contact()
     };
 
-    assert_eq!(violations_of(&contact), ["resolver: ipv6"]);
+    assert_eq!(issues_of(&contact), ["resolver: ipv6"]);
 }
 
 #[derive(Validate)]
@@ -170,7 +170,7 @@ fn suffix_checks_that_a_field_ends_with_its_value() {
         ..new_product()
     };
 
-    assert_eq!(violations_of(&product), ["manual: suffix"]);
+    assert_eq!(issues_of(&product), ["manual: suffix"]);
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn custom_checks_a_field_with_your_function() {
         ..new_product()
     };
 
-    assert_eq!(violations_of(&product), ["slug: reserved_slug"]);
+    assert_eq!(issues_of(&product), ["slug: reserved_slug"]);
 }
 
 #[cfg(feature = "regex")]

@@ -1,13 +1,13 @@
-//! `validate_fail_fast()` stops at the first violation and answers it alone: the first that `validate()` lists.
+//! `validate_fail_fast()` stops at the first issue and answers it alone: the first that `validate()` lists.
 
 mod support;
 
 use std::collections::BTreeMap;
 
 use annotated::{Problem, Validate};
-use support::{paths_and_codes, violations_of};
+use support::{issues_of, paths_and_codes};
 
-fn fail_fast_violations_of(value: &impl Validate) -> Vec<String> {
+fn fail_fast_issues_of(value: &impl Validate) -> Vec<String> {
     paths_and_codes(value.validate_fail_fast())
 }
 
@@ -34,7 +34,7 @@ fn new_member() -> NewMember {
 }
 
 #[test]
-fn a_value_following_every_rule_has_no_violations_when_failing_fast() {
+fn a_value_following_every_rule_has_no_issues_when_failing_fast() {
     assert_eq!(new_member().validate_fail_fast(), Ok(()));
 }
 
@@ -46,8 +46,8 @@ fn failing_fast_answers_only_the_first_field_that_breaks_a_rule() {
         ..new_member()
     };
 
-    assert_eq!(violations_of(&member), ["email: email", "age: range"]);
-    assert_eq!(fail_fast_violations_of(&member), ["email: email"]);
+    assert_eq!(issues_of(&member), ["email: email", "age: range"]);
+    assert_eq!(fail_fast_issues_of(&member), ["email: email"]);
 }
 
 #[test]
@@ -58,8 +58,8 @@ fn failing_fast_answers_the_value_inside_an_optional_field_when_it_breaks_first(
         ..new_member()
     };
 
-    assert_eq!(violations_of(&member), ["nickname: length", "age: range"]);
-    assert_eq!(fail_fast_violations_of(&member), ["nickname: length"]);
+    assert_eq!(issues_of(&member), ["nickname: length", "age: range"]);
+    assert_eq!(fail_fast_issues_of(&member), ["nickname: length"]);
 }
 
 #[derive(Validate)]
@@ -79,10 +79,10 @@ fn failing_fast_answers_only_the_first_rule_a_field_breaks_under_report_all() {
     };
 
     assert_eq!(
-        violations_of(&profile),
+        issues_of(&profile),
         ["handle: length", "handle: prefix", "tags[0]: length", "tags[0]: prefix"]
     );
-    assert_eq!(fail_fast_violations_of(&profile), ["handle: length"]);
+    assert_eq!(fail_fast_issues_of(&profile), ["handle: length"]);
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn failing_fast_answers_only_the_first_rule_an_element_breaks_under_report_all()
     };
 
     assert_eq!(
-        violations_of(&profile),
+        issues_of(&profile),
         [
             "tags[0]: length",
             "tags[0]: prefix",
@@ -101,7 +101,7 @@ fn failing_fast_answers_only_the_first_rule_an_element_breaks_under_report_all()
             "tags[1]: prefix"
         ]
     );
-    assert_eq!(fail_fast_violations_of(&profile), ["tags[0]: length"]);
+    assert_eq!(fail_fast_issues_of(&profile), ["tags[0]: length"]);
 }
 
 #[derive(Validate)]
@@ -150,7 +150,7 @@ fn order() -> Order {
 }
 
 #[test]
-fn failing_fast_answers_only_the_first_violation_of_a_nested_struct() {
+fn failing_fast_answers_only_the_first_issue_of_a_nested_struct() {
     let order = Order {
         shipping_address: address_without_street_or_postal_code(),
         items: 0,
@@ -158,18 +158,18 @@ fn failing_fast_answers_only_the_first_violation_of_a_nested_struct() {
     };
 
     assert_eq!(
-        violations_of(&order),
+        issues_of(&order),
         [
             "shippingAddress.street: required",
             "shippingAddress.postalCode: length",
             "items: range"
         ]
     );
-    assert_eq!(fail_fast_violations_of(&order), ["shippingAddress.street: required"]);
+    assert_eq!(fail_fast_issues_of(&order), ["shippingAddress.street: required"]);
 }
 
 #[test]
-fn failing_fast_answers_the_first_violation_inside_an_optional_nested_struct() {
+fn failing_fast_answers_the_first_issue_inside_an_optional_nested_struct() {
     let order = Order {
         billing_address: Some(address_without_street_or_postal_code()),
         items: 0,
@@ -177,18 +177,18 @@ fn failing_fast_answers_the_first_violation_inside_an_optional_nested_struct() {
     };
 
     assert_eq!(
-        violations_of(&order),
+        issues_of(&order),
         [
             "billingAddress.street: required",
             "billingAddress.postalCode: length",
             "items: range"
         ]
     );
-    assert_eq!(fail_fast_violations_of(&order), ["billingAddress.street: required"]);
+    assert_eq!(fail_fast_issues_of(&order), ["billingAddress.street: required"]);
 }
 
 #[test]
-fn failing_fast_answers_only_the_first_violation_of_the_structs_in_a_map() {
+fn failing_fast_answers_only_the_first_issue_of_the_structs_in_a_map() {
     let order = Order {
         pickup_points: BTreeMap::from([
             ("depot".to_owned(), address_without_street_or_postal_code()),
@@ -199,7 +199,7 @@ fn failing_fast_answers_only_the_first_violation_of_the_structs_in_a_map() {
     };
 
     assert_eq!(
-        violations_of(&order),
+        issues_of(&order),
         [
             "pickupPoints[depot].street: required",
             "pickupPoints[depot].postalCode: length",
@@ -208,10 +208,7 @@ fn failing_fast_answers_only_the_first_violation_of_the_structs_in_a_map() {
             "items: range"
         ]
     );
-    assert_eq!(
-        fail_fast_violations_of(&order),
-        ["pickupPoints[depot].street: required"]
-    );
+    assert_eq!(fail_fast_issues_of(&order), ["pickupPoints[depot].street: required"]);
 }
 
 #[derive(Validate)]
@@ -230,10 +227,10 @@ fn failing_fast_answers_only_the_first_element_that_breaks_a_rule() {
     };
 
     assert_eq!(
-        violations_of(&post),
+        issues_of(&post),
         ["tags[1]: required", "tags[2]: length", "grid[0][0]: length"]
     );
-    assert_eq!(fail_fast_violations_of(&post), ["tags[1]: required"]);
+    assert_eq!(fail_fast_issues_of(&post), ["tags[1]: required"]);
 }
 
 #[test]
@@ -247,10 +244,10 @@ fn failing_fast_answers_only_the_first_element_of_an_element_that_breaks_a_rule(
     };
 
     assert_eq!(
-        violations_of(&post),
+        issues_of(&post),
         ["grid[0][1]: length", "grid[0][2]: length", "grid[1][0]: length"]
     );
-    assert_eq!(fail_fast_violations_of(&post), ["grid[0][1]: length"]);
+    assert_eq!(fail_fast_issues_of(&post), ["grid[0][1]: length"]);
 }
 
 fn passwords_match(new_password: &NewPassword) -> Result<(), Problem> {
@@ -278,10 +275,10 @@ fn failing_fast_answers_a_field_s_own_rule_before_a_struct_level_rule_at_a_field
     };
 
     assert_eq!(
-        violations_of(&new_password),
+        issues_of(&new_password),
         ["password: length", "repeatedPassword: passwords_differ"]
     );
-    assert_eq!(fail_fast_violations_of(&new_password), ["password: length"]);
+    assert_eq!(fail_fast_issues_of(&new_password), ["password: length"]);
 }
 
 fn youngest_is_not_above_oldest(limits: &AgeLimits) -> Result<(), Problem> {
@@ -317,8 +314,8 @@ fn failing_fast_answers_a_field_s_own_rule_before_a_struct_level_rule_at_the_str
         oldest: 18,
     };
 
-    assert_eq!(violations_of(&limits), ["youngest: range", "youngest_above_oldest"]);
-    assert_eq!(fail_fast_violations_of(&limits), ["youngest: range"]);
+    assert_eq!(issues_of(&limits), ["youngest: range", "youngest_above_oldest"]);
+    assert_eq!(fail_fast_issues_of(&limits), ["youngest: range"]);
 }
 
 #[test]
@@ -328,15 +325,12 @@ fn failing_fast_answers_the_first_struct_level_rule_written_that_breaks() {
         oldest: 15,
     };
 
-    assert_eq!(
-        violations_of(&limits),
-        ["youngest_above_oldest", "oldest: not_an_adult"]
-    );
-    assert_eq!(fail_fast_violations_of(&limits), ["youngest_above_oldest"]);
+    assert_eq!(issues_of(&limits), ["youngest_above_oldest", "oldest: not_an_adult"]);
+    assert_eq!(fail_fast_issues_of(&limits), ["youngest_above_oldest"]);
 }
 
 fn must_not_be_checked(_: &str) -> Result<(), Problem> {
-    panic!("checked after failing fast found its violation")
+    panic!("checked after failing fast found its issue")
 }
 
 #[derive(Validate)]
@@ -348,13 +342,13 @@ struct Signpost {
 }
 
 #[test]
-fn failing_fast_checks_no_field_after_the_violation() {
+fn failing_fast_checks_no_field_after_the_issue() {
     let signpost = Signpost {
         destination: String::new(),
         note: String::new(),
     };
 
-    assert_eq!(fail_fast_violations_of(&signpost), ["destination: required"]);
+    assert_eq!(fail_fast_issues_of(&signpost), ["destination: required"]);
 }
 
 #[derive(Validate)]
@@ -366,13 +360,13 @@ struct Parcel {
 }
 
 #[test]
-fn failing_fast_records_nothing_after_a_nested_struct_found_its_violation() {
+fn failing_fast_records_nothing_after_a_nested_struct_found_its_issue() {
     let parcel = Parcel {
         sender: address_without_street_or_postal_code(),
         note: String::new(),
     };
 
-    assert_eq!(fail_fast_violations_of(&parcel), ["sender.street: required"]);
+    assert_eq!(fail_fast_issues_of(&parcel), ["sender.street: required"]);
 }
 
 #[derive(Validate)]
@@ -382,12 +376,12 @@ struct Route {
 }
 
 #[test]
-fn failing_fast_checks_no_element_after_the_violation() {
+fn failing_fast_checks_no_element_after_the_issue() {
     let route = Route {
         stops: vec![String::new(), "Lyon".to_owned()],
     };
 
-    assert_eq!(fail_fast_violations_of(&route), ["stops[0]: required"]);
+    assert_eq!(fail_fast_issues_of(&route), ["stops[0]: required"]);
 }
 
 #[derive(Validate)]
@@ -399,13 +393,13 @@ struct Journey {
 }
 
 #[test]
-fn failing_fast_checks_no_field_after_a_violation_in_an_element() {
+fn failing_fast_checks_no_field_after_an_issue_in_an_element() {
     let journey = Journey {
         stops: vec![String::new()],
         note: String::new(),
     };
 
-    assert_eq!(fail_fast_violations_of(&journey), ["stops[0]: required"]);
+    assert_eq!(fail_fast_issues_of(&journey), ["stops[0]: required"]);
 }
 
 #[derive(Validate)]
@@ -416,10 +410,10 @@ struct Poster {
 }
 
 #[test]
-fn failing_fast_checks_no_rule_after_the_violation_under_report_all() {
+fn failing_fast_checks_no_rule_after_the_issue_under_report_all() {
     let poster = Poster { title: String::new() };
 
-    assert_eq!(fail_fast_violations_of(&poster), ["title: required"]);
+    assert_eq!(fail_fast_issues_of(&poster), ["title: required"]);
 }
 
 #[derive(Validate)]
@@ -430,10 +424,10 @@ struct Playlist {
 }
 
 #[test]
-fn failing_fast_checks_no_rule_of_an_element_after_the_violation_under_report_all() {
+fn failing_fast_checks_no_rule_of_an_element_after_the_issue_under_report_all() {
     let playlist = Playlist {
         tracks: vec![String::new()],
     };
 
-    assert_eq!(fail_fast_violations_of(&playlist), ["tracks[0]: required"]);
+    assert_eq!(fail_fast_issues_of(&playlist), ["tracks[0]: required"]);
 }

@@ -7,22 +7,22 @@ use crate::{ParamValue, Path, Problem};
 /// wrong type.
 ///
 /// ```
-/// use annotated::{Path, Problem, Violation};
+/// use annotated::{Issue, Path, Problem};
 ///
 /// let reserved_name = Problem::custom("reserved_name", "is reserved").with_param("name", "admin");
-/// let violation = Violation::new(Path::root().field("name"), reserved_name).with_message("{name} is taken");
+/// let issue = Issue::new(Path::root().field("name"), reserved_name).with_message("{name} is taken");
 ///
-/// assert_eq!(violation.to_string(), "name: admin is taken");
+/// assert_eq!(issue.to_string(), "name: admin is taken");
 /// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct Violation {
+pub struct Issue {
     path: Path,
     problem: Problem,
     message_override: Option<Cow<'static, str>>,
 }
 
-impl Violation {
-    /// A violation of `problem` at `path`, with the problem's own message.
+impl Issue {
+    /// An issue at `path`: `problem`, with the problem's own message.
     #[must_use]
     pub fn new(path: Path, problem: Problem) -> Self {
         Self {
@@ -32,7 +32,7 @@ impl Violation {
         }
     }
 
-    /// This violation, with `message` in place of the problem's own message.
+    /// This issue, with `message` in place of the problem's own message.
     ///
     /// `{name}` in the message is replaced by the problem's parameter `name`. Write `{{` and `}}` for literal braces.
     #[must_use]
@@ -47,7 +47,7 @@ impl Violation {
         &self.path
     }
 
-    /// What kind of violation it is.
+    /// What kind of issue it is.
     #[must_use]
     pub fn problem(&self) -> &Problem {
         &self.problem
@@ -94,7 +94,7 @@ fn param_placeholder_at_start_of<'text, 'params>(
     Some((value, after))
 }
 
-impl Display for Violation {
+impl Display for Issue {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.path.is_root() {
             return formatter.write_str(&self.message());
@@ -112,66 +112,66 @@ mod tests {
     }
 
     #[test]
-    fn a_violation_s_message_is_its_problem_s_message() {
-        let violation = Violation::new(Path::root().field("name"), reserved_name());
+    fn an_issue_s_message_is_its_problem_s_message() {
+        let issue = Issue::new(Path::root().field("name"), reserved_name());
 
-        assert_eq!(violation.message(), "is reserved");
+        assert_eq!(issue.message(), "is reserved");
     }
 
     #[test]
     fn a_message_override_replaces_the_problem_s_message() {
-        let violation = Violation::new(Path::root().field("name"), reserved_name()).with_message("is taken");
+        let issue = Issue::new(Path::root().field("name"), reserved_name()).with_message("is taken");
 
-        assert_eq!(violation.message(), "is taken");
+        assert_eq!(issue.message(), "is taken");
     }
 
     #[test]
     fn a_placeholder_in_a_message_override_is_filled_from_the_problem_s_params() {
-        let violation = Violation::new(Path::root().field("name"), reserved_name()).with_message("{name} is taken");
+        let issue = Issue::new(Path::root().field("name"), reserved_name()).with_message("{name} is taken");
 
-        assert_eq!(violation.message(), "admin is taken");
+        assert_eq!(issue.message(), "admin is taken");
     }
 
     #[test]
     fn a_placeholder_of_a_number_param_is_filled_with_the_number() {
         let too_many_guests = Problem::custom("too_many_guests", "has too many guests").with_param("max", 8);
-        let violation = Violation::new(Path::root().field("guests"), too_many_guests).with_message("{max} at most");
+        let issue = Issue::new(Path::root().field("guests"), too_many_guests).with_message("{max} at most");
 
-        assert_eq!(violation.message(), "8 at most");
+        assert_eq!(issue.message(), "8 at most");
     }
 
     #[test]
     fn a_placeholder_naming_no_param_is_left_as_written() {
-        let violation = Violation::new(Path::root().field("name"), reserved_name()).with_message("{nickname} is taken");
+        let issue = Issue::new(Path::root().field("name"), reserved_name()).with_message("{nickname} is taken");
 
-        assert_eq!(violation.message(), "{nickname} is taken");
+        assert_eq!(issue.message(), "{nickname} is taken");
     }
 
     #[test]
     fn doubled_braces_in_a_message_override_are_literal_braces() {
-        let violation = Violation::new(Path::root().field("name"), reserved_name()).with_message("{{name}} is {name}");
+        let issue = Issue::new(Path::root().field("name"), reserved_name()).with_message("{{name}} is {name}");
 
-        assert_eq!(violation.message(), "{name} is admin");
+        assert_eq!(issue.message(), "{name} is admin");
     }
 
     #[test]
     fn an_unclosed_brace_in_a_message_override_is_left_as_written() {
-        let violation = Violation::new(Path::root().field("name"), reserved_name()).with_message("{name is taken");
+        let issue = Issue::new(Path::root().field("name"), reserved_name()).with_message("{name is taken");
 
-        assert_eq!(violation.message(), "{name is taken");
+        assert_eq!(issue.message(), "{name is taken");
     }
 
     #[test]
-    fn a_violation_reads_as_its_path_and_message() {
-        let violation = Violation::new(Path::root().field("members").index(1).field("name"), reserved_name());
+    fn an_issue_reads_as_its_path_and_message() {
+        let issue = Issue::new(Path::root().field("members").index(1).field("name"), reserved_name());
 
-        assert_eq!(violation.to_string(), "members[1].name: is reserved");
+        assert_eq!(issue.to_string(), "members[1].name: is reserved");
     }
 
     #[test]
-    fn a_violation_at_the_root_reads_as_its_message_alone() {
-        let violation = Violation::new(Path::root(), reserved_name());
+    fn an_issue_at_the_root_reads_as_its_message_alone() {
+        let issue = Issue::new(Path::root(), reserved_name());
 
-        assert_eq!(violation.to_string(), "is reserved");
+        assert_eq!(issue.to_string(), "is reserved");
     }
 }

@@ -3,7 +3,7 @@
 mod support;
 
 use annotated::{Problem, Validate};
-use support::violations_of;
+use support::issues_of;
 
 fn passwords_match(new_password: &NewPassword) -> Result<(), Problem> {
     if new_password.repeated_password != new_password.password {
@@ -30,7 +30,7 @@ fn new_password() -> NewPassword {
 }
 
 #[test]
-fn a_struct_following_its_struct_level_rule_has_no_violations() {
+fn a_struct_following_its_struct_level_rule_has_no_issues() {
     assert_eq!(new_password().validate(), Ok(()));
 }
 
@@ -41,7 +41,7 @@ fn a_struct_level_rule_naming_a_field_reports_at_it_by_its_serde_name() {
         ..new_password()
     };
 
-    assert_eq!(violations_of(&new_password), ["repeatedPassword: passwords_differ"]);
+    assert_eq!(issues_of(&new_password), ["repeatedPassword: passwords_differ"]);
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn struct_level_rules_are_checked_after_every_field() {
     };
 
     assert_eq!(
-        violations_of(&new_password),
+        issues_of(&new_password),
         ["password: length", "repeatedPassword: passwords_differ"]
     );
 }
@@ -64,7 +64,7 @@ fn a_struct_level_rule_at_a_field_is_skipped_when_the_field_breaks_its_own_rules
         ..new_password()
     };
 
-    assert_eq!(violations_of(&new_password), ["repeatedPassword: required"]);
+    assert_eq!(issues_of(&new_password), ["repeatedPassword: required"]);
 }
 
 fn account_passwords_match(new_account: &NewAccount) -> Result<(), Problem> {
@@ -90,7 +90,7 @@ fn a_struct_level_rule_at_a_field_is_skipped_when_the_field_breaks_a_later_rule_
         repeated_password: "horse".to_owned(),
     };
 
-    assert_eq!(violations_of(&new_account), ["repeatedPassword: length"]);
+    assert_eq!(issues_of(&new_account), ["repeatedPassword: length"]);
 }
 
 fn last_night_follows_the_first(stay: &Stay) -> Result<(), Problem> {
@@ -123,9 +123,9 @@ fn stay_ending_before_it_starts() -> Stay {
 
 #[test]
 fn a_struct_level_rule_reports_at_the_struct_itself() {
-    let violations = stay_ending_before_it_starts().validate().unwrap_err();
+    let issues = stay_ending_before_it_starts().validate().unwrap_err();
 
-    assert_eq!(violations.to_string(), "must end after it starts");
+    assert_eq!(issues.to_string(), "must end after it starts");
 }
 
 #[derive(Validate)]
@@ -154,7 +154,7 @@ fn a_struct_level_rule_of_a_nested_struct_reports_at_its_field() {
         ..booking()
     };
 
-    assert_eq!(violations_of(&booking), ["stay: ends_before_it_starts"]);
+    assert_eq!(issues_of(&booking), ["stay: ends_before_it_starts"]);
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn a_struct_level_rule_of_every_element_reports_at_its_index() {
         ..booking()
     };
 
-    assert_eq!(violations_of(&booking), ["extraStays[1]: ends_before_it_starts"]);
+    assert_eq!(issues_of(&booking), ["extraStays[1]: ends_before_it_starts"]);
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn a_struct_level_rule_of_a_nested_struct_naming_a_field_reports_under_the_neste
     };
 
     assert_eq!(
-        violations_of(&booking),
+        issues_of(&booking),
         ["guestPassword.repeatedPassword: passwords_differ"]
     );
 }
@@ -201,13 +201,13 @@ struct Trip {
 }
 
 #[test]
-fn a_struct_level_rule_at_a_field_is_skipped_when_violations_are_found_under_it() {
+fn a_struct_level_rule_at_a_field_is_skipped_when_issues_are_found_under_it() {
     let trip = Trip {
         first_stay: stay(),
         second_stay: stay_ending_before_it_starts(),
     };
 
-    assert_eq!(violations_of(&trip), ["secondStay: ends_before_it_starts"]);
+    assert_eq!(issues_of(&trip), ["secondStay: ends_before_it_starts"]);
 }
 
 fn ends_after_it_starts(starts_at: u16, ends_at: u16) -> Result<(), Problem> {
@@ -263,14 +263,14 @@ fn every_struct_level_rule_is_checked_in_the_order_written() {
         ..gig()
     };
 
-    assert_eq!(violations_of(&gig), ["endsAt: too_short", "doors: doors_open_too_late"]);
+    assert_eq!(issues_of(&gig), ["endsAt: too_short", "doors: doors_open_too_late"]);
 }
 
 #[test]
 fn the_first_struct_level_rule_a_field_breaks_stops_its_later_ones() {
     let gig = Gig { ends_at: 1930, ..gig() };
 
-    assert_eq!(violations_of(&gig), ["endsAt: ends_before_it_starts"]);
+    assert_eq!(issues_of(&gig), ["endsAt: ends_before_it_starts"]);
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn report_all_beside_a_struct_level_rule_still_reports_every_rule_a_field_breaks
         ..festival()
     };
 
-    assert_eq!(violations_of(&festival), ["title: required", "title: length"]);
+    assert_eq!(issues_of(&festival), ["title: required", "title: length"]);
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn report_all_checks_every_struct_level_rule_at_a_field_whatever_the_field_broke
     };
 
     assert_eq!(
-        violations_of(&festival),
+        issues_of(&festival),
         ["endsAt: range", "endsAt: ends_before_it_starts", "endsAt: too_short"]
     );
 }
@@ -349,7 +349,7 @@ fn a_struct_level_rule_takes_a_closure() {
         oldest: 18,
     };
 
-    assert_eq!(violations_of(&limits), ["youngest_above_oldest"]);
+    assert_eq!(issues_of(&limits), ["youngest_above_oldest"]);
 }
 
 #[test]
@@ -359,5 +359,5 @@ fn a_struct_level_rule_at_the_struct_itself_runs_whatever_the_fields_broke() {
         oldest: 18,
     };
 
-    assert_eq!(violations_of(&limits), ["youngest: range", "youngest_above_oldest"]);
+    assert_eq!(issues_of(&limits), ["youngest: range", "youngest_above_oldest"]);
 }

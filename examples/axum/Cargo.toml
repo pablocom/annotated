@@ -1,6 +1,6 @@
 [package]
 name = "annotated-example-axum"
-description = "An axum extractor that responds with every violation in a JSON body as RFC 9457 problem details"
+description = "An axum extractor that responds with every issue in a JSON body as RFC 9457 problem details"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

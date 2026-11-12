@@ -3,7 +3,7 @@
 mod support;
 
 use annotated::Validate;
-use support::violations_of;
+use support::issues_of;
 
 #[derive(Validate)]
 struct NewMember {
@@ -21,7 +21,7 @@ fn new_member() -> NewMember {
 }
 
 #[test]
-fn a_value_following_every_rule_has_no_violations() {
+fn a_value_following_every_rule_has_no_issues() {
     assert_eq!(new_member().validate(), Ok(()));
 }
 
@@ -32,7 +32,7 @@ fn a_field_breaking_a_rule_is_reported_at_its_name() {
         ..new_member()
     };
 
-    assert_eq!(violations_of(&member), ["nickname: length"]);
+    assert_eq!(issues_of(&member), ["nickname: length"]);
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn every_field_is_checked_in_the_order_declared() {
         nickname: "L".to_owned(),
     };
 
-    assert_eq!(violations_of(&member), ["full_name: required", "nickname: length"]);
+    assert_eq!(issues_of(&member), ["full_name: required", "nickname: length"]);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn the_first_rule_a_field_breaks_stops_its_other_rules() {
         ..new_member()
     };
 
-    assert_eq!(violations_of(&member), ["nickname: required"]);
+    assert_eq!(issues_of(&member), ["nickname: required"]);
 }
 
 #[derive(Validate)]
@@ -81,7 +81,7 @@ fn a_struct_reporting_all_reports_every_rule_a_field_breaks() {
         nickname: String::new(),
     };
 
-    assert_eq!(violations_of(&new_nickname), ["nickname: required", "nickname: length"]);
+    assert_eq!(issues_of(&new_nickname), ["nickname: required", "nickname: length"]);
 }
 
 #[derive(Validate)]
@@ -117,7 +117,7 @@ fn a_message_quotes_the_problem_s_params() {
 fn a_message_keeps_the_problem_s_code() {
     let project = NewProject { name: String::new() };
 
-    assert_eq!(violations_of(&project), ["name: required"]);
+    assert_eq!(issues_of(&project), ["name: required"]);
 }
 
 #[derive(Validate)]
@@ -188,7 +188,7 @@ struct Page<T> {
 fn a_generic_struct_is_checked_like_any_other() {
     let page = Page { items: vec![1, 2, 3] };
 
-    assert_eq!(violations_of(&page), ["items: length"]);
+    assert_eq!(issues_of(&page), ["items: length"]);
 }
 
 #[derive(Validate)]

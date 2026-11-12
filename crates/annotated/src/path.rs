@@ -1,9 +1,9 @@
 use std::fmt::{self, Debug, Display};
 use std::hash::{Hash, Hasher};
 
-/// Where in a value a violation was found: the segments that lead from the validated value down to it.
+/// Where in a value an issue was found: the segments that lead from the validated value down to it.
 ///
-/// The root path has no segments and stands for the validated value itself. A violation of a struct-level rule on that
+/// The root path has no segments and stands for the validated value itself. An issue a struct-level rule finds on that
 /// value has the root path. [`Display`] prints a path in dotted form, and [`Path::json_pointer`] returns it as an RFC
 /// 6901 JSON Pointer.
 ///

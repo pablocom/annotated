@@ -1,9 +1,9 @@
-//! `annotated::json` reads JSON text or bytes collecting every violation, and refuses trailing characters as
+//! `annotated::json` reads JSON text or bytes collecting every issue, and refuses trailing characters as
 //! `serde_json` does.
 
 #![cfg(feature = "json")]
 
-use annotated::{Deserialize, ParamValue, Path, Problem, Validate, Violation};
+use annotated::{Deserialize, Issue, ParamValue, Path, Problem, Validate};
 
 #[derive(Validate, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -32,8 +32,8 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 
     let error = annotated::json::from_str::<NewMember>(body).unwrap_err();
 
-    let [blank_name, missing_email, too_young] = error.violations() else {
-        panic!("expected three violations, got {error:?}");
+    let [blank_name, missing_email, too_young] = error.issues() else {
+        panic!("expected three issues, got {error:?}");
     };
     assert_eq!(blank_name.path(), &Path::root().field("fullName"));
     assert_eq!(blank_name.problem(), &Problem::Required);
@@ -61,7 +61,7 @@ fn bytes_breaking_no_rule_are_read() {
 }
 
 #[test]
-fn every_violation_in_bytes_is_answered() {
+fn every_issue_in_bytes_is_answered() {
     let body = br#"{ "fullName": "Alex Morgan", "age": 12 }"#;
 
     let error = annotated::json::from_slice::<NewMember>(body).unwrap_err();
@@ -94,32 +94,32 @@ fn trailing_characters_are_the_format_s_error_even_after_a_value_breaking_rules(
     let error = annotated::json::from_str::<NewMember>(body).unwrap_err();
 
     assert_eq!(
-        (error.to_string(), error.violations()),
+        (error.to_string(), error.issues()),
         ("trailing characters at line 1 column 31".to_owned(), [].as_slice())
     );
 }
 
 #[test]
-fn failing_fast_answers_only_the_first_violation_in_text() {
+fn failing_fast_answers_only_the_first_issue_in_text() {
     let body = r#"{ "fullName": "", "age": 12 }"#;
 
     let error = annotated::json::from_str_fail_fast::<NewMember>(body).unwrap_err();
 
     assert_eq!(
-        error.violations(),
-        [Violation::new(Path::root().field("fullName"), Problem::Required)]
+        error.issues(),
+        [Issue::new(Path::root().field("fullName"), Problem::Required)]
     );
 }
 
 #[test]
-fn failing_fast_answers_only_the_first_violation_in_bytes() {
+fn failing_fast_answers_only_the_first_issue_in_bytes() {
     let body = br#"{ "fullName": "", "age": 12 }"#;
 
     let error = annotated::json::from_slice_fail_fast::<NewMember>(body).unwrap_err();
 
     assert_eq!(
-        error.violations(),
-        [Violation::new(Path::root().field("fullName"), Problem::Required)]
+        error.issues(),
+        [Issue::new(Path::root().field("fullName"), Problem::Required)]
     );
 }
 

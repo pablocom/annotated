@@ -88,7 +88,7 @@ fn an_unknown_field_named_in_bytes_or_by_index_is_ignored() {
 }
 
 #[test]
-fn violations_are_found_whatever_way_the_fields_are_named() {
+fn issues_are_found_whatever_way_the_fields_are_named() {
     assert_de_tokens_error::<NewMember>(
         &[
             Token::Struct { name: "Member", len: 2 },

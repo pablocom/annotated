@@ -3,7 +3,7 @@
 mod support;
 
 use annotated::Validate;
-use support::violations_of;
+use support::issues_of;
 
 mod house_rules {
     use annotated::{Problem, Rule};
@@ -87,7 +87,7 @@ fn new_product() -> NewProduct {
 }
 
 #[test]
-fn a_value_following_rules_of_your_own_has_no_violations() {
+fn a_value_following_rules_of_your_own_has_no_issues() {
     assert_eq!(new_product().validate(), Ok(()));
 }
 
@@ -98,7 +98,7 @@ fn a_rule_named_by_a_path_is_the_one_the_path_names() {
         ..new_product()
     };
 
-    assert_eq!(violations_of(&product), ["slug: lowercase"]);
+    assert_eq!(issues_of(&product), ["slug: lowercase"]);
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn a_value_after_an_equals_sign_is_passed_to_the_rule_s_constructor() {
         ..new_product()
     };
 
-    assert_eq!(violations_of(&product), ["pack_size: divisible_by"]);
+    assert_eq!(issues_of(&product), ["pack_size: divisible_by"]);
 }
 
 #[test]

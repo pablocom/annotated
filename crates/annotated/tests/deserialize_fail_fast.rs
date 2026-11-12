@@ -1,15 +1,15 @@
-//! `from_deserializer_fail_fast` answers only the first violation: the first that `from_deserializer` lists.
+//! `from_deserializer_fail_fast` answers only the first issue: the first that `from_deserializer` lists.
 
 #![cfg(feature = "serde")]
 
-use annotated::{Deserialize, DeserializeError, Problem, Violation};
+use annotated::{Deserialize, DeserializeError, Issue, Problem};
 
-fn violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
+fn issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
     let outcome = annotated::from_deserializer::<T, _>(&mut serde_json::Deserializer::from_str(json));
     paths_and_codes(outcome)
 }
 
-fn fail_fast_violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
+fn fail_fast_issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
     let outcome = annotated::from_deserializer_fail_fast::<T, _>(&mut serde_json::Deserializer::from_str(json));
     paths_and_codes(outcome)
 }
@@ -17,17 +17,17 @@ fn fail_fast_violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec
 fn paths_and_codes<T>(outcome: Result<T, DeserializeError<serde_json::Error>>) -> Vec<String> {
     match outcome {
         Ok(_) => Vec::new(),
-        Err(DeserializeError::Violations(violations)) => violations.iter().map(path_and_code).collect(),
-        Err(error) => panic!("expected violations, got the format's error: {error}"),
+        Err(DeserializeError::Issues(issues)) => issues.iter().map(path_and_code).collect(),
+        Err(error) => panic!("expected issues, got the format's error: {error}"),
     }
 }
 
-fn path_and_code(violation: &Violation) -> String {
-    let code = violation.problem().code();
-    if violation.path().is_root() {
+fn path_and_code(issue: &Issue) -> String {
+    let code = issue.problem().code();
+    if issue.path().is_root() {
         return code.to_owned();
     }
-    format!("{}: {code}", violation.path())
+    format!("{}: {code}", issue.path())
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
@@ -59,37 +59,37 @@ fn a_body_breaking_no_rule_is_deserialized_when_failing_fast() {
 }
 
 #[test]
-fn failing_fast_answers_only_the_first_violation_of_the_full_report() {
+fn failing_fast_answers_only_the_first_issue_of_the_full_report() {
     let body = r#"{ "fullName": "  ", "age": 12 }"#;
 
     assert_eq!(
-        violations_reading::<NewMember>(body),
+        issues_reading::<NewMember>(body),
         ["fullName: required", "email: missing", "age: range"]
     );
-    assert_eq!(fail_fast_violations_reading::<NewMember>(body), ["fullName: required"]);
+    assert_eq!(fail_fast_issues_reading::<NewMember>(body), ["fullName: required"]);
 }
 
 #[test]
 fn failing_fast_answers_a_missing_field_declared_before_a_broken_rule() {
     let body = r#"{ "fullName": "Alex Morgan", "age": 12 }"#;
 
-    assert_eq!(violations_reading::<NewMember>(body), ["email: missing", "age: range"]);
-    assert_eq!(fail_fast_violations_reading::<NewMember>(body), ["email: missing"]);
+    assert_eq!(issues_reading::<NewMember>(body), ["email: missing", "age: range"]);
+    assert_eq!(fail_fast_issues_reading::<NewMember>(body), ["email: missing"]);
 }
 
 #[test]
 fn failing_fast_answers_a_broken_rule_declared_before_a_missing_field() {
     let body = r#"{ "fullName": "Alex Morgan", "email": "alex" }"#;
 
-    assert_eq!(violations_reading::<NewMember>(body), ["email: email", "age: missing"]);
-    assert_eq!(fail_fast_violations_reading::<NewMember>(body), ["email: email"]);
+    assert_eq!(issues_reading::<NewMember>(body), ["email: email", "age: missing"]);
+    assert_eq!(fail_fast_issues_reading::<NewMember>(body), ["email: email"]);
 }
 
 #[test]
-fn failing_fast_answers_the_first_violation_in_declaration_order_whatever_order_fields_are_read_in() {
+fn failing_fast_answers_the_first_issue_in_declaration_order_whatever_order_fields_are_read_in() {
     let body = r#"{ "age": 12, "fullName": "" }"#;
 
-    assert_eq!(fail_fast_violations_reading::<NewMember>(body), ["fullName: required"]);
+    assert_eq!(fail_fast_issues_reading::<NewMember>(body), ["fullName: required"]);
 }
 
 #[test]
@@ -114,8 +114,8 @@ struct Handle {
 fn failing_fast_answers_only_the_first_rule_a_field_breaks_under_report_all() {
     let body = r#"{ "handle": "a" }"#;
 
-    assert_eq!(violations_reading::<Handle>(body), ["handle: length", "handle: prefix"]);
-    assert_eq!(fail_fast_violations_reading::<Handle>(body), ["handle: length"]);
+    assert_eq!(issues_reading::<Handle>(body), ["handle: length", "handle: prefix"]);
+    assert_eq!(fail_fast_issues_reading::<Handle>(body), ["handle: length"]);
 }
 
 fn passwords_match(new_password: &NewPassword) -> Result<(), Problem> {
@@ -135,29 +135,29 @@ struct NewPassword {
 }
 
 #[test]
-fn failing_fast_runs_no_struct_level_rule_after_the_first_violation() {
+fn failing_fast_runs_no_struct_level_rule_after_the_first_issue() {
     let body = r#"{ "password": "horse", "repeatedPassword": "battery" }"#;
 
     assert_eq!(
-        violations_reading::<NewPassword>(body),
+        issues_reading::<NewPassword>(body),
         ["password: length", "passwords_differ"]
     );
-    assert_eq!(fail_fast_violations_reading::<NewPassword>(body), ["password: length"]);
+    assert_eq!(fail_fast_issues_reading::<NewPassword>(body), ["password: length"]);
 }
 
 #[test]
 fn failing_fast_answers_a_struct_level_rule_when_it_breaks_first() {
     let body = r#"{ "password": "correct horse", "repeatedPassword": "battery" }"#;
 
-    assert_eq!(fail_fast_violations_reading::<NewPassword>(body), ["passwords_differ"]);
+    assert_eq!(fail_fast_issues_reading::<NewPassword>(body), ["passwords_differ"]);
 }
 
 fn must_not_be_checked(_: &str) -> Result<(), Problem> {
-    panic!("checked after failing fast found its violation")
+    panic!("checked after failing fast found its issue")
 }
 
 fn signpost_must_not_be_checked(_: &Signpost) -> Result<(), Problem> {
-    panic!("checked after failing fast found its violation")
+    panic!("checked after failing fast found its issue")
 }
 
 #[derive(Deserialize, Debug)]
@@ -175,17 +175,14 @@ struct Signpost {
 fn failing_fast_checks_nothing_after_a_missing_field() {
     let body = r#"{ "note": "" }"#;
 
-    assert_eq!(fail_fast_violations_reading::<Signpost>(body), ["destination: missing"]);
+    assert_eq!(fail_fast_issues_reading::<Signpost>(body), ["destination: missing"]);
 }
 
 #[test]
 fn failing_fast_checks_nothing_after_a_broken_rule() {
     let body = r#"{ "destination": "", "note": "" }"#;
 
-    assert_eq!(
-        fail_fast_violations_reading::<Signpost>(body),
-        ["destination: required"]
-    );
+    assert_eq!(fail_fast_issues_reading::<Signpost>(body), ["destination: required"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -206,17 +203,14 @@ struct Team {
 }
 
 #[test]
-fn failing_fast_answers_a_violation_inside_the_second_element_of_a_list_before_a_later_missing_field() {
+fn failing_fast_answers_an_issue_inside_the_second_element_of_a_list_before_a_later_missing_field() {
     let body = r#"{ "members": [{ "name": "Alex" }, { "name": "" }] }"#;
 
     assert_eq!(
-        violations_reading::<Team>(body),
+        issues_reading::<Team>(body),
         ["members[1].name: required", "name: missing"]
     );
-    assert_eq!(
-        fail_fast_violations_reading::<Team>(body),
-        ["members[1].name: required"]
-    );
+    assert_eq!(fail_fast_issues_reading::<Team>(body), ["members[1].name: required"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -227,11 +221,11 @@ struct Crew {
 }
 
 #[test]
-fn failing_fast_answers_a_rule_a_list_breaks_before_the_violations_inside_its_elements() {
+fn failing_fast_answers_a_rule_a_list_breaks_before_the_issues_inside_its_elements() {
     let body = r#"{ "members": [{ "name": "" }, { "name": "" }] }"#;
 
-    assert_eq!(violations_reading::<Crew>(body), ["members: length"]);
-    assert_eq!(fail_fast_violations_reading::<Crew>(body), ["members: length"]);
+    assert_eq!(issues_reading::<Crew>(body), ["members: length"]);
+    assert_eq!(fail_fast_issues_reading::<Crew>(body), ["members: length"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -257,12 +251,12 @@ struct Shipment {
 }
 
 #[test]
-fn failing_fast_answers_a_rule_a_nested_value_breaks_before_the_violations_inside_it() {
+fn failing_fast_answers_a_rule_a_nested_value_breaks_before_the_issues_inside_it() {
     let body = r#"{ "destination": { "street": "", "postalCode": "28013" } }"#;
 
-    assert_eq!(violations_reading::<Shipment>(body), ["destination: restricted_area"]);
+    assert_eq!(issues_reading::<Shipment>(body), ["destination: restricted_area"]);
     assert_eq!(
-        fail_fast_violations_reading::<Shipment>(body),
+        fail_fast_issues_reading::<Shipment>(body),
         ["destination: restricted_area"]
     );
 }
@@ -279,21 +273,18 @@ struct Parcel {
 }
 
 #[test]
-fn failing_fast_answers_the_first_violation_inside_a_nested_struct() {
+fn failing_fast_answers_the_first_issue_inside_a_nested_struct() {
     let body = r#"{ "sender": { "street": "", "postalCode": "1" }, "weightInGrams": 0 }"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         [
             "sender.street: required",
             "sender.postalCode: length",
             "weightInGrams: range"
         ]
     );
-    assert_eq!(
-        fail_fast_violations_reading::<Parcel>(body),
-        ["sender.street: required"]
-    );
+    assert_eq!(fail_fast_issues_reading::<Parcel>(body), ["sender.street: required"]);
 }
 
 #[test]
@@ -301,14 +292,14 @@ fn failing_fast_answers_a_field_missing_inside_a_nested_struct() {
     let body = r#"{ "weightInGrams": 0, "sender": { "postalCode": "1" } }"#;
 
     assert_eq!(
-        violations_reading::<Parcel>(body),
+        issues_reading::<Parcel>(body),
         [
             "sender.street: missing",
             "sender.postalCode: length",
             "weightInGrams: range"
         ]
     );
-    assert_eq!(fail_fast_violations_reading::<Parcel>(body), ["sender.street: missing"]);
+    assert_eq!(fail_fast_issues_reading::<Parcel>(body), ["sender.street: missing"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -326,15 +317,15 @@ struct Stock {
 }
 
 #[test]
-fn failing_fast_answers_the_first_violation_of_a_map_s_values_in_the_order_of_their_keys() {
+fn failing_fast_answers_the_first_issue_of_a_map_s_values_in_the_order_of_their_keys() {
     let body = r#"{ "stock": { "sku-2": { "quantity": 300 }, "sku-1": { "quantity": 300 } } }"#;
 
     assert_eq!(
-        violations_reading::<Warehouse>(body),
+        issues_reading::<Warehouse>(body),
         ["stock[sku-1].quantity: range", "stock[sku-2].quantity: range"]
     );
     assert_eq!(
-        fail_fast_violations_reading::<Warehouse>(body),
+        fail_fast_issues_reading::<Warehouse>(body),
         ["stock[sku-1].quantity: range"]
     );
 }
@@ -347,14 +338,14 @@ struct Pickups {
 }
 
 #[test]
-fn failing_fast_answers_an_element_breaking_a_rule_before_one_with_violations_inside() {
+fn failing_fast_answers_an_element_breaking_a_rule_before_one_with_issues_inside() {
     let body = r#"{ "members": [{ "name": "Alex" }, null, { "name": "" }] }"#;
 
     assert_eq!(
-        violations_reading::<Pickups>(body),
+        issues_reading::<Pickups>(body),
         ["members[1]: required", "members[2].name: required"]
     );
-    assert_eq!(fail_fast_violations_reading::<Pickups>(body), ["members[1]: required"]);
+    assert_eq!(fail_fast_issues_reading::<Pickups>(body), ["members[1]: required"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -368,11 +359,11 @@ struct Route {
 }
 
 #[test]
-fn failing_fast_checks_nothing_after_a_violation_inside_a_nested_struct() {
+fn failing_fast_checks_nothing_after_an_issue_inside_a_nested_struct() {
     let body = r#"{ "first_stop": { "destination": "", "note": "" }, "last_stop": "" }"#;
 
     assert_eq!(
-        fail_fast_violations_reading::<Route>(body),
+        fail_fast_issues_reading::<Route>(body),
         ["first_stop.destination: required"]
     );
 }
@@ -382,13 +373,13 @@ fn failing_fast_checks_nothing_after_a_nested_struct_that_could_not_be_built() {
     let body = r#"{ "first_stop": { "note": "" }, "last_stop": "" }"#;
 
     assert_eq!(
-        fail_fast_violations_reading::<Route>(body),
+        fail_fast_issues_reading::<Route>(body),
         ["first_stop.destination: missing"]
     );
 }
 
 fn member_must_not_be_checked(_: &Member) -> Result<(), Problem> {
-    panic!("checked after failing fast found its violation")
+    panic!("checked after failing fast found its issue")
 }
 
 #[derive(Deserialize, Debug)]
@@ -399,11 +390,8 @@ struct Squad {
 }
 
 #[test]
-fn failing_fast_checks_no_element_after_one_with_a_violation_inside() {
+fn failing_fast_checks_no_element_after_one_with_an_issue_inside() {
     let body = r#"{ "members": [{ "name": "" }, { "name": "Alex" }] }"#;
 
-    assert_eq!(
-        fail_fast_violations_reading::<Squad>(body),
-        ["members[0].name: required"]
-    );
+    assert_eq!(fail_fast_issues_reading::<Squad>(body), ["members[0].name: required"]);
 }

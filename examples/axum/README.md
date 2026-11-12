@@ -1,9 +1,9 @@
-# Returning violations from axum
+# Returning issues from axum
 
 [`src/lib.rs`](src/lib.rs) is an axum extractor, `ValidJson<T>`, to copy into your app.
 
 - It reads a JSON body with `annotated::json::from_slice`.
-- When the body has violations, it responds with 422 and [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, which list every violation's JSON Pointer, code, params and message.
+- When the body has issues, it responds with 422 and [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, which list every issue's JSON Pointer, code, params and message.
 - When it can't read the request at all, it rejects it the way axum's own `Json` does.
 
 [`src/main.rs`](src/main.rs) uses the extractor to accept new members. Run it with `cargo run -p annotated-example-axum`, then send it a body that breaks the rules:

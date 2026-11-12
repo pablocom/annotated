@@ -215,7 +215,7 @@ impl ValidatedField<'_> {
         !nested_rules_in(&self.rules).is_empty()
     }
 
-    pub fn joins_nested_violations_element_by_element(&self) -> bool {
+    pub fn joins_nested_issues_element_by_element(&self) -> bool {
         self.has_nested_values() && !self.rules.iter().any(FieldRule::checks_only_nested_values)
     }
 }

@@ -17,36 +17,36 @@ The [README](README.md) shows how to use `annotated`. This document is for worki
 Use these words, with these meanings, in code, docs and conversation.
 
 - **Rule:** a check a value must pass, written in `#[validate(...)]`: `required`, `length(max = 50)`, `email`.
-- **Violation:** one thing wrong with a value, and the path where it was found. It is a broken rule, a missing field or a value of the wrong type.
-- **Problem:** the kind of violation: a stable code, its parameters and an English message.
-- **Path:** where in the value a violation was found: a field, an element's index, a map's key, or the value itself.
-- **Violations:** all the violations found in one validation. This is the error type, and it is never empty.
+- **Issue:** one thing wrong with a value, and the path where it was found. It is a broken rule, a missing field or a value of the wrong type.
+- **Problem:** the kind of issue: a stable code, its parameters and an English message.
+- **Path:** where in the value an issue was found: a field, an element's index, a map's key, or the value itself.
+- **Issues:** all the issues found in one validation. This is the error type, and it is never empty.
 - **Validation:** checking a value that already exists against its rules, with `Validate::validate`.
 - **Collecting deserialization:** deserializing through `annotated::Deserialize`. It reports missing fields and broken rules together, and values of the wrong type too when the struct opts in.
 
 ## The two ways in
 
-1. **Validation** checks a value that already exists. `#[derive(Validate)]` implements `Validate`, and `value.validate()` returns `Ok(())` or every violation found. It works on any struct, whether or not serde built it.
-2. **Collecting deserialization** builds a value and validates it in one go. `#[derive(Deserialize)]` generates a serde visitor for the struct. The visitor passes its location down into nested values, so a missing field at any depth becomes a violation instead of stopping serde. It runs the same rules as validation and reports every problem together. The derive also implements `serde::Deserialize`, so the struct still works anywhere serde does.
+1. **Validation** checks a value that already exists. `#[derive(Validate)]` implements `Validate`, and `value.validate()` returns `Ok(())` or every issue found. It works on any struct, whether or not serde built it.
+2. **Collecting deserialization** builds a value and validates it in one go. `#[derive(Deserialize)]` generates a serde visitor for the struct. The visitor passes its location down into nested values, so a missing field at any depth becomes an issue instead of stopping serde. It runs the same rules as validation and reports every problem together. The derive also implements `serde::Deserialize`, so the struct still works anywhere serde does.
 
 Both report a field under the name serde reads it by. To find that name, the derives read `#[serde(...)]` attributes with `serde_derive_internals`, which publishes the code serde's own derive reads them with.
 
-## Violations, problems and paths
+## Issues, problems and paths
 
 ```text
-Violations ──1..*── Violation ──── Path ──0..*── PathSegment (Field | Index | Key)
-                        │
-                        ├──── Problem (#[non_exhaustive] enum, with code() and params())
-                        └──── message override (Option<Cow<'static, str>>)
+Issues ──1..*── Issue ──── Path ──0..*── PathSegment (Field | Index | Key)
+                  │
+                  ├──── Problem (#[non_exhaustive] enum, with code() and params())
+                  └──── message override (Option<Cow<'static, str>>)
 ```
 
-**`Violations`** is the error type.
+**`Issues`** is the error type.
 
 - It is never empty.
-- It implements `std::error::Error` and `Display`, which prints one violation per line.
-- Iterating over it yields each `Violation` in the order it was found: fields in declaration order, then struct-level rules.
+- It implements `std::error::Error` and `Display`, which prints one issue per line.
+- Iterating over it yields each `Issue` in the order it was found: fields in declaration order, then struct-level rules.
 
-A **`Violation`** has a `Path`, a `Problem` and an optional message override. `message()` returns the override when there is one, with its `{param}` placeholders filled from the problem's parameters. Otherwise it returns the problem's English message.
+A **`Issue`** has a `Path`, a `Problem` and an optional message override. `message()` returns the override when there is one, with its `{param}` placeholders filled from the problem's parameters. Otherwise it returns the problem's English message.
 
 **`Problem`** is `#[non_exhaustive]`, so adding a built-in problem is not a breaking change.
 
@@ -61,13 +61,13 @@ A **`Path`** is a list of segments.
 - A segment is a field (`&'static str`, the serde name), an element's index, or a map's key (rendered with `Display`).
 - `Display` prints a path in dotted form: `members[1].name`. A map's key goes in brackets, like an index: `labels[en]`.
 - `json_pointer()` returns it as an RFC 6901 JSON Pointer: `/members/1/name`.
-- The root path has no segments. A violation of a struct-level rule on the validated struct itself has the root path.
+- The root path has no segments. An issue a struct-level rule finds on the validated struct itself has the root path.
 
 ## Nothing to pay on the success path
 
-- `Validate::validate_into(&self, at: &Location<'_>, found: &mut FoundViolations)` does the work. `validate()` is a provided method that calls it at the root.
-- A `Location` is a linked list on the stack: it is `Root`, or a parent location plus one segment. So descending into a field or an element allocates nothing. A `Location` is turned into an owned `Path` only when a violation is recorded.
-- `FoundViolations` allocates when it records its first violation, not before.
+- `Validate::validate_into(&self, at: &Location<'_>, found: &mut FoundIssues)` does the work. `validate()` is a provided method that calls it at the root.
+- A `Location` is a linked list on the stack: it is `Root`, or a parent location plus one segment. So descending into a field or an element allocates nothing. A `Location` is turned into an owned `Path` only when an issue is recorded.
+- `FoundIssues` allocates when it records its first issue, not before.
 - A rule is a small value built inline where it is used: `rules::length().max(50)`. Its constructor and builder methods are `const fn` wherever they can be, so the compiler folds them away. A check is a call to `Rule::check(&rule, value) -> Result<(), Problem>`, and a `Problem` is built only when the check fails.
 - `pattern` is the one rule with expensive setup. The derive generates a `static` `LazyLock<Regex>` where the rule is written, so each regular expression is compiled once. The derive also parses the expression at compile time, and one that doesn't parse is a compile error.
 
@@ -109,14 +109,14 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
 
 - A single name is a built-in rule, looked up in `annotated::rules`. A path is your own rule, looked up at that path and written with the same syntax. So a team's rules module reads exactly like the built-ins.
 - `name = value` and `name(value)` pass one value to the constructor. `name(key = value, …)` calls the builder method `key` for each pair. Mixing the two forms in one rule is a compile error.
-- `message = "…"` is reserved in every rule's arguments. The derive takes it out and attaches it to the violation, so the rule never sees it.
+- `message = "…"` is reserved in every rule's arguments. The derive takes it out and attaches it to the issue, so the rule never sees it.
 - `custom(f)` takes any `Fn(&T) -> Result<(), Problem>`.
 
 ### Rules the derive handles itself
 
 - **`required`** means the value is present: an `Option` is `Some`, a string is not empty and not only whitespace, and a collection is not empty. It is an ordinary rule over the `Required` capability trait. The only special handling is that, on an `Option` field, it checks the `Option` itself and not the value inside.
 - **Other rules on an `Option` field** check the value inside, and are skipped when the field is `None`. The derive recognizes an `Option` field by how its type is written: a path ending in `Option<T>`.
-- **`nested`** validates a field whose type implements `Validate`. The field's segment is added to the location, so violations inside it are reported at their full path.
+- **`nested`** validates a field whose type implements `Validate`. The field's segment is added to the location, so issues inside it are reported at their full path.
 - **`each(...)`** applies its rules to every element of a collection, reported at the element's index, or to every value of a map, reported at its key. `each(nested)` validates every element as a struct.
   - It works on anything that implements the `HasElements` capability trait: `Vec`, `VecDeque`, arrays, slices, `HashMap` and `BTreeMap`, and any of these behind a reference or a `Box`, like `&'a [T]` or `Box<[T]>`.
   - Elements that are `Option`s are treated like `Option` fields. To find the element type, the derive again goes by how the collection's type is written, looking through `&` and `Box`. A map's values are its second type argument, whatever comes after it (`HashMap<K, V, S>`). Any other collection's elements are its first type argument. A type counts as a map when its name ends in `Map`.
@@ -128,7 +128,7 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
 
 Every field is checked. Within one field, rules run in the order written, and the first one that fails stops the rest of that field's rules. So a blank value isn't also reported as too short, and a cheap rule can guard an expensive one.
 
-- A violation found inside the field by `nested` or `each` counts as a failure of the field too.
+- An issue found inside the field by `nested` or `each` counts as a failure of the field too.
 - With `#[validate(report_all)]` on the struct, every failing rule is reported instead.
 - Under `each`, every element is checked, whatever happened to the others.
 
@@ -142,14 +142,14 @@ They run after every field, in the order written.
 
 ### Failing fast is chosen per call
 
-`value.validate_fail_fast()`, `annotated::from_deserializer_fail_fast`, and `annotated::json::from_str_fail_fast` and `from_slice_fail_fast` stop at the first violation of any kind and return exactly that one.
+`value.validate_fail_fast()`, `annotated::from_deserializer_fail_fast`, and `annotated::json::from_str_fail_fast` and `from_slice_fail_fast` stop at the first issue of any kind and return exactly that one.
 
-- It is always the violation the full report would list first, so the two modes agree on it.
+- It is always the issue the full report would list first, so the two modes agree on it.
 - The same struct is checked either way, and nested values follow the mode of the call.
-- `FoundViolations::failing_fast()` starts a fail-fast report, and `is_finished()` returns whether it already has its one violation. Generated code calls `is_finished()` only right after recording a violation, so the success path pays nothing for it. When the report is finished, the generated code stops. If it was checking an element, it also tells `HasElements` to skip the remaining elements.
-- During validation, when a nested value finishes the report, its parent doesn't stop at once, because checking for that after every nested value would slow down the valid path. The parent records nothing more, and stops at its own next violation or at its end. Under `each(nested)`, the remaining elements are still checked, and the parent stops when that `each` ends.
-- During deserialization, the parent does stop at once. It appends the nested value's buffered violations itself, and calls `is_finished()` right after.
-- Deserializing still reads the input to its end, because a field is known to be missing only then. Nested values are checked while they are read, into a buffer that fails fast too, so their rules run whatever was found before them. The checking pass that follows is what stops at the first violation.
+- `FoundIssues::failing_fast()` starts a fail-fast report, and `is_finished()` returns whether it already has its one issue. Generated code calls `is_finished()` only right after recording an issue, so the success path pays nothing for it. When the report is finished, the generated code stops. If it was checking an element, it also tells `HasElements` to skip the remaining elements.
+- During validation, when a nested value finishes the report, its parent doesn't stop at once, because checking for that after every nested value would slow down the valid path. The parent records nothing more, and stops at its own next issue or at its end. Under `each(nested)`, the remaining elements are still checked, and the parent stops when that `each` ends.
+- During deserialization, the parent does stop at once. It appends the nested value's buffered issues itself, and calls `is_finished()` right after.
+- Deserializing still reads the input to its end, because a field is known to be missing only then. Nested values are checked while they are read, into a buffer that fails fast too, so their rules run whatever was found before them. The checking pass that follows is what stops at the first issue.
 
 ### Strings are never trimmed
 
@@ -193,20 +193,20 @@ pub trait Deserialize<'de>: Sized {
     fn deserialize_at<D: serde::Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundViolations,
+        found: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error>;
 }
 ```
 
-It mirrors `Validate::validate_into`: the value is read at the location `at`, and every violation in it is pushed into `found`. It returns one of three things:
+It mirrors `Validate::validate_into`: the value is read at the location `at`, and every issue in it is pushed into `found`. It returns one of three things:
 
 | Returned | Meaning |
 |---|---|
-| `Ok(Some(value))` | The value could be built. Rules in it may still have been broken, and those violations are in `found`. |
+| `Ok(Some(value))` | The value could be built. Rules in it may still have been broken, and those issues are in `found`. |
 | `Ok(None)` | The value couldn't be built, because a field inside it is missing or has the wrong type. `found` says why. |
 | `Err(error)` | The format's own error: a syntax error, an unknown field under `deny_unknown_fields`, a duplicate field, or a type error when type errors aren't collected. It ends deserialization, as it would with serde. |
 
-A value whose fields were all present is returned as `Some` even when `found` is already finished from failing fast. The parent needs the value: it may check it with other rules before its `nested` rule, and a violation from one of those comes first in the full report. Returning the value is what lets failing fast return that same first violation.
+A value whose fields were all present is returned as `Some` even when `found` is already finished from failing fast. The parent needs the value: it may check it with other rules before its `nested` rule, and an issue from one of those comes first in the full report. Returning the value is what lets failing fast return that same first issue.
 
 The trait shares its name with serde's trait, the way serde's own derive and trait share one. `#[derive(annotated::Deserialize)]` implements it.
 
@@ -215,37 +215,37 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 - An element of a sequence is read at its index, and a value of a map at its key (`K: serde::Deserialize + Display`). Both are read through a `DeserializeSeed` that carries the location.
 - The implementations compose, so `Option<Vec<Address>>` works with no code of its own.
 - A container is built only when everything in it could be built.
-- A map keeps each value's violations apart until it has read every entry. It then reports them in the order it iterates over its values, which is the order `Validate` checks them in.
-- When a key appears twice, the later value replaces the earlier one, and its violations replace the earlier ones too. serde keeps the last value in the same way.
-- A `HashMap`'s iteration order is known only once the map is built. To report in that order, it clones the key of a value that was built but has violations, which is why it needs `K: Clone`.
+- A map keeps each value's issues apart until it has read every entry. It then reports them in the order it iterates over its values, which is the order `Validate` checks them in.
+- When a key appears twice, the later value replaces the earlier one, and its issues replace the earlier ones too. serde keeps the last value in the same way.
+- A `HashMap`'s iteration order is known only once the map is built. To report in that order, it clones the key of a value that was built but has issues, which is why it needs `K: Clone`.
 
 ### What `#[derive(Deserialize)]` generates
 
 **A serde visitor for the struct.** It has a field identifier that matches the serde names and aliases (read with `serde_derive_internals`, as the `Validate` derive reads them), `visit_map` and `visit_seq`, and one slot per field.
 
 - A field without `nested` is read with serde's `Deserialize`.
-- A field with `nested`, or with `each(...)` holding `nested` at any depth, is read through `annotated::Deserialize`, with a `DeserializeSeed` at `at.field(name)`. Its violations go into a `FoundViolations` buffer of the field's own, where they wait until the field's turn in declaration order. The buffer allocates only if something inside the field fails.
+- A field with `nested`, or with `each(...)` holding `nested` at any depth, is read through `annotated::Deserialize`, with a `DeserializeSeed` at `at.field(name)`. Its issues go into a `FoundIssues` buffer of the field's own, where they wait until the field's turn in declaration order. The buffer allocates only if something inside the field fails.
 
 **A checking pass after the last field is read.** The pass goes through the fields in declaration order. It runs inside the visitor, where the slots are, so the struct is built straight from them.
 
 - A field that was absent from the input is `Problem::Missing` (code `missing`) at its name. An absent `Option` field is `None` instead, as with serde.
 - A field that was present runs its rules exactly as `Validate` does. The same expansion code generates them, reading the slot instead of `self`.
-- At a field's `nested` rule, the field's buffered violations are appended to `found`, and they count as a failure of the field.
-- When a nested field's value couldn't be built, its buffered violations are reported and its other rules are skipped, since they need the value.
+- At a field's `nested` rule, the field's buffered issues are appended to `found`, and they count as a failure of the field.
+- When a nested field's value couldn't be built, its buffered issues are reported and its other rules are skipped, since they need the value.
 - At the end, if every field could be built, the struct is built and its struct-level rules run, as in `Validate`. Otherwise they are skipped, and `deserialize_at` returns `None`.
 
-**Elements under `each(...)`.** The violations of a collection's elements wait in the field's buffer, in the order `HasElements` goes through the elements. The crate's containers report them in that same order.
+**Elements under `each(...)`.** The issues of a collection's elements wait in the field's buffer, in the order `HasElements` goes through the elements. The crate's containers report them in that same order.
 
-- When the `each` holds nothing but `nested`, the whole buffer is appended to `found` at the `each` rule, as `nested` on the field would do. The buffer holds exactly the elements' violations, already in order.
-- Otherwise the pass goes through the elements as `Validate` does, running every rule inside `each(...)` on each one. At an element's `nested` rule, it moves the violations at the front of the buffer that belong to that element's location into `found`. When an element's `nested` rule didn't run, because an earlier rule on that element failed, the element's buffered violations are dropped.
-- If a collection reported violations in any other order, they are appended after its elements, so none is lost.
+- When the `each` holds nothing but `nested`, the whole buffer is appended to `found` at the `each` rule, as `nested` on the field would do. The buffer holds exactly the elements' issues, already in order.
+- Otherwise the pass goes through the elements as `Validate` does, running every rule inside `each(...)` on each one. At an element's `nested` rule, it moves the issues at the front of the buffer that belong to that element's location into `found`. When an element's `nested` rule didn't run, because an earlier rule on that element failed, the element's buffered issues are dropped.
+- If a collection reported issues in any other order, they are appended after its elements, so none is lost.
 - A field's rules can name `nested` only once, because the field's value is read only once.
 
-**Failing fast.** A nested field's buffer fails fast too, so it holds only the first violation of that value's full report. The pass checks `found.is_finished()` after recording a violation or appending a buffer, and stops as soon as it is true. If all the fields were present, the struct is still built, but its struct-level rules don't run.
+**Failing fast.** A nested field's buffer fails fast too, so it holds only the first issue of that value's full report. The pass checks `found.is_finished()` after recording an issue or appending a buffer, and stops as soon as it is true. If all the fields were present, the struct is still built, but its struct-level rules don't run.
 
 **The same report as serde followed by `validate()`.** For input that has every field with the right type, collecting deserialization reports exactly what deserializing with serde and then calling `validate()` would report, in the same order. Tests pin that equivalence.
 
-**An implementation of `serde::Deserialize`.** It calls `annotated::from_deserializer` and turns `Violations` into `D::Error::custom`, with every violation in the message. So plain `serde_json::from_str::<T>` still validates, and so does a struct that holds this one as an ordinary serde field.
+**An implementation of `serde::Deserialize`.** It calls `annotated::from_deserializer` and turns `Issues` into `D::Error::custom`, with every issue in the message. So plain `serde_json::from_str::<T>` still validates, and so does a struct that holds this one as an ordinary serde field.
 
 **Attributes.** The derive reads:
 
@@ -262,8 +262,8 @@ Any other serde attribute is a compile error that names the accepted ones, until
 
 ### Entry points and the error
 
-- `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with an empty `FoundViolations`.
-- `DeserializeError<E>` is a `#[non_exhaustive]` enum: `Format(E)` or `Violations(Violations)`. `violations()` returns the violations as a slice, which is empty for the format's own error, so a caller can read them without matching. The type implements `Display`, `Debug` and `std::error::Error`.
+- `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with an empty `FoundIssues`.
+- `DeserializeError<E>` is a `#[non_exhaustive]` enum: `Format(E)` or `Issues(Issues)`. `issues()` returns the issues as a slice, which is empty for the format's own error, so a caller can read them without matching. The type implements `Display`, `Debug` and `std::error::Error`.
 - The `json` feature adds `annotated::json::from_str` and `from_slice`. Like `serde_json::from_str`, they also reject characters after the JSON value.
 
 ### Values of the wrong type
@@ -299,13 +299,13 @@ There is no crate for any framework. [`examples/axum`](examples/axum) shows a sh
 
 - It reads the body with `annotated::json::from_slice`.
 - It responds to a body that isn't JSON as axum's own `Json` does.
-- It responds to violations with 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body. The body's `errors` member lists each violation's JSON Pointer, code, params and message.
+- It responds to issues with 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body. The body's `errors` member lists each issue's JSON Pointer, code, params and message.
 
 ## Crates and features
 
 | Crate | What it holds | Depends on |
 |---|---|---|
-| `annotated` | The `Validate` trait, violations, problems and paths, the built-in rules, and collecting deserialization | `annotated-derive`, which it re-exports, and the optional dependencies its features add |
+| `annotated` | The `Validate` trait, issues, problems and paths, the built-in rules, and collecting deserialization | `annotated-derive`, which it re-exports, and the optional dependencies its features add |
 | `annotated-derive` | The `Validate` and `Deserialize` derive macros. Derive macros have to live in a crate of their own | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex-syntax`, to check patterns at compile time |
 
 | Feature of `annotated` | Dependency it adds | What it enables |
@@ -318,7 +318,7 @@ There is no crate for any framework. [`examples/axum`](examples/axum) shows a sh
 ## Tests
 
 - **Unit tests** sit beside each rule and each piece of the error model.
-- **Integration tests** in `crates/annotated/tests/` use the derives from the outside. They pin what a struct accepts and the violations it reports, comparing whole values.
+- **Integration tests** in `crates/annotated/tests/` use the derives from the outside. They pin what a struct accepts and the issues it reports, comparing whole values.
 - **Compile-fail tests** in `crates/annotated/tests/ui/` pin every error the derives emit, including its span. `trybuild` runs them on the stable toolchain only: compiler output differs between versions, so the MSRV job skips them.
 - **Doc tests** are the examples in the docs, so every example compiles and runs. The README's test runs as a copy in `tests/json.rs`. Change both together.
 - **Property tests** check that the `url` rule agrees, on generated text, with [`iri-string`](https://crates.io/crates/iri-string), a strict RFC 3986 and RFC 3987 validator.

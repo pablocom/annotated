@@ -1,13 +1,13 @@
 //! Validation for structs: write rules on their fields, and get every problem back at once.
 //!
-//! [`Validate::validate`] checks a value. It returns `Ok(())`, or every [`Violation`] it found. Each violation is a
-//! [`Problem`] and the [`Path`] where it was found. [`Validate::validate_fail_fast`] returns only the first violation,
+//! [`Validate::validate`] checks a value. It returns `Ok(())`, or every [`Issue`] it found. Each issue is a
+//! [`Problem`] and the [`Path`] where it was found. [`Validate::validate_fail_fast`] returns only the first issue,
 //! which is the one `validate` would list first. Fields are reported under the names serde reads them by.
 //!
 //! With the `serde` feature, on by default, `#[derive(Deserialize)]` checks a struct while it is deserialized:
 //!
 //! - [`from_deserializer`] returns every missing field and broken rule together.
-//! - serde's own `Deserialize` works too. For a struct that breaks its rules, it returns an error with every violation
+//! - serde's own `Deserialize` works too. For a struct that breaks its rules, it returns an error with every issue
 //!   in its message.
 //!
 //! The `json` feature adds [`json::from_str`] and [`json::from_slice`], which read JSON this way.
@@ -33,21 +33,21 @@ mod deserialize;
 mod deserialize_containers;
 #[cfg(feature = "serde")]
 mod deserialize_error;
-mod found_violations;
+mod found_issues;
+mod issue;
+mod issues;
 mod location;
 mod param_value;
 mod path;
 mod problem;
 mod rule;
 mod validate;
-mod violation;
-mod violations;
 
 #[cfg(feature = "serde")]
 pub use deserialize::{Deserialize, from_deserializer, from_deserializer_fail_fast};
 #[cfg(feature = "serde")]
 pub use deserialize_error::DeserializeError;
-pub use found_violations::FoundViolations;
+pub use found_issues::FoundIssues;
 pub use location::Location;
 pub use param_value::ParamValue;
 pub use path::{Path, PathSegment};
@@ -99,8 +99,8 @@ pub use validate::Validate;
 /// - A field is reported under the name serde reads it by, from `#[serde(...)]` attributes such as `rename_all` and
 ///   `rename`. The struct doesn't need to derive serde's traits.
 /// - [`Validate::validate_fail_fast`] checks the same rules in the same order, nested values and elements included, and
-///   returns only the first violation, even under `report_all`. It stops right after that violation, with one
-///   exception: when the violation is inside a `nested` value, or inside an element checked with `nested`, the struct
+///   returns only the first issue, even under `report_all`. It stops right after that issue, with one
+///   exception: when the issue is inside a `nested` value, or inside an element checked with `nested`, the struct
 ///   around it may check more before it stops. It records nothing more.
 ///
 /// # Rules on the whole struct
@@ -112,7 +112,7 @@ pub use validate::Validate;
 /// - `message = "..."` replaces the problem's message.
 /// - Struct-level rules are checked after every field, in the order written. They can share a `#[validate(...)]` with
 ///   `report_all`, or have one of their own.
-/// - A rule with `field` counts as that field's last rule. It is skipped once the field has a violation, and once one
+/// - A rule with `field` counts as that field's last rule. It is skipped once the field has an issue, and once one
 ///   of them fails for a field, the later ones for that field are skipped. With `report_all` on the struct, none of
 ///   them is skipped.
 /// - A rule without `field` always runs.
@@ -182,7 +182,7 @@ pub use annotated_derive::Validate;
 ///
 /// Unknown fields are ignored, unless the struct denies them. A field that appears twice, an unknown field the struct
 /// denies, and a value of the wrong type are each the format's own error, which ends deserialization. A struct with
-/// `#[annotated(collect_type_errors)]` reports values of the wrong type as violations instead.
+/// `#[annotated(collect_type_errors)]` reports values of the wrong type as issues instead.
 ///
 /// # How fields are checked
 ///
@@ -191,16 +191,16 @@ pub use annotated_derive::Validate;
 /// - A field absent from the input is [`Problem::Missing`], at its name. An `Option` field is `None` instead, as with
 ///   serde, and `required` on it reports [`Problem::Required`].
 /// - A field that is present is checked by its `#[validate(...)]` rules exactly as [`Validate`] checks it. So for input
-///   that has every field, the violations are the same, in the same order, as when deserializing with serde and then
+///   that has every field, the issues are the same, in the same order, as when deserializing with serde and then
 ///   validating.
 /// - A field checked with `nested`, or with `each(...)` holding `nested`, is read through
 ///   [`Deserialize`](trait@Deserialize):
 ///   - A field missing inside it is reported at its full path.
-///   - The violations inside it are listed where its `nested` rule comes among the field's rules, as [`Validate`]
+///   - The issues inside it are listed where its `nested` rule comes among the field's rules, as [`Validate`]
 ///     lists them.
 ///   - Its type must implement `annotated::Deserialize`. The containers that hold such values do: `Option`, `Box`,
 ///     sequences and maps among them.
-///   - When its value couldn't be built, its violations are reported and its other rules are skipped.
+///   - When its value couldn't be built, its issues are reported and its other rules are skipped.
 ///   - A field's rules can name `nested` only once.
 /// - Struct-level rules run last, as with [`Validate`], once every field was present and could be built. Otherwise they
 ///   are skipped, since there is no struct to check.
@@ -232,14 +232,14 @@ pub use annotated_derive::Validate;
 ///
 /// # Failing fast
 ///
-/// [`from_deserializer_fail_fast`] returns only the first violation, which is the one [`from_deserializer`] would list
+/// [`from_deserializer_fail_fast`] returns only the first issue, which is the one [`from_deserializer`] would list
 /// first. The input is still read to its end, because a field is known to be missing only then. Once it is read, the
-/// struct stops checking its fields at the first violation. A nested value is checked while it is read, so its rules
+/// struct stops checking its fields at the first issue. A nested value is checked while it is read, so its rules
 /// may still run.
 ///
 /// # Values of the wrong type
 ///
-/// `#[annotated(collect_type_errors)]` on the struct turns a value of the wrong type into one more violation,
+/// `#[annotated(collect_type_errors)]` on the struct turns a value of the wrong type into one more issue,
 /// [`Problem::InvalidType`] at the field, and deserialization goes on. To make that possible, each field is read in two
 /// steps: first into a buffer that holds any well-formed value, then from the buffer as the field's type.
 ///
@@ -271,5 +271,5 @@ pub use annotated_derive::Validate;
 /// ```
 #[cfg(feature = "serde")]
 pub use annotated_derive::Deserialize;
-pub use violation::Violation;
-pub use violations::Violations;
+pub use issue::Issue;
+pub use issues::Issues;

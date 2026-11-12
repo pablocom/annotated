@@ -5,7 +5,7 @@ use crate::{Path, PathSegment};
 /// The place in a value that validation has reached. It is kept on the stack while validation descends into the value.
 ///
 /// A location is the root, or a parent location plus one step: a field, an element's index or a map's key. Descending
-/// allocates nothing. A location becomes an owned [`Path`] only when a violation is found there.
+/// allocates nothing. A location becomes an owned [`Path`] only when an issue is found there.
 ///
 /// ```
 /// use annotated::{Location, Path};
@@ -49,7 +49,7 @@ impl<'a> Location<'a> {
         self.followed_by(Step::Index(index))
     }
 
-    /// The location of this map's value at `key`. The key is rendered with [`Display`] if a violation is found there.
+    /// The location of this map's value at `key`. The key is rendered with [`Display`] if an issue is found there.
     #[must_use]
     pub const fn key(&'a self, key: &'a dyn Display) -> Self {
         self.followed_by(Step::Key(key))

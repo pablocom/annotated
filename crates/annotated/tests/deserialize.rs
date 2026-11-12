@@ -1,37 +1,37 @@
-//! `#[derive(Deserialize)]` reads a struct collecting every violation in it, missing fields and broken rules
+//! `#[derive(Deserialize)]` reads a struct collecting every issue in it, missing fields and broken rules
 //! together, in the order the struct declares its fields.
 
 #![cfg(feature = "serde")]
 
-use annotated::{Deserialize, DeserializeError, ParamValue, Path, Problem, Validate, Violation};
+use annotated::{Deserialize, DeserializeError, Issue, ParamValue, Path, Problem, Validate};
 
 fn deserialize<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
     annotated::from_deserializer(&mut serde_json::Deserializer::from_str(json))
 }
 
-fn violations_found_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<Violation> {
+fn issues_found_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<Issue> {
     match deserialize::<T>(json) {
         Ok(_) => Vec::new(),
-        Err(DeserializeError::Violations(violations)) => violations.into_iter().collect(),
-        Err(error) => panic!("expected violations, got the format's error: {error}"),
+        Err(DeserializeError::Issues(issues)) => issues.into_iter().collect(),
+        Err(error) => panic!("expected issues, got the format's error: {error}"),
     }
 }
 
-fn violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
-    violations_found_reading::<T>(json).iter().map(path_and_code).collect()
+fn issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
+    issues_found_reading::<T>(json).iter().map(path_and_code).collect()
 }
 
-fn path_and_code(violation: &Violation) -> String {
-    let code = violation.problem().code();
-    if violation.path().is_root() {
+fn path_and_code(issue: &Issue) -> String {
+    let code = issue.problem().code();
+    if issue.path().is_root() {
         return code.to_owned();
     }
-    format!("{}: {code}", violation.path())
+    format!("{}: {code}", issue.path())
 }
 
-fn format_error_reading<'de, T: Deserialize<'de>>(json: &'de str) -> (String, Vec<Violation>) {
+fn format_error_reading<'de, T: Deserialize<'de>>(json: &'de str) -> (String, Vec<Issue>) {
     match deserialize::<T>(json) {
-        Err(error @ DeserializeError::Format(_)) => (error.to_string(), error.violations().to_vec()),
+        Err(error @ DeserializeError::Format(_)) => (error.to_string(), error.issues().to_vec()),
         Ok(_) => panic!("expected the format's error, got a value"),
         Err(error) => panic!("expected the format's error, got {error:?}"),
     }
@@ -54,8 +54,8 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 
     let error = deserialize::<NewMember>(body).unwrap_err();
 
-    let [blank_name, missing_email, too_young] = error.violations() else {
-        panic!("expected three violations, got {error:?}");
+    let [blank_name, missing_email, too_young] = error.issues() else {
+        panic!("expected three issues, got {error:?}");
     };
     assert_eq!(blank_name.path(), &Path::root().field("fullName"));
     assert_eq!(blank_name.problem(), &Problem::Required);
@@ -88,17 +88,17 @@ fn a_new_member_breaking_no_rule_is_deserialized() {
 #[test]
 fn every_missing_field_is_reported_by_its_serde_name() {
     assert_eq!(
-        violations_reading::<NewMember>("{}"),
+        issues_reading::<NewMember>("{}"),
         ["fullName: missing", "email: missing", "age: missing"]
     );
 }
 
 #[test]
-fn violations_come_in_the_order_the_fields_are_declared_whatever_order_they_are_read_in() {
+fn issues_come_in_the_order_the_fields_are_declared_whatever_order_they_are_read_in() {
     let body = r#"{ "age": 12, "email": "alex", "fullName": "" }"#;
 
     assert_eq!(
-        violations_reading::<NewMember>(body),
+        issues_reading::<NewMember>(body),
         ["fullName: required", "email: email", "age: range"]
     );
 }
@@ -112,7 +112,7 @@ struct Profile {
 }
 
 #[test]
-fn a_missing_optional_field_is_none_without_a_violation() {
+fn a_missing_optional_field_is_none_without_an_issue() {
     let profile = deserialize::<Profile>(r#"{ "phone": "600 000 000" }"#).unwrap();
 
     assert_eq!(
@@ -126,13 +126,13 @@ fn a_missing_optional_field_is_none_without_a_violation() {
 
 #[test]
 fn a_missing_optional_field_that_is_required_breaks_the_required_rule() {
-    assert_eq!(violations_reading::<Profile>("{}"), ["phone: required"]);
+    assert_eq!(issues_reading::<Profile>("{}"), ["phone: required"]);
 }
 
 #[test]
 fn the_value_inside_an_optional_field_is_checked_by_its_rules() {
     assert_eq!(
-        violations_reading::<Profile>(r#"{ "nickname": "A", "phone": "600 000 000" }"#),
+        issues_reading::<Profile>(r#"{ "nickname": "A", "phone": "600 000 000" }"#),
         ["nickname: length"]
     );
 }
@@ -146,28 +146,19 @@ struct Contact {
 
 #[test]
 fn a_renamed_field_is_read_and_reported_by_its_new_name() {
-    assert_eq!(
-        violations_reading::<Contact>(r#"{ "e-mail": "alex" }"#),
-        ["e-mail: email"]
-    );
+    assert_eq!(issues_reading::<Contact>(r#"{ "e-mail": "alex" }"#), ["e-mail: email"]);
 }
 
 #[test]
 fn an_aliased_field_is_read_by_every_alias_and_reported_by_its_serde_name() {
-    assert_eq!(
-        violations_reading::<Contact>(r#"{ "mail": "alex" }"#),
-        ["e-mail: email"]
-    );
-    assert_eq!(
-        violations_reading::<Contact>(r#"{ "correo": "alex" }"#),
-        ["e-mail: email"]
-    );
+    assert_eq!(issues_reading::<Contact>(r#"{ "mail": "alex" }"#), ["e-mail: email"]);
+    assert_eq!(issues_reading::<Contact>(r#"{ "correo": "alex" }"#), ["e-mail: email"]);
 }
 
 #[test]
 fn a_renamed_field_is_not_read_by_its_rust_name() {
     assert_eq!(
-        violations_reading::<Contact>(r#"{ "email": "alex@example.com" }"#),
+        issues_reading::<Contact>(r#"{ "email": "alex@example.com" }"#),
         ["e-mail: missing"]
     );
 }
@@ -186,10 +177,7 @@ struct Listing {
 fn a_struct_serialized_without_its_absent_values_is_read_and_checked_as_usual() {
     let body = r#"{ "title": "", "subtitle": "Far too long a subtitle" }"#;
 
-    assert_eq!(
-        violations_reading::<Listing>(body),
-        ["title: required", "subtitle: length"]
-    );
+    assert_eq!(issues_reading::<Listing>(body), ["title: required", "subtitle: length"]);
 }
 
 #[expect(
@@ -220,7 +208,7 @@ fn attributes_that_only_change_serializing_leave_a_struct_read_and_checked_as_us
     let body = r#"{ "guest_name": "", "nights": 0, "note": "Late arrival, after midnight" }"#;
 
     assert_eq!(
-        violations_reading::<Booking>(body),
+        issues_reading::<Booking>(body),
         ["guest_name: required", "nights: range", "note: length"]
     );
 }
@@ -243,10 +231,7 @@ impl From<Reservation> for ReservationCode {
 
 #[test]
 fn a_struct_serialized_into_another_type_is_read_and_checked_as_usual() {
-    assert_eq!(
-        violations_reading::<Reservation>(r#"{ "code": "AB1" }"#),
-        ["code: length"]
-    );
+    assert_eq!(issues_reading::<Reservation>(r#"{ "code": "AB1" }"#), ["code: length"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -259,7 +244,7 @@ struct Guest {
 
 #[test]
 fn a_field_renamed_apart_for_serializing_and_deserializing_is_read_by_its_deserializing_name() {
-    assert_eq!(violations_reading::<Guest>(r#"{ "guest": "" }"#), ["guest: required"]);
+    assert_eq!(issues_reading::<Guest>(r#"{ "guest": "" }"#), ["guest: required"]);
 }
 
 #[derive(Deserialize, Debug)]
@@ -271,7 +256,7 @@ struct Expense {
 
 #[test]
 fn a_raw_identifier_is_read_and_reported_without_its_prefix() {
-    assert_eq!(violations_reading::<Expense>(r#"{ "type": "" }"#), ["type: required"]);
+    assert_eq!(issues_reading::<Expense>(r#"{ "type": "" }"#), ["type: required"]);
 }
 
 #[test]
@@ -313,7 +298,7 @@ fn an_unknown_field_is_the_format_s_error_when_the_struct_denies_unknown_fields(
 
 #[test]
 fn a_known_field_is_read_when_the_struct_denies_unknown_fields() {
-    assert_eq!(violations_reading::<LogIn>(r#"{ "email": "alex" }"#), ["email: email"]);
+    assert_eq!(issues_reading::<LogIn>(r#"{ "email": "alex" }"#), ["email: email"]);
 }
 
 #[test]
@@ -361,7 +346,7 @@ fn a_value_that_is_not_a_struct_is_the_format_s_error_saying_what_was_expected()
 #[test]
 fn a_struct_written_as_a_sequence_is_read_in_declaration_order() {
     assert_eq!(
-        violations_reading::<NewMember>(r#"["", "alex", 12]"#),
+        issues_reading::<NewMember>(r#"["", "alex", 12]"#),
         ["fullName: required", "email: email", "age: range"]
     );
 }
@@ -369,7 +354,7 @@ fn a_struct_written_as_a_sequence_is_read_in_declaration_order() {
 #[test]
 fn the_fields_missing_at_the_end_of_a_sequence_are_missing() {
     assert_eq!(
-        violations_reading::<NewMember>(r#"["Alex Morgan"]"#),
+        issues_reading::<NewMember>(r#"["Alex Morgan"]"#),
         ["email: missing", "age: missing"]
     );
 }
@@ -408,7 +393,7 @@ fn a_struct_level_rule_runs_once_every_field_is_read() {
     let body = r#"{ "password": "correct horse", "repeatedPassword": "correct" }"#;
 
     assert_eq!(
-        violations_reading::<NewPassword>(body),
+        issues_reading::<NewPassword>(body),
         ["repeatedPassword: passwords_differ"]
     );
 }
@@ -417,7 +402,7 @@ fn a_struct_level_rule_runs_once_every_field_is_read() {
 fn a_struct_level_rule_at_a_field_is_skipped_when_the_field_is_missing() {
     let body = r#"{ "password": "correct horse" }"#;
 
-    assert_eq!(violations_reading::<NewPassword>(body), ["repeatedPassword: missing"]);
+    assert_eq!(issues_reading::<NewPassword>(body), ["repeatedPassword: missing"]);
 }
 
 fn nickname_differs_from_the_name(player: &Player) -> Result<(), Problem> {
@@ -440,14 +425,14 @@ struct Player {
 fn a_struct_level_rule_at_an_optional_field_is_skipped_when_the_value_inside_breaks_its_own_rules() {
     let body = r#"{ "fullName": "A", "nickname": "A" }"#;
 
-    assert_eq!(violations_reading::<Player>(body), ["nickname: length"]);
+    assert_eq!(issues_reading::<Player>(body), ["nickname: length"]);
 }
 
 #[test]
 fn a_struct_level_rule_at_an_optional_field_runs_when_the_value_inside_follows_its_own_rules() {
     let body = r#"{ "fullName": "Alex", "nickname": "Alex" }"#;
 
-    assert_eq!(violations_reading::<Player>(body), ["nickname: nickname_is_the_name"]);
+    assert_eq!(issues_reading::<Player>(body), ["nickname: nickname_is_the_name"]);
 }
 
 fn ends_after_it_starts(stay: &Stay) -> Result<(), Problem> {
@@ -469,7 +454,7 @@ struct Stay {
 #[test]
 fn a_struct_level_rule_is_skipped_when_any_field_is_missing() {
     assert_eq!(
-        violations_reading::<Stay>(r#"{ "starts_on": 5, "ends_on": 3 }"#),
+        issues_reading::<Stay>(r#"{ "starts_on": 5, "ends_on": 3 }"#),
         ["guest: missing"]
     );
 }
@@ -477,7 +462,7 @@ fn a_struct_level_rule_is_skipped_when_any_field_is_missing() {
 #[test]
 fn a_struct_level_rule_at_the_struct_runs_when_every_field_is_there() {
     assert_eq!(
-        violations_reading::<Stay>(r#"{ "starts_on": 5, "ends_on": 3, "guest": "Lucía" }"#),
+        issues_reading::<Stay>(r#"{ "starts_on": 5, "ends_on": 3, "guest": "Lucía" }"#),
         ["ends_before_it_starts"]
     );
 }
@@ -493,7 +478,7 @@ struct Handle {
 #[test]
 fn every_rule_a_field_breaks_is_reported_under_report_all() {
     assert_eq!(
-        violations_reading::<Handle>(r#"{ "handle": "a" }"#),
+        issues_reading::<Handle>(r#"{ "handle": "a" }"#),
         ["handle: length", "handle: prefix"]
     );
 }
@@ -520,9 +505,9 @@ fn a_struct_with_a_type_parameter_is_read_with_the_type_given() {
 }
 
 #[test]
-fn a_struct_with_a_type_parameter_reports_its_violations() {
+fn a_struct_with_a_type_parameter_reports_its_issues() {
     assert_eq!(
-        violations_reading::<Page<u8>>(r#"{ "items": [7, 8, 9], "number": 0 }"#),
+        issues_reading::<Page<u8>>(r#"{ "items": [7, 8, 9], "number": 0 }"#),
         ["items: length", "number: range"]
     );
 }
@@ -569,7 +554,7 @@ fn fields_named_like_the_generated_code_s_own_names_are_read_and_reported() {
     let body = r#"{ "value": 0, "found": "", "at": "", "problem": "", "key": 1 }"#;
 
     assert_eq!(
-        violations_reading::<NamesOfTheGeneratedCode>(body),
+        issues_reading::<NamesOfTheGeneratedCode>(body),
         [
             "value: range",
             "found: required",
@@ -584,7 +569,7 @@ fn fields_named_like_the_generated_code_s_own_names_are_read_and_reported() {
 }
 
 #[test]
-fn plain_serde_json_refuses_a_body_breaking_a_rule_with_every_violation_in_its_message() {
+fn plain_serde_json_refuses_a_body_breaking_a_rule_with_every_issue_in_its_message() {
     let body = r#"{ "fullName": "  ", "age": 12 }"#;
 
     let error = serde_json::from_str::<NewMember>(body).unwrap_err();
@@ -663,11 +648,11 @@ struct SignUpThenValidated {
     tags: Vec<String>,
 }
 
-fn violations_validating_after_serde(json: &str) -> Vec<Violation> {
+fn issues_validating_after_serde(json: &str) -> Vec<Issue> {
     let sign_up = serde_json::from_str::<SignUpThenValidated>(json).unwrap();
     sign_up
         .validate()
-        .map_or_else(|violations| violations.into_iter().collect(), |()| Vec::new())
+        .map_or_else(|issues| issues.into_iter().collect(), |()| Vec::new())
 }
 
 #[test]
@@ -676,8 +661,8 @@ fn a_complete_body_breaking_every_rule_is_reported_as_serde_then_validate_report
         "tags": ["a", "b", "Alexandra Morgan"] }"#;
 
     assert_eq!(
-        violations_found_reading::<SignUp>(body),
-        violations_validating_after_serde(body)
+        issues_found_reading::<SignUp>(body),
+        issues_validating_after_serde(body)
     );
 }
 
@@ -686,8 +671,8 @@ fn a_complete_body_breaking_a_struct_level_rule_is_reported_as_serde_then_valida
     let body = r#"{ "fullName": "Alex", "mail": "alex@example.com", "phone": "600 000 000", "tags": ["Alex"] }"#;
 
     assert_eq!(
-        violations_found_reading::<SignUp>(body),
-        violations_validating_after_serde(body)
+        issues_found_reading::<SignUp>(body),
+        issues_validating_after_serde(body)
     );
 }
 
@@ -696,7 +681,7 @@ fn a_complete_body_breaking_no_rule_is_valid_as_serde_then_validate_find_it() {
     let body = r#"{ "fullName": "Alex", "mail": "alex@example.com", "phone": "600 000 000", "tags": [] }"#;
 
     assert_eq!(
-        violations_found_reading::<SignUp>(body),
-        violations_validating_after_serde(body)
+        issues_found_reading::<SignUp>(body),
+        issues_validating_after_serde(body)
     );
 }

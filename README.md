@@ -22,8 +22,8 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 
     let error = annotated::json::from_str::<NewMember>(body).unwrap_err();
 
-    let [blank_name, missing_email, too_young] = error.violations() else {
-        panic!("expected three violations, got {error:?}");
+    let [blank_name, missing_email, too_young] = error.issues() else {
+        panic!("expected three issues, got {error:?}");
     };
     assert_eq!(blank_name.path(), &Path::root().field("fullName"));
     assert_eq!(blank_name.problem(), &Problem::Required);
@@ -40,7 +40,7 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 
 - **Every problem at once.** A client fixing a request sees everything that is wrong with it in one response, instead of one field per round trip.
 - **Field names as serde reads them.** The example reports `fullName`, not `full_name`, because of its `rename_all`.
-- **Violations are data.** Each one has a path, a stable code, typed parameters and an English message you can replace.
+- **Issues are data.** Each one has a path, a stable code, typed parameters and an English message you can replace.
 - **Nothing to pay for valid input.** Validating a valid value allocates nothing.
 - **Any serde format.** JSON has ready-made functions, and every other format works through its `Deserializer`.
 
@@ -57,7 +57,7 @@ annotated = { version = "0.1", features = ["json"] }
 
 1. Derive `annotated::Deserialize` where you would derive `serde::Deserialize`.
 2. Write each field's rules in `#[validate(...)]`.
-3. Deserialize with `annotated::json::from_str`, and read the violations from the error.
+3. Deserialize with `annotated::json::from_str`, and read the issues from the error.
 
 To check a value that already exists, derive `annotated::Validate` and call `value.validate()`. It works on its own or beside `Deserialize`, from the same `#[validate(...)]` rules.
 
@@ -65,7 +65,7 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 
 [validator](https://crates.io/crates/validator) and [garde](https://crates.io/crates/garde) check a struct after serde has built it. If a field is missing or has the wrong type, serde stops at that first error, and no rule ever runs.
 
-`annotated` validates while it deserializes, so a missing field is one more violation instead of the end of deserialization. The struct still implements `serde::Deserialize`, so it works anywhere serde does.
+`annotated` validates while it deserializes, so a missing field is one more issue instead of the end of deserialization. The struct still implements `serde::Deserialize`, so it works anywhere serde does.
 
 ## Rules
 
@@ -90,9 +90,9 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 - **Rules of your own.** Besides `custom`, a rule can be a type of yours that implements `Rule`. Write it by its path, with the same syntax as the built-in rules: `my_rules::iban(country = "ES")`.
 - **No I/O.** A rule looks at the value and nothing else. A check that needs I/O, like "is this email already taken", belongs in your application, after validation.
 
-## Reading the violations
+## Reading the issues
 
-The error holds its violations in the order of the struct's fields, followed by those of struct-level rules. Each `Violation` gives you:
+The error holds its issues in the order of the struct's fields, followed by those of struct-level rules. Each `Issue` gives you:
 
 | Call | What you get | For the age in the example |
 |---|---|---|
@@ -101,22 +101,22 @@ The error holds its violations in the order of the struct's fields, followed by 
 | `problem().params()` | The rule's parameters, as numbers or text | `min` is `18` and `max` is `120` |
 | `message()` | A message for people: the rule's `message` when it has one, or else the English one | `must be between 18 and 120` |
 
-Printed, the error is one violation per line: `age: must be between 18 and 120`.
+Printed, the error is one issue per line: `age: must be between 18 and 120`.
 
 ## Ways to validate
 
 | You call | For input that breaks the rules, you get |
 |---|---|
-| `annotated::json::from_str` or `from_slice`, with the `json` feature | A `DeserializeError` holding the violations as data, as in the example |
+| `annotated::json::from_str` or `from_slice`, with the `json` feature | A `DeserializeError` holding the issues as data, as in the example |
 | `annotated::from_deserializer`, with any serde `Deserializer` | The same |
-| `serde_json::from_str`, or anything else that goes through `serde::Deserialize` | A serde error with every violation in its message. A serde error can only carry a message, not data |
-| `value.validate()`, on a struct that derives `Validate` | `Violations`, for a value that already exists, whether or not serde built it |
+| `serde_json::from_str`, or anything else that goes through `serde::Deserialize` | A serde error with every issue in its message. A serde error can only carry a message, not data |
+| `value.validate()`, on a struct that derives `Validate` | `Issues`, for a value that already exists, whether or not serde built it |
 
-To stop at the first violation, call `from_str_fail_fast`, `from_slice_fail_fast`, `from_deserializer_fail_fast` or `validate_fail_fast` instead. Each returns only the violation the full report would list first. Going through `serde::Deserialize` always collects every violation.
+To stop at the first issue, call `from_str_fail_fast`, `from_slice_fail_fast`, `from_deserializer_fail_fast` or `validate_fail_fast` instead. Each returns only the issue the full report would list first. Going through `serde::Deserialize` always collects every issue.
 
 ## Values of the wrong type
 
-A value of the wrong type, like `"age": "twelve"`, ends deserialization with the format's own error, as it does with serde. Put `#[annotated(collect_type_errors)]` on the struct to get it as one more violation instead, with the code `invalid_type` and the message `must be u8, found string`. The violation names the kind of value found, never the value itself, so nothing a client sent is echoed back. This needs a self-describing format, such as JSON.
+A value of the wrong type, like `"age": "twelve"`, ends deserialization with the format's own error, as it does with serde. Put `#[annotated(collect_type_errors)]` on the struct to get it as one more issue instead, with the code `invalid_type` and the message `must be u8, found string`. The issue names the kind of value found, never the value itself, so nothing a client sent is echoed back. This needs a self-describing format, such as JSON.
 
 ## Features
 
@@ -129,7 +129,7 @@ A value of the wrong type, like `"age": "twelve"`, ends deserialization with the
 
 ## Web frameworks
 
-There is no crate for any framework. [`examples/axum`](examples/axum) is an axum extractor to copy into your app instead. It responds with 422 and lists every violation as RFC 9457 problem details.
+There is no crate for any framework. [`examples/axum`](examples/axum) is an axum extractor to copy into your app instead. It responds with 422 and lists every issue as RFC 9457 problem details.
 
 ## Learn more
 

@@ -1,5 +1,5 @@
 //! The containers a nested value is held in, `Option`, `Box`, sequences and maps, read every value in them
-//! collecting its violations: a sequence's element at its index, a map's value at its key.
+//! collecting its issues: a sequence's element at its index, a map's value at its key.
 
 #![cfg(feature = "serde")]
 
@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt::Debug;
 use std::hash::{BuildHasherDefault, Hasher};
 
-use annotated::{Deserialize, FoundViolations, Location, Violation};
+use annotated::{Deserialize, FoundIssues, Issue, Location};
 use serde::Deserializer;
 use serde::de::value::{MapDeserializer, SeqAccessDeserializer, SeqDeserializer};
 use serde::de::{DeserializeSeed, IntoDeserializer, SeqAccess, Visitor};
@@ -29,32 +29,31 @@ fn gran_via() -> Address {
 }
 
 fn read<'de, T: Deserialize<'de>>(json: &'de str) -> (Option<T>, Vec<String>) {
-    read_into(json, FoundViolations::new())
+    read_into(json, FoundIssues::new())
 }
 
 fn read_failing_fast<'de, T: Deserialize<'de>>(json: &'de str) -> (Option<T>, Vec<String>) {
-    read_into(json, FoundViolations::failing_fast())
+    read_into(json, FoundIssues::failing_fast())
 }
 
-fn read_into<'de, T: Deserialize<'de>>(json: &'de str, mut found: FoundViolations) -> (Option<T>, Vec<String>) {
+fn read_into<'de, T: Deserialize<'de>>(json: &'de str, mut found: FoundIssues) -> (Option<T>, Vec<String>) {
     let mut deserializer = serde_json::Deserializer::from_str(json);
     let value = T::deserialize_at(&mut deserializer, &Location::root(), &mut found).unwrap();
-    let violations = found.into_result().map_or_else(
-        |violations| violations.iter().map(path_and_code).collect(),
-        |()| Vec::new(),
-    );
-    (value, violations)
+    let issues = found
+        .into_result()
+        .map_or_else(|issues| issues.iter().map(path_and_code).collect(), |()| Vec::new());
+    (value, issues)
 }
 
-fn path_and_code(violation: &Violation) -> String {
-    let code = violation.problem().code();
-    if violation.path().is_root() {
+fn path_and_code(issue: &Issue) -> String {
+    let code = issue.problem().code();
+    if issue.path().is_root() {
         return code.to_owned();
     }
-    format!("{}: {code}", violation.path())
+    format!("{}: {code}", issue.path())
 }
 
-fn violations_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
+fn issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
     read::<T>(json).1
 }
 
@@ -65,7 +64,7 @@ fn every_element_of_a_list_is_read_at_its_index() {
     let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }, { "postalCode": "280" }]"#;
 
     assert_eq!(
-        violations_reading::<Vec<Address>>(body),
+        issues_reading::<Vec<Address>>(body),
         ["[1].street: missing", "[1].postalCode: length"]
     );
 }
@@ -100,7 +99,7 @@ fn the_elements_after_one_that_could_not_be_built_are_read() {
     let body = r#"[{ "postalCode": "28013" }, { "street": "", "postalCode": "28013" }]"#;
 
     assert_eq!(
-        violations_reading::<Vec<Address>>(body),
+        issues_reading::<Vec<Address>>(body),
         ["[0].street: missing", "[1].street: required"]
     );
 }
@@ -109,14 +108,14 @@ fn the_elements_after_one_that_could_not_be_built_are_read() {
 fn every_element_of_a_queue_is_read_at_its_index() {
     let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }, { "street": "", "postalCode": "28013" }]"#;
 
-    assert_eq!(violations_reading::<VecDeque<Address>>(body), ["[1].street: required"]);
+    assert_eq!(issues_reading::<VecDeque<Address>>(body), ["[1].street: required"]);
 }
 
 #[test]
 fn every_element_of_a_boxed_slice_is_read_at_its_index() {
     let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }, { "street": "", "postalCode": "28013" }]"#;
 
-    assert_eq!(violations_reading::<Box<[Address]>>(body), ["[1].street: required"]);
+    assert_eq!(issues_reading::<Box<[Address]>>(body), ["[1].street: required"]);
 }
 
 #[test]
@@ -129,7 +128,7 @@ fn a_boxed_slice_is_built_from_its_elements() {
 }
 
 #[test]
-fn a_boxed_value_is_read_with_its_violations() {
+fn a_boxed_value_is_read_with_its_issues() {
     let body = r#"{ "street": "", "postalCode": "28013" }"#;
 
     assert_eq!(
@@ -166,13 +165,13 @@ impl<'de> Deserializer<'de> for EveryValueAsUnit {
 
 #[test]
 fn unit_is_read_as_no_value() {
-    let read = Option::<Address>::deserialize_at(EveryValueAsUnit, &Location::root(), &mut FoundViolations::new());
+    let read = Option::<Address>::deserialize_at(EveryValueAsUnit, &Location::root(), &mut FoundIssues::new());
 
     assert_eq!(read, Ok(Some(None)));
 }
 
 #[test]
-fn a_value_in_an_option_is_read_with_its_violations() {
+fn a_value_in_an_option_is_read_with_its_issues() {
     let body = r#"{ "street": "", "postalCode": "28013" }"#;
 
     assert_eq!(
@@ -202,7 +201,7 @@ fn every_value_of_a_map_is_read_at_its_key() {
     let body = r#"{ "home": { "street": "Gran Vía 1", "postalCode": "28013" }, "work": { "postalCode": "280" } }"#;
 
     assert_eq!(
-        violations_reading::<BTreeMap<String, Address>>(body),
+        issues_reading::<BTreeMap<String, Address>>(body),
         ["[work].street: missing", "[work].postalCode: length"]
     );
 }
@@ -213,7 +212,7 @@ fn the_values_of_a_map_are_reported_in_the_order_of_their_keys() {
         r#"{ "work": { "street": "", "postalCode": "28013" }, "home": { "street": "", "postalCode": "28013" } }"#;
 
     assert_eq!(
-        violations_reading::<BTreeMap<String, Address>>(body),
+        issues_reading::<BTreeMap<String, Address>>(body),
         ["[home].street: required", "[work].street: required"]
     );
 }
@@ -238,20 +237,20 @@ fn a_map_with_a_value_that_could_not_be_built_is_not_built() {
 }
 
 #[test]
-fn a_value_given_again_for_a_key_replaces_the_one_before_with_its_violations() {
+fn a_value_given_again_for_a_key_replaces_the_one_before_with_its_issues() {
     let body = r#"{
         "home": { "street": "", "postalCode": "28013" },
         "home": { "street": "Gran Vía 1", "postalCode": "280" }
     }"#;
 
     assert_eq!(
-        violations_reading::<BTreeMap<String, Address>>(body),
+        issues_reading::<BTreeMap<String, Address>>(body),
         ["[home].postalCode: length"]
     );
 }
 
 #[test]
-fn a_valid_value_given_again_for_a_key_leaves_no_violation_of_the_one_before() {
+fn a_valid_value_given_again_for_a_key_leaves_no_issue_of_the_one_before() {
     let body = r#"{
         "home": { "street": "", "postalCode": "28013" },
         "home": { "street": "Gran Vía 1", "postalCode": "28013" }
@@ -264,7 +263,7 @@ fn a_valid_value_given_again_for_a_key_leaves_no_violation_of_the_one_before() {
 }
 
 #[test]
-fn a_value_with_violations_given_again_for_a_key_replaces_the_valid_one_before() {
+fn a_value_with_issues_given_again_for_a_key_replaces_the_valid_one_before() {
     let body = r#"{
         "home": { "street": "Gran Vía 1", "postalCode": "28013" },
         "home": { "street": "Gran Vía 1", "postalCode": "280" }
@@ -319,21 +318,21 @@ fn the_values_of_a_hash_map_are_reported_in_the_order_the_map_goes_through_them(
         "1": { "street": "1", "postalCode": "28013" } }"#;
 
     assert_eq!(
-        violations_reading::<StreetNumbers>(body),
+        issues_reading::<StreetNumbers>(body),
         ["[2].street: required", "[5].street: required"]
     );
 }
 
 #[test]
-fn a_value_given_again_for_a_key_of_a_hash_map_replaces_the_one_before_with_its_violations() {
+fn a_value_given_again_for_a_key_of_a_hash_map_replaces_the_one_before_with_its_issues() {
     let body =
         r#"{ "1": { "street": "", "postalCode": "28013" }, "1": { "street": "Gran Vía 1", "postalCode": "280" } }"#;
 
-    assert_eq!(violations_reading::<StreetNumbers>(body), ["[1].postalCode: length"]);
+    assert_eq!(issues_reading::<StreetNumbers>(body), ["[1].postalCode: length"]);
 }
 
 #[test]
-fn a_valid_value_given_again_for_a_key_of_a_hash_map_leaves_no_violation_of_the_one_before() {
+fn a_valid_value_given_again_for_a_key_of_a_hash_map_leaves_no_issue_of_the_one_before() {
     let body =
         r#"{ "1": { "street": "", "postalCode": "28013" }, "1": { "street": "Gran Vía 1", "postalCode": "28013" } }"#;
 
@@ -372,7 +371,7 @@ struct Line {
 fn an_option_of_a_list_reads_every_element_at_its_index() {
     let body = r#"[{ "quantity": 1 }, { "quantity": 0 }]"#;
 
-    assert_eq!(violations_reading::<Option<Vec<Line>>>(body), ["[1].quantity: range"]);
+    assert_eq!(issues_reading::<Option<Vec<Line>>>(body), ["[1].quantity: range"]);
 }
 
 #[test]
@@ -380,7 +379,7 @@ fn a_map_of_lists_reads_every_element_at_its_key_and_index() {
     let body = r#"{ "monday": [{ "quantity": 1 }], "tuesday": [{ "quantity": 2 }, { "quantity": 0 }] }"#;
 
     assert_eq!(
-        violations_reading::<BTreeMap<String, Vec<Line>>>(body),
+        issues_reading::<BTreeMap<String, Vec<Line>>>(body),
         ["[tuesday][1].quantity: range"]
     );
 }
@@ -390,7 +389,7 @@ fn a_list_of_maps_reports_each_maps_values_in_the_order_of_their_keys_after_the_
     let body = r#"[{ "monday": { "quantity": 0 } }, { "wednesday": { "quantity": 0 }, "tuesday": { "quantity": 0 } }]"#;
 
     assert_eq!(
-        violations_reading::<Vec<BTreeMap<String, Line>>>(body),
+        issues_reading::<Vec<BTreeMap<String, Line>>>(body),
         [
             "[0][monday].quantity: range",
             "[1][tuesday].quantity: range",
@@ -400,7 +399,7 @@ fn a_list_of_maps_reports_each_maps_values_in_the_order_of_their_keys_after_the_
 }
 
 #[test]
-fn failing_fast_answers_the_first_violation_of_the_first_element_with_one() {
+fn failing_fast_answers_the_first_issue_of_the_first_element_with_one() {
     let body = r#"[{ "quantity": 1 }, { "quantity": 0 }, {}]"#;
 
     assert_eq!(
@@ -410,7 +409,7 @@ fn failing_fast_answers_the_first_violation_of_the_first_element_with_one() {
 }
 
 #[test]
-fn failing_fast_answers_the_first_violation_of_a_map_in_the_order_of_its_keys() {
+fn failing_fast_answers_the_first_issue_of_a_map_in_the_order_of_its_keys() {
     let body = r#"{ "tuesday": { "quantity": 0 }, "monday": { "quantity": 0 } }"#;
 
     assert_eq!(
@@ -426,7 +425,7 @@ impl<'de> annotated::Deserialize<'de> for Quantity {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         _: &Location<'_>,
-        _: &mut FoundViolations,
+        _: &mut FoundIssues,
     ) -> Result<Option<Self>, D::Error> {
         Ok(Some(Self(serde::Deserialize::deserialize(deserializer)?)))
     }
@@ -437,7 +436,7 @@ fn a_sequence_is_read_into_room_for_the_elements_it_says_it_has() {
     let quantities = SeqDeserializer::<_, ValueError>::new([1_u32, 2, 3, 4, 5].into_iter());
 
     let allocations = allocation_counter::measure(|| {
-        let _ = Vec::<Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundViolations::new());
+        let _ = Vec::<Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundIssues::new());
     });
 
     assert_eq!(allocations.count_total, 1);
@@ -448,7 +447,7 @@ fn a_queue_is_read_into_room_for_the_elements_it_says_it_has() {
     let quantities = SeqDeserializer::<_, ValueError>::new([1_u32, 2, 3, 4, 5].into_iter());
 
     let allocations = allocation_counter::measure(|| {
-        let _ = VecDeque::<Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundViolations::new());
+        let _ = VecDeque::<Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundIssues::new());
     });
 
     assert_eq!(allocations.count_total, 1);
@@ -471,7 +470,7 @@ fn a_hash_map_is_read_into_room_for_the_values_it_says_it_has() {
     let quantities = MapDeserializer::<_, ValueError>::new(quantities.into_iter());
 
     let allocations = allocation_counter::measure(|| {
-        let _ = HashMap::<u64, Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundViolations::new());
+        let _ = HashMap::<u64, Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundIssues::new());
     });
 
     assert_eq!(allocations.count_total, 1);
@@ -505,7 +504,7 @@ fn a_sequence_saying_it_has_more_elements_than_memory_holds_is_read() {
     let read = Vec::<Quantity>::deserialize_at(
         SeqAccessDeserializer::new(quantities),
         &Location::root(),
-        &mut FoundViolations::new(),
+        &mut FoundIssues::new(),
     );
 
     assert_eq!(read, Ok(Some(vec![Quantity(1), Quantity(2)])));
@@ -513,7 +512,7 @@ fn a_sequence_saying_it_has_more_elements_than_memory_holds_is_read() {
 
 fn format_error_reading<'de, T: Deserialize<'de> + Debug>(json: &'de str) -> String {
     let mut deserializer = serde_json::Deserializer::from_str(json);
-    T::deserialize_at(&mut deserializer, &Location::root(), &mut FoundViolations::new())
+    T::deserialize_at(&mut deserializer, &Location::root(), &mut FoundIssues::new())
         .unwrap_err()
         .to_string()
 }
