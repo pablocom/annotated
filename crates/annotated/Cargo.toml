@@ -18,7 +18,7 @@ regex = ["dep:regex", "annotated-derive/regex"]
 unicode = ["dep:unicode-segmentation"]
 
 [dependencies]
-annotated-derive = { version = "=0.1.0", path = "../annotated-derive" }
+annotated-derive = { version = "=0.2.0", path = "../annotated-derive" }
 regex = { version = "1.13.1", optional = true }
 serde = { version = "1.0.229", optional = true }
 serde_json = { version = "1.0.154", optional = true }

@@ -47,7 +47,7 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 - **Nothing to pay for valid input.** Validating a valid value allocates nothing.
 - **Any serde format.** JSON has ready-made functions, and every other format works through its `Deserializer`.
 
-> **Status:** 0.1, the first release. Until 1.0, a release may change the API. When one does, the changelog says what changed.
+> **Status:** 0.2. Until 1.0, a release may change the API. When one does, the changelog says what changed.
 
 ## Getting started
 
