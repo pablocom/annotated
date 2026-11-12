@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use serde::Deserializer;
-use serde::de::DeserializeSeed;
+use serde::de::{DeserializeSeed, Error as _};
 
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, WrongType};
+use crate::content_deserializer::{ContentDeserializer, FunctionError, WrongType};
 use crate::{Deserialize, Location, Problem, Report};
 
 /// The `DeserializeSeed` that a struct collecting type errors reads a field with.
@@ -94,9 +94,53 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for NestedCollectingTypeErro
     }
 }
 
-fn buffered<'de, D: Deserializer<'de>>(
+/// Like [`CollectingTypeErrorsAt`], for a `T` whose `Deserialize` calls a function given to serde's
+/// `deserialize_with`. A value of the wrong type for the function is pushed into the report. Any other error the
+/// function returns ends deserialization with the function's message, which may repeat the input and so never
+/// becomes an issue.
+pub struct CollectingTypeErrorsOfAFunctionAt<'a, 'l, T> {
+    type_name: &'static str,
+    at: &'a Location<'l>,
+    found: &'a mut Report,
+    read: PhantomData<fn() -> T>,
+}
+
+impl<'a, 'l, T> CollectingTypeErrorsOfAFunctionAt<'a, 'l, T> {
+    /// A seed that reads a `T` at `at` and pushes a value of the wrong type into `found`. `type_name` says what was
+    /// expected when serde's error doesn't.
+    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut Report) -> Self
+    where
+        T: serde::Deserialize<'de>,
+    {
+        Self {
+            type_name,
+            at,
+            found,
+            read: PhantomData,
+        }
+    }
+}
+
+impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErrorsOfAFunctionAt<'_, '_, T> {
+    type Value = Option<T>;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Option<T>, D::Error> {
+        let (buffered, kind_found) = buffered(deserializer)?;
+        match T::deserialize(buffered) {
+            Ok(value) => Ok(Some(value)),
+            Err(FunctionError::WrongType(wrong_type)) => {
+                self.found
+                    .push(self.at, invalid_type(wrong_type, self.type_name, kind_found));
+                Ok(None)
+            }
+            Err(FunctionError::Message(message)) => Err(D::Error::custom(message)),
+        }
+    }
+}
+
+fn buffered<'de, D: Deserializer<'de>, E>(
     deserializer: D,
-) -> Result<(ContentDeserializer<'de, WrongType>, ValueKind), D::Error> {
+) -> Result<(ContentDeserializer<'de, E>, ValueKind), D::Error> {
     let is_human_readable = deserializer.is_human_readable();
     let content = <Content as serde::Deserialize>::deserialize(deserializer)?;
     let kind = content.kind();
@@ -114,7 +158,6 @@ fn invalid_type(wrong_type: WrongType, type_name: &'static str, kind_found: Valu
 #[cfg(test)]
 mod tests {
     use serde::Deserialize as _;
-    use serde::de::Error as _;
     use serde::de::IgnoredAny;
     use serde_test::{Configure, Token, assert_de_tokens};
 

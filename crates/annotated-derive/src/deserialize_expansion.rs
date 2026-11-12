@@ -25,6 +25,7 @@ struct DeserializeExpansion<'a> {
     deserialized: Ident,
     has_finished: Ident,
     read: Ident,
+    wrapper: Ident,
     element_at: Ident,
     visitor_lifetime: Lifetime,
     field_checks_label: Lifetime,
@@ -51,6 +52,7 @@ impl<'a> DeserializeExpansion<'a> {
             deserialized: local("deserialized"),
             has_finished: local("has_finished"),
             read: local("read"),
+            wrapper: local("wrapper"),
             element_at: local("element_at"),
             visitor_lifetime: Lifetime::new("'__visitor", Span::call_site()),
             field_checks_label,
@@ -91,6 +93,7 @@ impl<'a> DeserializeExpansion<'a> {
         let turbofish = type_generics.as_turbofish();
         let struct_name = &self.deserialized_struct.serde.name;
         let field_identifier = self.field_identifier();
+        let functions_reading_fields = self.functions_reading_fields();
         let visitor = self.visitor();
         quote! {
             impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
@@ -100,6 +103,7 @@ impl<'a> DeserializeExpansion<'a> {
                     #found: &mut ::annotated::Report,
                 ) -> ::core::result::Result<::core::option::Option<Self>, __D::Error> {
                     #field_identifier
+                    #(#functions_reading_fields)*
                     #visitor
                     #serde::Deserializer::deserialize_struct(
                         #deserializer,
@@ -124,10 +128,64 @@ impl<'a> DeserializeExpansion<'a> {
         }
     }
 
+    // As in serde's derive, a function given to `deserialize_with` reads its field through a type whose `Deserialize`
+    // calls it, since the function is generic over the deserializer.
+    fn functions_reading_fields(&self) -> Vec<TokenStream> {
+        let Self {
+            serde, deserializer, ..
+        } = self;
+        let input = self.input();
+        let name = &input.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let wrapper_generics = with_the_de_lifetime(&input.generics);
+        let (wrapper_impl_generics, wrapper_type_generics, where_clause) = wrapper_generics.split_for_impl();
+        self.read_fields()
+            .filter_map(|field| {
+                let function = self.serde_field_of(field).deserialize_with.as_ref()?;
+                let wrapper = self.wrapper_of(field);
+                let field_type = field.field_type;
+                let read_by_the_function = quote_spanned!(function.span()=> #function(#deserializer)?);
+                Some(quote! {
+                    struct #wrapper #wrapper_impl_generics #where_clause {
+                        value: #field_type,
+                        marker: ::core::marker::PhantomData<fn() -> (#name #type_generics, &'de ())>,
+                    }
+
+                    impl #wrapper_impl_generics #serde::Deserialize<'de> for #wrapper #wrapper_type_generics
+                    #where_clause
+                    {
+                        fn deserialize<__D: #serde::Deserializer<'de>>(
+                            #deserializer: __D,
+                        ) -> ::core::result::Result<Self, __D::Error> {
+                            ::core::result::Result::Ok(Self {
+                                value: #read_by_the_function,
+                                marker: ::core::marker::PhantomData,
+                            })
+                        }
+                    }
+                })
+            })
+            .collect()
+    }
+
+    fn wrapper_of(&self, field: &ValidatedField) -> Ident {
+        format_ident!("__DeserializeWith{}", self.position_of(field))
+    }
+
+    fn wrapper_type_of(&self, field: &ValidatedField) -> TokenStream {
+        let wrapper = self.wrapper_of(field);
+        let wrapper_generics = with_the_de_lifetime(&self.input().generics);
+        let (_, wrapper_type_generics, _) = wrapper_generics.split_for_impl();
+        quote!(#wrapper #wrapper_type_generics)
+    }
+
+    fn is_read_by_a_function(&self, field: &ValidatedField) -> bool {
+        self.serde_field_of(field).deserialize_with.is_some()
+    }
+
     fn generics_reading_fields(&self) -> Generics {
         let parameters = type_and_const_parameters(&self.input().generics);
-        let mut generics = self.generics_checking_fields();
-        generics.params.insert(0, parse_quote!('de));
+        let mut generics = with_the_de_lifetime(&self.generics_checking_fields());
         let where_clause = generics.make_where_clause();
         for field in self.fields() {
             where_clause
@@ -161,7 +219,8 @@ impl<'a> DeserializeExpansion<'a> {
     fn reading_bound_of(&self, field: &ValidatedField, parameters: &[&Ident]) -> Option<WherePredicate> {
         let serde = &self.serde;
         let field_type = field.field_type;
-        if self.is_skipped(field) || !mentions_any(field_type.to_token_stream(), parameters) {
+        let is_read_by_serde = !self.is_skipped(field) && !self.is_read_by_a_function(field);
+        if !is_read_by_serde || !mentions_any(field_type.to_token_stream(), parameters) {
             return None;
         }
         if field.has_nested_values() {
@@ -171,11 +230,14 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn checking_bounds_of(&self, field: &ValidatedField, parameters: &[&Ident]) -> Vec<WherePredicate> {
-        let is_its_type_s_default = match self.when_absent(field) {
-            WhenAbsent::TakesDefault(default) => matches!(default, DefaultValue::OfItsType),
-            WhenAbsent::TakesStructDefault => false,
-            WhenAbsent::IsMissing | WhenAbsent::IsNone => return Vec::new(),
+        let (takes_a_default, is_its_type_s_default) = match self.when_absent(field) {
+            WhenAbsent::TakesDefault(default) => (true, matches!(default, DefaultValue::OfItsType)),
+            WhenAbsent::TakesStructDefault => (true, false),
+            WhenAbsent::IsMissing | WhenAbsent::IsNone => (false, false),
         };
+        if !takes_a_default && self.reads_nested_values(field) {
+            return Vec::new();
+        }
         let mut bounds = Vec::new();
         let field_type = field.field_type;
         if is_its_type_s_default && mentions_any(field_type.to_token_stream(), parameters) {
@@ -356,6 +418,16 @@ impl<'a> DeserializeExpansion<'a> {
             let slot = slot_of(field);
             let slot_type = self.slot_type_of(field);
             let field_type = field.field_type;
+            let wrapper = &self.wrapper;
+            if !self.is_read_with_issues(field) && self.is_read_by_a_function(field) {
+                let wrapper_type = self.wrapper_type_of(field);
+                return quote! {
+                    let #slot: #slot_type = ::core::option::Option::map(
+                        #serde::de::SeqAccess::next_element::<#wrapper_type>(&mut #seq)?,
+                        |#wrapper| #wrapper.value,
+                    );
+                };
+            }
             if !self.is_read_with_issues(field) {
                 return quote! {
                     let #slot: #slot_type = #serde::de::SeqAccess::next_element::<#field_type>(&mut #seq)?;
@@ -363,12 +435,18 @@ impl<'a> DeserializeExpansion<'a> {
             }
             let read_issues = read_issues_of(field);
             let reading_with_its_issues = self.reading_with_its_issues(field);
-            let element = quote_spanned! {field_type.span()=>
+            let mut element = quote_spanned! {field_type.span()=>
                 ::annotated::__private::serde::de::SeqAccess::next_element_seed(
                     &mut #seq,
                     #reading_with_its_issues,
                 )?
             };
+            if self.is_read_by_a_function(field) {
+                let read = &self.read;
+                element = quote! {
+                    ::core::option::Option::map(#element, |#read| ::core::option::Option::map(#read, |#wrapper| #wrapper.value))
+                };
+            }
             quote! {
                 let mut #read_issues = self.#found.new_alike();
                 let #slot: #slot_type = #element;
@@ -400,6 +478,16 @@ impl<'a> DeserializeExpansion<'a> {
             };
         }
         let type_name = type_name_of(field_type);
+        if self.is_read_by_a_function(field) {
+            let wrapper_type = self.wrapper_type_of(field);
+            return quote_spanned! {field_type.span()=>
+                ::annotated::__private::CollectingTypeErrorsOfAFunctionAt::<#wrapper_type>::new(
+                    #type_name,
+                    #at_the_field,
+                    &mut #read_issues,
+                )
+            };
+        }
         let seed = if field.has_nested_values() {
             quote!(NestedCollectingTypeErrorsAt)
         } else {
@@ -411,7 +499,11 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn is_read_with_issues(&self, field: &ValidatedField) -> bool {
-        !self.is_skipped(field) && (field.has_nested_values() || self.deserialized_struct.collects_type_errors)
+        !self.is_skipped(field) && (self.reads_nested_values(field) || self.deserialized_struct.collects_type_errors)
+    }
+
+    fn reads_nested_values(&self, field: &ValidatedField) -> bool {
+        field.has_nested_values() && !self.is_skipped(field) && !self.is_read_by_a_function(field)
     }
 
     fn is_skipped(&self, field: &ValidatedField) -> bool {
@@ -430,19 +522,8 @@ impl<'a> DeserializeExpansion<'a> {
         let field_arms = self.read_fields().enumerate().map(|(index, field)| {
             let variant = format_ident!("Field{index}");
             let slot = slot_of(field);
-            let field_type = field.field_type;
             let name = &field.name;
-            let value = if self.is_read_with_issues(field) {
-                let reading_with_its_issues = self.reading_with_its_issues(field);
-                quote_spanned! {field_type.span()=>
-                    ::annotated::__private::serde::de::MapAccess::next_value_seed(
-                        &mut #map,
-                        #reading_with_its_issues,
-                    )?
-                }
-            } else {
-                quote!(#serde::de::MapAccess::next_value::<#field_type>(&mut #map)?)
-            };
+            let value = self.value_read_from_the_map(field);
             quote! {
                 __Field::#variant => {
                     if ::core::option::Option::is_some(&#slot) {
@@ -484,6 +565,32 @@ impl<'a> DeserializeExpansion<'a> {
         }
     }
 
+    fn value_read_from_the_map(&self, field: &ValidatedField) -> TokenStream {
+        let Self {
+            serde, map, wrapper, ..
+        } = self;
+        let field_type = field.field_type;
+        let is_read_by_a_function = self.is_read_by_a_function(field);
+        if !self.is_read_with_issues(field) && is_read_by_a_function {
+            let wrapper_type = self.wrapper_type_of(field);
+            return quote!(#serde::de::MapAccess::next_value::<#wrapper_type>(&mut #map)?.value);
+        }
+        if !self.is_read_with_issues(field) {
+            return quote!(#serde::de::MapAccess::next_value::<#field_type>(&mut #map)?);
+        }
+        let reading_with_its_issues = self.reading_with_its_issues(field);
+        let value = quote_spanned! {field_type.span()=>
+            ::annotated::__private::serde::de::MapAccess::next_value_seed(
+                &mut #map,
+                #reading_with_its_issues,
+            )?
+        };
+        if !is_read_by_a_function {
+            return value;
+        }
+        quote!(::core::option::Option::map(#value, |#wrapper| #wrapper.value))
+    }
+
     // Always inlined into `visit_map` and `visit_seq`: left a call taking every slot, reading a valid 8-field body
     // without LTO ran 7987 instructions against 7918, and `serde_json::from_str` then `validate()` 7977. Emitting the
     // checks in each instead would compile every `pattern` twice.
@@ -503,11 +610,12 @@ impl<'a> DeserializeExpansion<'a> {
         let slot_types = self.read_fields().map(|field| self.slot_type_of(field));
         let read_issues = self.fields_read_with_issues().map(read_issues_of);
         let read_issues_types = self.fields_read_with_issues().map(|_| quote!(::annotated::Report));
-        let buffers_of_skipped_nested_fields = self
+        let buffers_of_nested_values_not_read = self
             .fields()
             .iter()
-            .filter(|field| self.is_skipped(field) && field.has_nested_values())
+            .filter(|field| field.has_nested_values() && !self.is_read_with_issues(field))
             .map(read_issues_of);
+        let nested_values_not_read_validated = self.nested_values_not_read_validated();
         let values_of_slots = self.fields().iter().map(|field| self.value_of_slot(field));
         let values_from_the_struct_default = self.values_from_the_struct_default();
         let validities = self.fields_keeping_their_validity().map(validity_of);
@@ -544,9 +652,10 @@ impl<'a> DeserializeExpansion<'a> {
             ) -> ::core::option::Option<#name #type_generics> {
                 let #at = self.#at;
                 let #found = self.#found;
-                #(let mut #buffers_of_skipped_nested_fields = #found.new_alike();)*
+                #(let mut #buffers_of_nested_values_not_read = #found.new_alike();)*
                 #(#values_of_slots)*
                 #values_from_the_struct_default
+                #(#nested_values_not_read_validated)*
                 #(let mut #validities = false;)*
                 #finishing #field_checks_label: {
                     #(#field_checks)*
@@ -863,7 +972,7 @@ impl<'a> DeserializeExpansion<'a> {
         if self.deserialized_struct.serde.default.is_some() {
             return WhenAbsent::TakesStructDefault;
         }
-        if field.is_optional {
+        if field.is_optional && !self.is_read_by_a_function(field) {
             return WhenAbsent::IsNone;
         }
         WhenAbsent::IsMissing
@@ -874,16 +983,18 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn serde_field_of(&self, field: &ValidatedField) -> &'a SerdeField {
-        let position = self
-            .fields()
+        &self.deserialized_struct.serde.fields[self.position_of(field)]
+    }
+
+    fn position_of(&self, field: &ValidatedField) -> usize {
+        self.fields()
             .iter()
             .position(|candidate| candidate.member == field.member)
-            .expect("the field is one of the struct's");
-        &self.deserialized_struct.serde.fields[position]
+            .expect("the field is one of the struct's")
     }
 
     fn value_when_absent(&self, field: &ValidatedField, default_value: &TokenStream) -> TokenStream {
-        if !field.has_nested_values() {
+        if !self.reads_nested_values(field) {
             return self.as_its_slot_holds_it(field, default_value);
         }
         let value = &self.rules.value;
@@ -904,6 +1015,31 @@ impl<'a> DeserializeExpansion<'a> {
             return quote!(::core::option::Option::Some(#value));
         }
         value.clone()
+    }
+
+    fn nested_values_not_read_validated(&self) -> Vec<TokenStream> {
+        let value = &self.rules.value;
+        self.fields()
+            .iter()
+            .filter(|field| field.has_nested_values() && !self.reads_nested_values(field))
+            .map(|field| {
+                let slot = slot_of(field);
+                if self.holds_its_value(field) {
+                    return self.validating_nested_values(field, &quote!(&#slot));
+                }
+                let built = if self.is_read_with_issues(field) && self.can_be_missing(field) {
+                    quote!(::core::option::Option::Some(::core::option::Option::Some(#value)))
+                } else {
+                    quote!(::core::option::Option::Some(#value))
+                };
+                let validating_nested_values = self.validating_nested_values(field, &quote!(#value));
+                quote! {
+                    if let #built = &#slot {
+                        #validating_nested_values
+                    }
+                }
+            })
+            .collect()
     }
 
     // Nothing waits in the field's buffer for a value annotated didn't read. Validating its nested values into the
@@ -1057,6 +1193,12 @@ fn type_name_of(field_type: &Type) -> String {
 
 fn read_issues_of(field: &ValidatedField) -> Ident {
     format_ident!("{}_read_issues", field.member, span = Span::mixed_site())
+}
+
+fn with_the_de_lifetime(generics: &Generics) -> Generics {
+    let mut generics = generics.clone();
+    generics.params.insert(0, parse_quote!('de));
+    generics
 }
 
 fn with_lifetime(generics: &Generics, lifetime: &Lifetime) -> Generics {

@@ -16,6 +16,7 @@ pub struct SerdeField {
     pub names_read: Vec<String>,
     pub is_skipped: bool,
     pub default: Option<DefaultValue>,
+    pub deserialize_with: Option<ExprPath>,
 }
 
 pub enum DefaultValue {
@@ -47,6 +48,7 @@ impl SerdeStruct {
                     names_read: field.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
                     is_skipped: field.attrs.skip_deserializing(),
                     default: DefaultValue::from_serde(field.attrs.default()),
+                    deserialize_with: field.attrs.deserialize_with().cloned(),
                 })
                 .collect(),
             Data::Enum(_) => Vec::new(),

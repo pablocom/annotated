@@ -35,13 +35,15 @@ const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "default",
         "skip_deserializing",
         "skip",
+        "deserialize_with",
+        "with",
         "skip_serializing",
         "skip_serializing_if",
         "serialize_with",
         "getter",
     ],
     refusal: "with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default`, \
-              `skip_deserializing`, `skip` and those that only change serializing",
+              `skip_deserializing`, `skip`, `deserialize_with`, `with` and those that only change serializing",
 };
 
 impl<'a> DeserializedStruct<'a> {

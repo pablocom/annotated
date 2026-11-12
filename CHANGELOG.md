@@ -17,6 +17,11 @@ This file lists every change that users of the crates can notice. The format fol
   - The field is never read. It takes its own default, or its value in the struct's default, or `Default::default()`, and its rules check that value like a value read.
   - A key with its name is an unknown field: ignored, or the format's error under `deny_unknown_fields`. A struct read from a sequence has no element for it.
   - Its type needs no `Deserialize` implementation.
+- `#[derive(Deserialize)]` reads `#[serde(deserialize_with = "path")]` and `#[serde(with = "module")]` on a field.
+  - The field is read by the function, and its rules check the value the function returns. A `nested` rule checks it with `Validate`.
+  - As with serde, an absent field read by a function is `Problem::Missing`, even an `Option`, unless it has a default.
+  - Without `collect_type_errors`, the function's error ends deserialization.
+  - With `collect_type_errors`, a value of the wrong type for the function, one it rejects with `invalid_value`, or a sequence of the wrong length is `Problem::InvalidType` at the field. Any other error the function returns ends deserialization with its message, which may repeat the input and so is never an issue.
 
 ## [0.1.0] - 2026-11-12
 

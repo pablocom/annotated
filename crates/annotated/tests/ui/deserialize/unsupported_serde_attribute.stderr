@@ -4,7 +4,7 @@ error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_a
 4 | #[serde(rename_all = "camelCase", transparent)]
   |                                   ^^^^^^^^^^^
 
-error: with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default`, `skip_deserializing`, `skip` and those that only change serializing
+error: with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with` and those that only change serializing
   --> tests/ui/deserialize/unsupported_serde_attribute.rs:12:30
    |
 12 |     #[serde(alias = "title", bound = "")]
@@ -22,11 +22,11 @@ error: with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_a
 23 | #[serde(bound = "T: Clone")]
    |         ^^^^^
 
-error: with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default`, `skip_deserializing`, `skip` and those that only change serializing
+error: with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with` and those that only change serializing
   --> tests/ui/deserialize/unsupported_serde_attribute.rs:30:31
    |
-30 |     #[serde(skip_serializing, deserialize_with = "read_total")]
-   |                               ^^^^^^^^^^^^^^^^
+30 |     #[serde(skip_serializing, bound(deserialize = ""))]
+   |                               ^^^^^
 
 error: #[serde(getter = "...")] can only be used in structs that have #[serde(remote = "...")]
   --> tests/ui/deserialize/unsupported_serde_attribute.rs:35:1

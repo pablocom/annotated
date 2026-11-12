@@ -6,7 +6,9 @@ pub use serde;
 use crate::{Issue, Location, Problem, Report};
 
 #[cfg(feature = "serde")]
-pub use crate::collecting_type_errors::{CollectingTypeErrorsAt, NestedCollectingTypeErrorsAt};
+pub use crate::collecting_type_errors::{
+    CollectingTypeErrorsAt, CollectingTypeErrorsOfAFunctionAt, NestedCollectingTypeErrorsAt,
+};
 #[cfg(feature = "serde")]
 pub use crate::deserialize::DeserializeAt;
 

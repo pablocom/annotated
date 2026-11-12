@@ -27,7 +27,7 @@ struct Shelf<T> {
 
 #[derive(Deserialize)]
 struct Invoice {
-    #[serde(skip_serializing, deserialize_with = "read_total")]
+    #[serde(skip_serializing, bound(deserialize = ""))]
     total: u32,
 }
 

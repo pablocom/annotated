@@ -292,9 +292,11 @@ The derive reads a field the way serde's derive reads it with the same attribute
 
 - The field is read by `path(deserializer)`, or by `module::deserialize(deserializer)` for `with = "module"`. Its rules check the value the function returns.
 - Without `collect_type_errors`, the function's error ends deserialization, as with serde.
+- As with serde, the field is `Problem::Missing` when it is absent, even an `Option`, unless it has a default: only the function knows what an absent value would be.
 - With `collect_type_errors`, the field is read into `Content` first, and the function reads it from there:
-  - When the function fails because a value has the wrong type or is out of range, through serde's `invalid_type` or `invalid_value`, the failure is a `Problem::InvalidType` at the field, as for any other field.
+  - When the function fails because a value has the wrong type, is out of range or has the wrong length, through serde's `invalid_type`, `invalid_value` or `invalid_length`, the failure is a `Problem::InvalidType` at the field, as for any other field. None of these quote the input.
   - Any other error, such as one the function makes with `Error::custom`, ends deserialization as the format's error. Its message may repeat the input, so it never becomes an issue.
+- As in serde's derive, the function reads its field through a type of its own, whose `Deserialize` calls the function, since the function is generic over the deserializer. A field read by a function is bounded by no trait: the function says what it needs, in bounds on the struct.
 
 #### Borrowing
 

@@ -521,6 +521,43 @@ impl Display for WrongType {
 
 impl Error for WrongType {}
 
+/// Why a function given to serde's `deserialize_with` couldn't read a [`Content`]: a value of the wrong type, or an
+/// error of the function's own. Its message may repeat the input, so it is kept only to end deserialization with.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum FunctionError {
+    WrongType(WrongType),
+    Message(String),
+}
+
+impl de::Error for FunctionError {
+    fn custom<T: Display>(message: T) -> Self {
+        Self::Message(message.to_string())
+    }
+
+    fn invalid_type(unexpected: Unexpected<'_>, expected: &dyn Expected) -> Self {
+        Self::WrongType(WrongType::invalid_type(unexpected, expected))
+    }
+
+    fn invalid_value(unexpected: Unexpected<'_>, expected: &dyn Expected) -> Self {
+        Self::WrongType(WrongType::invalid_value(unexpected, expected))
+    }
+
+    fn invalid_length(length: usize, expected: &dyn Expected) -> Self {
+        Self::WrongType(WrongType::invalid_length(length, expected))
+    }
+}
+
+impl Display for FunctionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::WrongType(wrong_type) => wrong_type.fmt(formatter),
+            Self::Message(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl Error for FunctionError {}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
