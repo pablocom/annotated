@@ -4,6 +4,7 @@
 #![cfg(feature = "serde")]
 
 use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr};
 
 use annotated::{Deserialize, DeserializeError, Problem, Violation};
 use serde_test::{Readable, Token, assert_de_tokens_error};
@@ -751,6 +752,60 @@ fn a_well_typed_map_keyed_by_numbers_written_as_strings_is_read_as_without_colle
     assert_eq!(
         violations_reading::<Shelves>(body),
         violations_reading::<ShelvesStoppingAtATypeError>(body)
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[annotated(collect_type_errors)]
+struct Poll {
+    votes_by_answer: BTreeMap<bool, u32>,
+}
+
+#[test]
+fn a_map_keyed_by_booleans_written_as_strings_is_read() {
+    let poll = deserialize::<Poll>(r#"{ "votes_by_answer": { "true": 7, "false": 2 } }"#).unwrap();
+
+    assert_eq!(
+        poll,
+        Poll {
+            votes_by_answer: BTreeMap::from([(true, 7), (false, 2)])
+        }
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[annotated(collect_type_errors)]
+struct Server {
+    address: IpAddr,
+}
+
+#[test]
+fn an_ip_address_written_as_a_string_is_read() {
+    let server = deserialize::<Server>(r#"{ "address": "192.0.2.1" }"#).unwrap();
+
+    assert_eq!(
+        server,
+        Server {
+            address: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))
+        }
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[annotated(collect_type_errors)]
+struct Traffic {
+    requests_by_client: BTreeMap<IpAddr, u32>,
+}
+
+#[test]
+fn a_map_keyed_by_ip_addresses_written_as_strings_is_read() {
+    let traffic = deserialize::<Traffic>(r#"{ "requests_by_client": { "192.0.2.1": 3 } }"#).unwrap();
+
+    assert_eq!(
+        traffic,
+        Traffic {
+            requests_by_client: BTreeMap::from([(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)), 3)])
+        }
     );
 }
 

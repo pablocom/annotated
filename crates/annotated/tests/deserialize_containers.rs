@@ -4,6 +4,7 @@
 #![cfg(feature = "serde")]
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::fmt::Debug;
 use std::hash::{BuildHasherDefault, Hasher};
 
 use annotated::{Deserialize, FoundViolations, Location, Violation};
@@ -508,4 +509,43 @@ fn a_sequence_saying_it_has_more_elements_than_memory_holds_is_read() {
     );
 
     assert_eq!(read, Ok(Some(vec![Quantity(1), Quantity(2)])));
+}
+
+fn format_error_reading<'de, T: Deserialize<'de> + Debug>(json: &'de str) -> String {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    T::deserialize_at(&mut deserializer, &Location::root(), &mut FoundViolations::new())
+        .unwrap_err()
+        .to_string()
+}
+
+#[test]
+fn a_list_given_a_value_that_is_not_a_sequence_is_the_format_s_error_saying_what_was_expected() {
+    assert_eq!(
+        format_error_reading::<Vec<Address>>("5"),
+        "invalid type: integer `5`, expected a sequence at line 1 column 1"
+    );
+}
+
+#[test]
+fn a_queue_given_a_value_that_is_not_a_sequence_is_the_format_s_error_saying_what_was_expected() {
+    assert_eq!(
+        format_error_reading::<VecDeque<Address>>("5"),
+        "invalid type: integer `5`, expected a sequence at line 1 column 1"
+    );
+}
+
+#[test]
+fn a_map_given_a_value_that_is_not_a_map_is_the_format_s_error_saying_what_was_expected() {
+    assert_eq!(
+        format_error_reading::<BTreeMap<String, Address>>("5"),
+        "invalid type: integer `5`, expected a map at line 1 column 1"
+    );
+}
+
+#[test]
+fn a_hash_map_given_a_value_that_is_not_a_map_is_the_format_s_error_saying_what_was_expected() {
+    assert_eq!(
+        format_error_reading::<HashMap<String, Address>>("5"),
+        "invalid type: integer `5`, expected a map at line 1 column 1"
+    );
 }
