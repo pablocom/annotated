@@ -301,7 +301,8 @@ The derive reads a field the way serde's derive reads it with the same attribute
 #### Borrowing
 
 - A struct can have lifetime parameters. As with serde, a `&str` or `&[u8]` field borrows from the input, and any other field borrows with `#[serde(borrow)]`, or with `#[serde(borrow = "'a + 'b")]` for some of its lifetimes.
-- The impl requires `'de` to outlive each borrowed lifetime, worked out the way serde's derive works it out.
+- The impl requires `'de` to outlive each borrowed lifetime, worked out the way serde's derive works it out. When one of them is `'static`, serde's derive implements `Deserialize<'static>` instead. annotated writes `'de: 'static`, which allows the same inputs, so the generated code keeps one shape.
+- For a `Cow<str>` or `Cow<[u8]>` field with `borrow`, `serde_derive_internals` names a reading function in serde's private module. The derive calls annotated's own copy instead, in `annotated::__private`.
 - When the input can't lend a value, for example a JSON string with an escape in it, a borrowed field fails as with serde: the format's error, or `Problem::InvalidType` under `collect_type_errors`. `Content` keeps lent strings and bytes borrowed, so borrowing works the same with the option.
 
 #### `flatten`

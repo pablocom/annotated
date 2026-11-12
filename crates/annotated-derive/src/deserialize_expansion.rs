@@ -90,7 +90,9 @@ impl<'a> DeserializeExpansion<'a> {
         let generics = self.generics_reading_fields();
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         let (_, type_generics, _) = input.generics.split_for_impl();
-        let turbofish = type_generics.as_turbofish();
+        let without_lifetimes = without_lifetime_parameters(&input.generics);
+        let (_, type_generics_without_lifetimes, _) = without_lifetimes.split_for_impl();
+        let turbofish = type_generics_without_lifetimes.as_turbofish();
         let struct_name = &self.deserialized_struct.serde.name;
         let field_identifier = self.field_identifier();
         let functions_reading_fields = self.functions_reading_fields();
@@ -137,7 +139,7 @@ impl<'a> DeserializeExpansion<'a> {
         let input = self.input();
         let name = &input.ident;
         let (_, type_generics, _) = input.generics.split_for_impl();
-        let wrapper_generics = with_the_de_lifetime(&input.generics);
+        let wrapper_generics = self.with_the_de_lifetime(&input.generics);
         let (wrapper_impl_generics, wrapper_type_generics, where_clause) = wrapper_generics.split_for_impl();
         self.read_fields()
             .filter_map(|field| {
@@ -174,9 +176,16 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn wrapper_type_of(&self, field: &ValidatedField) -> TokenStream {
         let wrapper = self.wrapper_of(field);
-        let wrapper_generics = with_the_de_lifetime(&self.input().generics);
+        let wrapper_generics = self.with_the_de_lifetime(&self.input().generics);
         let (_, wrapper_type_generics, _) = wrapper_generics.split_for_impl();
         quote!(#wrapper #wrapper_type_generics)
+    }
+
+    fn with_the_de_lifetime(&self, generics: &Generics) -> Generics {
+        let borrowed_lifetimes = &self.deserialized_struct.serde.borrowed_lifetimes;
+        let mut generics = generics.clone();
+        generics.params.insert(0, parse_quote!('de: #(#borrowed_lifetimes)+*));
+        generics
     }
 
     fn is_read_by_a_function(&self, field: &ValidatedField) -> bool {
@@ -185,7 +194,7 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn generics_reading_fields(&self) -> Generics {
         let parameters = type_and_const_parameters(&self.input().generics);
-        let mut generics = with_the_de_lifetime(&self.generics_checking_fields());
+        let mut generics = self.with_the_de_lifetime(&self.generics_checking_fields());
         let where_clause = generics.make_where_clause();
         for field in self.fields() {
             where_clause
@@ -1195,9 +1204,14 @@ fn read_issues_of(field: &ValidatedField) -> Ident {
     format_ident!("{}_read_issues", field.member, span = Span::mixed_site())
 }
 
-fn with_the_de_lifetime(generics: &Generics) -> Generics {
+// A turbofish takes all of a type's lifetime arguments or none, and the visitor has one more than the struct.
+fn without_lifetime_parameters(generics: &Generics) -> Generics {
     let mut generics = generics.clone();
-    generics.params.insert(0, parse_quote!('de));
+    generics.params = generics
+        .params
+        .into_iter()
+        .filter(|parameter| !matches!(parameter, GenericParam::Lifetime(_)))
+        .collect();
     generics
 }
 

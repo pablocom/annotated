@@ -22,6 +22,10 @@ This file lists every change that users of the crates can notice. The format fol
   - As with serde, an absent field read by a function is `Problem::Missing`, even an `Option`, unless it has a default.
   - Without `collect_type_errors`, the function's error ends deserialization.
   - With `collect_type_errors`, a value of the wrong type for the function, one it rejects with `invalid_value`, or a sequence of the wrong length is `Problem::InvalidType` at the field. Any other error the function returns ends deserialization with its message, which may repeat the input and so is never an issue.
+- `#[derive(Deserialize)]` reads a struct with lifetime parameters, and `#[serde(borrow)]` and `#[serde(borrow = "'a + 'b")]` on a field.
+  - As with serde, a `&str` or `&[u8]` field borrows from the input, and any other field borrows with `borrow`. A `Cow<str>` or `Cow<[u8]>` with `borrow` borrows what the input lends, and owns the rest.
+  - The implementation requires the input to outlive each lifetime a field borrows, as serde's does.
+  - A value the input can't lend, such as a JSON string with an escape in it, is the format's error, or `Problem::InvalidType` under `collect_type_errors`.
 
 ## [0.1.0] - 2026-11-12
 

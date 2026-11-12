@@ -1,5 +1,5 @@
 use syn::punctuated::Punctuated;
-use syn::{Attribute, DeriveInput, Error, GenericParam, Meta, MetaNameValue, Token};
+use syn::{Attribute, DeriveInput, Error, Meta, MetaNameValue, Token};
 
 use crate::serde_names::SerdeStruct;
 use crate::validated_struct::{FieldRule, ValidatedStruct, nested_rules_in};
@@ -37,19 +37,20 @@ const ON_A_FIELD: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "skip",
         "deserialize_with",
         "with",
+        "borrow",
         "skip_serializing",
         "skip_serializing_if",
         "serialize_with",
         "getter",
     ],
     refusal: "with `#[derive(Deserialize)]`, a field's `#[serde(...)]` takes `rename`, `alias`, `default`, \
-              `skip_deserializing`, `skip`, `deserialize_with`, `with` and those that only change serializing",
+              `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow` and those that only change \
+              serializing",
 };
 
 impl<'a> DeserializedStruct<'a> {
     pub fn from_input(input: &'a DeriveInput) -> syn::Result<Self> {
         let validated = ValidatedStruct::from_input(input, "Deserialize")?;
-        refuse_lifetime_parameters(input)?;
         let collects_type_errors = collects_type_errors(&input.attrs)?;
         refuse_serde_attributes_other_than(&ON_A_STRUCT, &input.attrs)?;
         for field in &validated.fields {
@@ -64,20 +65,6 @@ impl<'a> DeserializedStruct<'a> {
             collects_type_errors,
         })
     }
-}
-
-fn refuse_lifetime_parameters(input: &DeriveInput) -> syn::Result<()> {
-    let Some(lifetime) = input.generics.params.iter().find_map(|parameter| match parameter {
-        GenericParam::Lifetime(lifetime) => Some(lifetime),
-        _ => None,
-    }) else {
-        return Ok(());
-    };
-    Err(Error::new_spanned(
-        lifetime,
-        "`Deserialize` can't be derived for a struct with lifetime parameters: borrowing from the input isn't \
-         supported",
-    ))
 }
 
 fn collects_type_errors(attributes: &[Attribute]) -> syn::Result<bool> {

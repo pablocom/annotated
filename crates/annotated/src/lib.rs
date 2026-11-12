@@ -22,6 +22,8 @@ pub mod rules;
 pub mod __private;
 
 #[cfg(feature = "serde")]
+mod borrowed;
+#[cfg(feature = "serde")]
 mod collecting_type_errors;
 #[cfg(feature = "serde")]
 mod content;
@@ -171,12 +173,16 @@ pub use annotated_derive::Validate;
 /// The struct is read as serde's derive would read it, by the names serde gives the struct and its fields.
 ///
 /// - **Supported:** `rename_all`, `rename`, `deny_unknown_fields`, `expecting` and `default` on the struct, and
-///   `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with` and `with` on a field.
+///   `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with` and `borrow` on a field.
 /// - **Accepted and ignored:** attributes that only change serializing, so that the struct can derive serde's
 ///   `Serialize` too. These are `into` and `bound(serialize = "...")` on the struct, and `skip_serializing`,
 ///   `skip_serializing_if`, `serialize_with`, `getter` and `bound(serialize = "...")` on a field. When a `rename` or
 ///   `rename_all` gives separate names for serializing and deserializing, the deserializing name is the one read.
-/// - **Compile errors:** any other serde attribute, and a struct with lifetime parameters.
+/// - **Compile errors:** any other serde attribute.
+///
+/// A struct can have lifetime parameters, and its fields borrow from the input as with serde: a `&str` or `&[u8]`
+/// field always, any other field with `#[serde(borrow)]`. A value the input can't lend, such as a JSON string with an
+/// escape in it, is the format's error, or [`Problem::InvalidType`] under `collect_type_errors`.
 ///
 /// # What ends deserialization
 ///

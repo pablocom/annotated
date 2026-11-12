@@ -6,6 +6,8 @@ pub use serde;
 use crate::{Issue, Location, Problem, Report};
 
 #[cfg(feature = "serde")]
+pub use crate::borrowed::{borrow_cow_bytes, borrow_cow_str};
+#[cfg(feature = "serde")]
 pub use crate::collecting_type_errors::{
     CollectingTypeErrorsAt, CollectingTypeErrorsOfAFunctionAt, NestedCollectingTypeErrorsAt,
 };

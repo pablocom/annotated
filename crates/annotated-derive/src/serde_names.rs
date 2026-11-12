@@ -1,7 +1,7 @@
 use proc_macro2::Span;
 use serde_derive_internals::ast::{Container, Data};
 use serde_derive_internals::{Ctxt, Derive, attr};
-use syn::{DeriveInput, ExprPath, Ident};
+use syn::{DeriveInput, ExprPath, Ident, Lifetime, parse_quote};
 
 pub struct SerdeStruct {
     pub name: String,
@@ -9,6 +9,7 @@ pub struct SerdeStruct {
     pub is_denying_unknown_fields: bool,
     pub expecting: Option<String>,
     pub default: Option<DefaultValue>,
+    pub borrowed_lifetimes: Vec<Lifetime>,
 }
 
 pub struct SerdeField {
@@ -48,7 +49,7 @@ impl SerdeStruct {
                     names_read: field.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
                     is_skipped: field.attrs.skip_deserializing(),
                     default: DefaultValue::from_serde(field.attrs.default()),
-                    deserialize_with: field.attrs.deserialize_with().cloned(),
+                    deserialize_with: field.attrs.deserialize_with().map(reachable_function),
                 })
                 .collect(),
             Data::Enum(_) => Vec::new(),
@@ -59,6 +60,7 @@ impl SerdeStruct {
             is_denying_unknown_fields: container.attrs.deny_unknown_fields(),
             expecting: container.attrs.expecting().map(ToOwned::to_owned),
             default: DefaultValue::from_serde(container.attrs.default()),
+            borrowed_lifetimes: borrowed_lifetimes(container),
         }
     }
 }
@@ -71,4 +73,31 @@ impl DefaultValue {
             attr::Default::Path(function) => Some(Self::ReturnedBy(function.clone())),
         }
     }
+}
+
+// As serde's derive works it out: `'de` outlives every lifetime a field that is read borrows.
+fn borrowed_lifetimes(container: &Container) -> Vec<Lifetime> {
+    let Data::Struct(_, fields) = &container.data else {
+        return Vec::new();
+    };
+    let mut lifetimes: Vec<Lifetime> = fields
+        .iter()
+        .filter(|field| !field.attrs.skip_deserializing())
+        .flat_map(|field| field.attrs.borrowed_lifetimes().iter().cloned())
+        .collect();
+    lifetimes.sort();
+    lifetimes.dedup();
+    lifetimes
+}
+
+// For a `Cow<str>` or `Cow<[u8]>` field with `#[serde(borrow)]`, `serde_derive_internals` names a function in serde's
+// private module, which the generated code can't reach. annotated has its own.
+fn reachable_function(function: &ExprPath) -> ExprPath {
+    let segments = &function.path.segments;
+    let is_in_serde_s_private_module = segments.first().is_some_and(|first| first.ident == "_serde");
+    if !is_in_serde_s_private_module {
+        return function.clone();
+    }
+    let name = &segments.last().expect("a path has a segment").ident;
+    parse_quote!(::annotated::__private::#name)
 }
