@@ -252,12 +252,63 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 
 - `#[validate(...)]`, like the `Validate` derive.
 - `#[annotated(...)]`, for its own options.
-- These `#[serde(...)]` attributes: on the struct, `rename_all`, `rename`, `deny_unknown_fields` and `expecting`. On a field, `rename` and `alias`.
+- The `#[serde(...)]` attributes in [Serde attributes](#serde-attributes).
 - Serde attributes that only change serializing, which it accepts and ignores, since deserializing never uses them: `skip_serializing`, `skip_serializing_if`, `serialize_with`, `getter`, `into`, `bound(serialize = ...)`, and the serializing half of `rename` and `rename_all`.
 
 Any other serde attribute is a compile error that names the accepted ones, until each is supported deliberately.
 
-**Generics.** Type parameters are supported. As in serde's derive, the bounds come from the fields: each field type that mentions a type parameter is bounded by the trait the field is read through. A field type that can't be read is then an error at the field, not a bound that no caller can meet. A struct with lifetime parameters is a compile error, since borrowing from the input needs `#[serde(borrow)]`.
+**Generics.** Type parameters are supported. As in serde's derive, the bounds come from the fields: each field type that mentions a type parameter is bounded by the trait the field is read through. A field type that can't be read is then an error at the field, not a bound that no caller can meet. Lifetime parameters are supported for borrowing, as [Borrowing](#borrowing) says.
+
+### Serde attributes
+
+The derive reads a field the way serde's derive reads it with the same attributes. It reads these:
+
+| On | Attributes |
+|---|---|
+| The struct | `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` |
+| A field | `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow`, `flatten` |
+
+**Rules check every value the struct ends up with.** A value from `default`, a skipped field's value, and a value read by `deserialize_with` are checked by the field's rules like any other. So the report stays the one serde followed by `validate()` gives.
+
+- annotated doesn't read such a value itself, so it can't check a `nested` rule while reading it. It checks the value with `Validate::validate_into` at the field's location instead, after the last key. The field's type must implement `Validate`, and when it doesn't, the compile error points at the field's type.
+
+#### `default`
+
+- On a field, `#[serde(default)]` gives an absent field `Default::default()`, and `#[serde(default = "path")]` gives it `path()`. The field is never `Problem::Missing`.
+- On the struct, `#[serde(default)]` gives each absent field its value in `Self::default()`, and `#[serde(default = "path")]` its value in `path()`. A field's own `default` comes first.
+- annotated makes a default only when a field is absent, so a complete input pays nothing for it.
+- A struct read from a sequence gives a missing element at the end its default the same way.
+
+#### `skip_deserializing` and `skip`
+
+- The field is never read. Its value is its own `default`, else the struct's `default`, else `Default::default()`.
+- Its name isn't one of the struct's field names. A key with that name is an unknown key: ignored, or an error under `deny_unknown_fields`, as with serde.
+
+#### `deserialize_with` and `with`
+
+- The field is read by `path(deserializer)`, or by `module::deserialize(deserializer)` for `with = "module"`. Its rules check the value the function returns.
+- Without `collect_type_errors`, the function's error ends deserialization, as with serde.
+- With `collect_type_errors`, the field is read into `Content` first, and the function reads it from there:
+  - When the function fails because a value has the wrong type or is out of range, through serde's `invalid_type` or `invalid_value`, the failure is a `Problem::InvalidType` at the field, as for any other field.
+  - Any other error, such as one the function makes with `Error::custom`, ends deserialization as the format's error. Its message may repeat the input, so it never becomes an issue.
+
+#### Borrowing
+
+- A struct can have lifetime parameters. As with serde, a `&str` or `&[u8]` field borrows from the input, and any other field borrows with `#[serde(borrow)]`, or with `#[serde(borrow = "'a + 'b")]` for some of its lifetimes.
+- The impl requires `'de` to outlive each borrowed lifetime, worked out the way serde's derive works it out.
+- When the input can't lend a value, for example a JSON string with an escape in it, a borrowed field fails as with serde: the format's error, or `Problem::InvalidType` under `collect_type_errors`. `Content` keeps lent strings and bytes borrowed, so borrowing works the same with the option.
+
+#### `flatten`
+
+- A flattened field's keys sit in the struct's own map, as with serde. The struct keeps every key that isn't one of its fields in a buffer, and reads each flattened field from the buffer after the last key. A flattened struct takes the keys it knows, and a flattened map takes every key no other field took.
+- A flattened field has the struct's own location. Issues inside a flattened `Address` are at `street`, not at `address.street`, because that is where they are in the input. The `Validate` derive agrees: `nested` on a flattened field validates it at the struct's location.
+  - A rule on the flattened value as a whole, such as `length` on a flattened map, reports at the struct's location. A rule under `each` reports at each key.
+  - A flattened field's issues come at its place among the fields.
+- A flattened `Option<T>` is `None` when `T` can't be built from the buffer, as with serde, and the issues found trying are dropped.
+- With `collect_type_errors` on the struct, a flattened field without `nested` whose buffered keys don't fit its type is a `Problem::InvalidType` at the struct's location. A `nested` flattened field follows its own type's option.
+- As in serde, a struct with a flattened field is read with `deserialize_map`, so it can't be read from a sequence.
+- `flatten` together with `deny_unknown_fields` on the same struct is a compile error: a key meant for a flattened field can't be told from an unknown one while the struct reads its own keys.
+- Buffering allocates: a `Content` for each key that isn't one of the struct's fields. Only a struct with a flattened field buffers. Every other struct reads as before.
 
 **No serde dependency for the user.** The generated code reaches serde through `annotated::__private::serde`, so a crate using the derive depends on `annotated` alone.
 
