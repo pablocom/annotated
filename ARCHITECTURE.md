@@ -30,7 +30,7 @@ Violations ──1..*── Violation ──── Path ──0..*── PathSeg
 - A rule is a small value built inline at the call site (`rules::length().max(50)`); its constructor and builder methods are `const fn` where they can be, so the compiler folds them away. Checking calls `Rule::check(&rule, value) -> Result<(), Problem>`, and a `Problem` is built only when the check fails.
 - The one rule with expensive setup, `pattern`, gets a `static` `LazyLock<Regex>` generated at its call site, so each regular expression compiles once. The derive also checks the expression at compile time and refuses one that doesn't parse.
 
-Claims about speed are backed by the benchmarks in `benches/`, which compare against `validator` and `garde`.
+Claims about speed are backed by a benchmark project of its own, outside this repository, which compares validation and collecting deserialization against `validator`, `garde`, `serde_valid` and `wary`.
 
 ## Rules
 
@@ -82,8 +82,6 @@ Each entry in `#[validate(...)]` is one rule, and the derive turns it into a con
 - **A URL is RFC 3986's, with RFC 3987's characters.** `url` accepts an absolute URI with an authority by [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986) (section 3 and appendix A), `scheme "://" authority path-abempty [ "?" query ] [ "#" fragment ]`, with `ucschar` in the host, path, query and fragment and `iprivate` in the query, as [RFC 3987](https://www.rfc-editor.org/rfc/rfc3987) section 2.2 extends it, so `https://bücher.de/straße` passes. It departs from the grammar twice: the host can't be empty, as [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) section 4.2.1 requires of `http`, and userinfo, which section 4.2.4 deprecates for `http` and `https`, is refused for every scheme, so the rule stays one definition. The scheme is compared with the accepted ones ignoring ASCII case. The host is an IP literal (`[IPv6address]` or `IPvFuture`), an IPv4 address or an `ireg-name`, the port is `*DIGIT`, and a `%` must be followed by two hexadecimal digits. Anything else, whitespace (surrounding included), a backslash or a control character, breaks it. The recognizer is written by hand, in small functions named after the grammar's productions, and allocates nothing.
 
 ## Collecting deserialization
-
-> Being built. This is the design it's built to; the sections above describe what's in place.
 
 ### The `Deserialize` trait
 
@@ -140,6 +138,5 @@ There is no framework crate. `examples/axum` shows the extractor, about thirty l
 - **Unit tests** sit beside each rule and each piece of the error model.
 - **Integration tests** in `crates/annotated/tests/` drive the derives from the outside: what a struct accepts and the violations it reports, with whole values compared.
 - **Compile-fail tests** in `crates/annotated/tests/ui/`, run by `trybuild` on the stable toolchain only, pin every error the derives emit, including its span. Compiler output differs between versions, so the MSRV job skips them.
-- **Doc tests** are the examples in the docs, so every example compiles and runs.
+- **Doc tests** are the examples in the docs, so every example compiles and runs. The README's test runs as a copy in `tests/json.rs`; change both together.
 - **Property tests** check that the `url` rule agrees, on generated text, with [`iri-string`](https://crates.io/crates/iri-string), a strict RFC 3986 and RFC 3987 validator.
-- **Benchmarks** in `benches/` compare validation and collecting deserialization against `validator` and `garde`.
