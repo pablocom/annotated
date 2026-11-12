@@ -322,6 +322,58 @@ The derive reads a field the way serde's derive reads it with the same attribute
 
 **No serde dependency for the user.** The generated code reaches serde through `annotated::__private::serde`, so a crate using the derive depends on `annotated` alone.
 
+### Enums
+
+Both derives work on enums, with every kind of variant: unit, newtype, tuple and struct.
+
+- A variant's fields take `#[validate(...)]` rules as a struct's fields do. A newtype or tuple variant takes them on its unnamed fields: `Card(#[validate(nested)] CardDetails)`.
+- On the enum, `#[validate(...)]` takes `custom(f)` rules and `report_all`, as on a struct. A rule gets `&Self` and reports at the enum's location, after the variant's fields. `custom(f, field = name)` is a compile error on an enum, since a field belongs to one variant.
+
+**Paths follow the input.** An issue inside a variant is reported where its value is in the input, as serde lays the variant out. The `Validate` derive reads the same serde attributes, so validating reports the same paths as deserializing.
+
+| Representation | Input | An issue at `number` in the variant `card` |
+|---|---|---|
+| External, the default | `{"card": {"number": …}}` | `card.number` |
+| Internal, `tag = "type"` | `{"type": "card", "number": …}` | `number` |
+| Adjacent, `tag = "type", content = "data"` | `{"type": "card", "data": {"number": …}}` | `data.number` |
+| Untagged | `{"number": …}` | `number` |
+
+- A newtype variant's value is at the variant's location: `card`, when externally tagged.
+- A tuple variant's elements are at their index: `point[1]`.
+- A variant with `#[serde(untagged)]` in a tagged enum is at the enum's location, as in an untagged enum.
+
+**Reading each representation.** The derive reads each one as serde's derive does, and buffers only what serde buffers.
+
+- **External.** The enum is read through `deserialize_enum`, with nothing buffered. A variant name the enum doesn't know is the format's error, since a streaming parser can't skip a value whose shape it doesn't know. With `collect_type_errors` on the enum, the enum is read into `Content` first. So an unknown variant is a `Problem::UnknownVariant` at the enum's location, and a value that isn't the enum at all is a `Problem::InvalidType` there. In a format with a syntax of its own for enums, such an enum can't be buffered, and stays the format's error, as [Values of the wrong type](#values-of-the-wrong-type) says.
+- **Internal.** Every key but the tag is buffered, as serde does. A missing tag is `Problem::Missing` at the tag's name, and a tag that names no variant is `Problem::UnknownVariant` there. The variant is then read from the buffer.
+- **Adjacent.** As with serde, the content is read straight from the input when the tag comes first, and buffered when the tag comes after it. A missing tag is `Problem::Missing` at the tag's name, and a missing content is `Problem::Missing` at the content's name, unless the variant needs none, as with serde. A tag that names no variant is `Problem::UnknownVariant` at the tag's name, and its content is skipped.
+- **Untagged.** The value is buffered, as serde does, and the variants are tried in order. The value is the first variant that can be built: every field in it is present and has the right type.
+  - Broken rules don't stop a variant from being built. They are reported, so the report stays the one serde followed by `validate()` gives.
+  - The issues found trying the variants that couldn't be built are dropped.
+  - When no variant can be built, the issue is a `Problem::InvalidType` at the enum's location. `expected` is the enum's `expecting`, or else `untagged enum Name`, and `found` is the kind of value.
+- **Untagged variants in a tagged enum.** As with serde, the whole value is buffered, and the tagged variants are tried first, then the untagged ones in order. When none can be built, the issue is the one an untagged enum reports.
+
+**A value that fits no variant is an issue.** In an internally tagged, adjacently tagged or untagged enum, a tag that names no variant, or a value no variant fits, is reported as an issue, with or without `collect_type_errors`, and reading goes on. The value is buffered, or its content can be skipped, so nothing stops the parser. Type errors inside the variant that was chosen follow the enum's `collect_type_errors`, as a struct's fields do.
+
+**`Problem::UnknownVariant`** has the code `unknown_variant` and one parameter, `expected`: the names the enum accepts, aliases included, as serde lists them, comma-separated: `card, transfer`. Its message is `must be one of {expected}`. It never repeats the name that was sent. Under `collect_type_errors`, a field holding a plain serde enum reports it too, at the field, instead of `invalid_type`: annotated's error type implements serde's `unknown_variant`, which hands it the names the enum accepts.
+
+**Serde attributes.** The derive reads everything serde reads on an enum:
+
+| On | Attributes |
+|---|---|
+| The enum | `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting` |
+| A variant | `rename`, `alias`, `rename_all`, `skip_deserializing`, `skip`, `other`, `untagged`, `deserialize_with`, `with`, `borrow` |
+| A variant's field | Everything a struct's field takes, in [Serde attributes](#serde-attributes) |
+
+- A skipped variant can't be read: its name is unknown, as with serde.
+- A unit variant with `other` is read for any tag that names no other variant, as with serde, so the enum never reports `Problem::UnknownVariant`.
+- A variant with `deserialize_with` is read by the function. Its fields' rules check what the function returns, and its nested values are checked with `Validate`, as for a field read by a function.
+- `deny_unknown_fields` applies to the keys of struct variants, and to the keys of an adjacently tagged enum other than its tag and content, as with serde.
+
+**Everything else works as for a struct:** generics and their bounds, borrowing, failing fast, and the equivalence with serde followed by `validate()`, which tests pin for each representation.
+
+**Cost.** A struct reads exactly as before, since enums generate code of their own. An externally tagged enum buffers nothing, and the other representations buffer what serde buffers. Trying an untagged variant that can't be built may allocate for its issues, which are then dropped. serde allocates an error for it too.
+
 ### Entry points and the error
 
 - `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with an empty `Report`.
