@@ -3,3 +3,15 @@ error: `nested` takes no arguments
    |
 11 |     #[validate(nested(message = "must be a valid address"))]
    |                ^^^^^^
+
+error: `nested` takes no arguments
+  --> tests/ui/nested_with_arguments.rs:17:16
+   |
+17 |     #[validate(nested = true)]
+   |                ^^^^^^
+
+error: `nested` takes no arguments
+  --> tests/ui/nested_with_arguments.rs:23:16
+   |
+23 |     #[validate(nested(depth = 2))]
+   |                ^^^^^^

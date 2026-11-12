@@ -420,6 +420,36 @@ fn a_struct_level_rule_at_a_field_is_skipped_when_the_field_is_missing() {
     assert_eq!(violations_reading::<NewPassword>(body), ["repeatedPassword: missing"]);
 }
 
+fn nickname_differs_from_the_name(player: &Player) -> Result<(), Problem> {
+    if player.nickname.as_deref() == Some(player.full_name.as_str()) {
+        return Err(Problem::custom("nickname_is_the_name", "can't repeat the name"));
+    }
+    Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+#[validate(custom(nickname_differs_from_the_name, field = nickname))]
+struct Player {
+    full_name: String,
+    #[validate(length(min = 2))]
+    nickname: Option<String>,
+}
+
+#[test]
+fn a_struct_level_rule_at_an_optional_field_is_skipped_when_the_value_inside_breaks_its_own_rules() {
+    let body = r#"{ "fullName": "A", "nickname": "A" }"#;
+
+    assert_eq!(violations_reading::<Player>(body), ["nickname: length"]);
+}
+
+#[test]
+fn a_struct_level_rule_at_an_optional_field_runs_when_the_value_inside_follows_its_own_rules() {
+    let body = r#"{ "fullName": "Alex", "nickname": "Alex" }"#;
+
+    assert_eq!(violations_reading::<Player>(body), ["nickname: nickname_is_the_name"]);
+}
+
 fn ends_after_it_starts(stay: &Stay) -> Result<(), Problem> {
     if stay.ends_on <= stay.starts_on {
         return Err(Problem::custom("ends_before_it_starts", "must end after it starts"));
@@ -494,6 +524,26 @@ fn a_struct_with_a_type_parameter_reports_its_violations() {
     assert_eq!(
         violations_reading::<Page<u8>>(r#"{ "items": [7, 8, 9], "number": 0 }"#),
         ["items: length", "number: range"]
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct Envelope<T> {
+    content: T,
+    #[validate(required)]
+    recipient: String,
+}
+
+#[test]
+fn a_field_whose_type_is_the_type_parameter_itself_is_read_with_the_type_given() {
+    let envelope = deserialize::<Envelope<u8>>(r#"{ "content": 7, "recipient": "Sam" }"#).unwrap();
+
+    assert_eq!(
+        envelope,
+        Envelope {
+            content: 7,
+            recipient: "Sam".to_owned()
+        }
     );
 }
 

@@ -379,6 +379,20 @@ fn a_type_parameter_checked_with_each_nested_is_read_through_annotated_deseriali
 }
 
 #[derive(Deserialize, Debug)]
+struct Tour {
+    #[validate(each(custom(not_a_restricted_stop)), each(required, nested))]
+    #[allow(dead_code)]
+    stops: Vec<Option<Address>>,
+}
+
+#[test]
+fn the_violations_inside_an_element_are_reported_when_an_each_without_nested_comes_before_the_one_with_it() {
+    let body = r#"{ "stops": [{ "street": "", "postalCode": "28013" }] }"#;
+
+    assert_eq!(violations_reading::<Tour>(body), ["stops[0].street: required"]);
+}
+
+#[derive(Deserialize, Debug)]
 #[validate(report_all)]
 struct Delivery {
     #[validate(nested, custom(not_a_restricted_area))]
