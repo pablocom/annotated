@@ -1,0 +1,6 @@
+error: #[serde(other)] must be on a unit variant
+ --> tests/ui/deserialize/other_on_a_variant_that_is_not_a_unit.rs:7:5
+  |
+7 | /     #[serde(other)]
+8 | |     Unsupported { kind: String },
+  | |________________________________^

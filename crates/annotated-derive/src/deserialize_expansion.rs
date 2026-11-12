@@ -203,8 +203,9 @@ impl<'a> DeserializeExpansion<'a> {
         generics
     }
 
+    // A variant read by a function of its own reads all of its fields, so each of them is read by a function too.
     fn is_read_by_a_function(&self, field: &ValidatedField) -> bool {
-        self.serde_field_of(field).deserialize_with.is_some()
+        self.serde_field_of(field).deserialize_with.is_some() || self.deserialized_struct.read_whole_by.is_some()
     }
 
     fn generics_reading_fields(&self) -> Generics {
@@ -413,7 +414,9 @@ impl<'a> DeserializeExpansion<'a> {
             .unwrap_or_else(|| format!("struct {name}"));
         let has_flattened_fields = self.has_flattened_fields();
         let form = self.deserialized_struct.form;
+        let is_read_whole_by_a_function = self.deserialized_struct.read_whole_by.is_some();
         let (visit_seq, visit_map) = match form {
+            _ if is_read_whole_by_a_function => (TokenStream::new(), TokenStream::new()),
             Form::Struct if has_flattened_fields => (TokenStream::new(), self.visit_map_keeping_leftovers()),
             Form::Struct => (self.visit_seq(), self.visit_map()),
             Form::Tuple => (self.visit_seq(), TokenStream::new()),
@@ -421,9 +424,10 @@ impl<'a> DeserializeExpansion<'a> {
         };
         let checked_value = self.checked_value();
         let names_read = self.read_serde_fields().flat_map(|field| &field.names_read);
-        let has_field_names = form == Form::Struct && !has_flattened_fields;
+        let has_field_names = form == Form::Struct && !has_flattened_fields && !is_read_whole_by_a_function;
         let field_names = has_field_names.then(|| quote!(const __FIELDS: &[&str] = &[#(#names_read),*];));
         let reading = match form {
+            _ if is_read_whole_by_a_function => TokenStream::new(),
             Form::Newtype => self.newtype_seed(),
             Form::Struct if has_flattened_fields && self.deserialized_struct.variant.is_some() => {
                 self.seed_reading_a_map()
@@ -644,7 +648,8 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn is_read_with_issues(&self, field: &ValidatedField) -> bool {
-        !self.is_skipped(field) && (self.reads_nested_values(field) || self.deserialized_struct.collects_type_errors)
+        let is_read_alone = !self.is_skipped(field) && self.deserialized_struct.read_whole_by.is_none();
+        is_read_alone && (self.reads_nested_values(field) || self.deserialized_struct.collects_type_errors)
     }
 
     fn reads_nested_values(&self, field: &ValidatedField) -> bool {
@@ -653,6 +658,10 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn is_skipped(&self, field: &ValidatedField) -> bool {
         self.serde_field_of(field).is_skipped
+    }
+
+    pub fn slots(&self) -> Vec<Ident> {
+        self.read_fields().map(slot_of).collect()
     }
 
     pub fn has_flattened_fields(&self) -> bool {
@@ -1149,7 +1158,7 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn slot_type_of(&self, field: &ValidatedField) -> TokenStream {
         let field_type = field.field_type;
-        let is_never_absent = is_its_parent_s_value(field);
+        let is_never_absent = matches!(self.when_absent(field), WhenAbsent::IsNeverAbsent);
         if is_never_absent && self.is_read_with_issues(field) {
             return quote!(::core::option::Option<#field_type>);
         }
@@ -1253,7 +1262,8 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn when_absent(&self, field: &ValidatedField) -> WhenAbsent<'a> {
-        if is_its_parent_s_value(field) && !self.is_skipped(field) {
+        let is_read_with_its_variant = self.deserialized_struct.read_whole_by.is_some();
+        if is_read_with_its_variant || (is_its_parent_s_value(field) && !self.is_skipped(field)) {
             return WhenAbsent::IsNeverAbsent;
         }
         if let Some(default) = &self.serde_field_of(field).default {

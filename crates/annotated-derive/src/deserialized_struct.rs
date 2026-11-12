@@ -1,5 +1,5 @@
 use syn::punctuated::Punctuated;
-use syn::{Attribute, DeriveInput, Error, Ident, Meta, MetaNameValue, Token};
+use syn::{Attribute, DeriveInput, Error, ExprPath, Ident, Meta, MetaNameValue, Token};
 
 use crate::serde_names::SerdeStruct;
 use crate::validated_struct::{FieldRule, ValidatedField, ValidatedStruct, nested_rules_in};
@@ -10,6 +10,7 @@ pub struct DeserializedStruct<'a> {
     pub collects_type_errors: bool,
     pub variant: Option<&'a Ident>,
     pub form: Form,
+    pub read_whole_by: Option<ExprPath>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -77,6 +78,7 @@ impl<'a> DeserializedStruct<'a> {
             collects_type_errors,
             variant: None,
             form: Form::Struct,
+            read_whole_by: None,
         })
     }
 }

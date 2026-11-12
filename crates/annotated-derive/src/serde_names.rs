@@ -41,6 +41,9 @@ pub struct SerdeVariant {
     pub name: String,
     pub names_read: Vec<String>,
     pub is_untagged: bool,
+    pub is_skipped: bool,
+    pub is_other: bool,
+    pub deserialize_with: Option<ExprPath>,
     pub fields: Vec<SerdeField>,
 }
 
@@ -105,6 +108,9 @@ impl SerdeEnum {
                     name: variant.attrs.name().deserialize_name().value.clone(),
                     names_read: variant.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
                     is_untagged: variant.attrs.untagged(),
+                    is_skipped: variant.attrs.skip_deserializing(),
+                    is_other: variant.attrs.other(),
+                    deserialize_with: variant.attrs.deserialize_with().map(reachable_function),
                     fields: variant.fields.iter().map(SerdeField::from_serde).collect(),
                 })
                 .collect(),

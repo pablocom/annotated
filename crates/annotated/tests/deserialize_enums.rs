@@ -3,6 +3,7 @@
 
 #![cfg(feature = "serde")]
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use annotated::{Deserialize, DeserializeError, Issue, Problem, Validate};
@@ -1384,4 +1385,236 @@ fn an_untagged_variant_reads_every_kind_of_value_from_the_buffer() {
             initial: 'A',
         })
     );
+}
+
+#[derive(Debug, PartialEq)]
+struct LegacyTerms;
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+enum Plan {
+    Free,
+    Pro {
+        #[validate(range(min = 1))]
+        seats: u32,
+    },
+    #[serde(skip)]
+    Legacy(LegacyTerms),
+}
+
+#[test]
+fn a_skipped_variant_s_name_is_unknown() {
+    assert_eq!(
+        issues_reading::<Plan>(r#""legacy""#),
+        ["the format's error: unknown variant `legacy`, expected `free` or `pro` at line 1 column 8"]
+    );
+}
+
+#[test]
+fn the_variants_after_a_skipped_one_are_read_by_their_names() {
+    assert_eq!(
+        issues_reading::<Plan>(r#"{ "pro": { "seats": 0 } }"#),
+        ["pro.seats: range(min: 1)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[allow(dead_code)]
+enum Tier {
+    Basic,
+    #[serde(skip_deserializing)]
+    Legacy,
+}
+
+#[test]
+fn a_tag_naming_a_skipped_variant_names_no_variant() {
+    assert_eq!(
+        issues_reading::<Tier>(r#"{ "type": "legacy" }"#),
+        ["type: unknown_variant(expected: basic)"]
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(untagged)]
+enum Amount {
+    #[serde(skip)]
+    #[allow(dead_code)]
+    Cents(u32),
+    Text(String),
+}
+
+#[test]
+fn a_skipped_untagged_variant_is_never_tried() {
+    assert_eq!(
+        issues_reading::<Amount>("12"),
+        ["invalid_type(expected: untagged enum Amount, found: integer)"]
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+enum Status {
+    Active,
+    #[serde(other)]
+    Unknown,
+}
+
+#[test]
+fn a_name_that_is_no_other_variant_reads_as_the_other_variant() {
+    assert_eq!(read::<Status>(r#""archived""#), Ok(Status::Unknown));
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum Attachment {
+    Image {
+        #[validate(url)]
+        url: String,
+    },
+    #[serde(other)]
+    Unsupported,
+}
+
+#[test]
+fn a_tag_that_names_no_other_variant_reads_as_the_other_variant() {
+    assert_eq!(
+        read::<Attachment>(r#"{ "type": "video", "url": "https://example.com/v.mp4" }"#),
+        Ok(Attachment::Unsupported)
+    );
+}
+
+fn rgb<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<(u8, u8, u8), D::Error> {
+    let text = <String as serde::Deserialize>::deserialize(deserializer)?;
+    let mut parts = text.split(',').map(|part| part.trim().parse::<u8>());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(red)), Some(Ok(green)), Some(Ok(blue))) => Ok((red, green, blue)),
+        _ => Err(serde::de::Error::custom("not a colour")),
+    }
+}
+
+fn coordinates<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<(f64, f64), D::Error> {
+    let [latitude, longitude] = <[f64; 2] as serde::Deserialize>::deserialize(deserializer)?;
+    Ok((latitude, longitude))
+}
+
+fn street<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Address, D::Error> {
+    let street = <String as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(Address { street })
+}
+
+fn anything<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    <serde::de::IgnoredAny as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(())
+}
+
+mod hex_colour {
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+        let text = <String as serde::Deserialize>::deserialize(deserializer)?;
+        u32::from_str_radix(text.trim_start_matches('#'), 16).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+enum Colour {
+    #[serde(deserialize_with = "rgb")]
+    Rgb(#[validate(range(max = 200))] u8, u8, u8),
+    #[serde(deserialize_with = "coordinates")]
+    Spot {
+        #[validate(range(min = -90.0, max = 90.0))]
+        latitude: f64,
+        longitude: f64,
+    },
+    #[serde(deserialize_with = "street")]
+    Mural(#[validate(nested)] Address),
+    #[serde(with = "hex_colour")]
+    Hex(#[validate(range(max = 0xFF_FF_FF))] u32),
+    #[serde(deserialize_with = "anything")]
+    Unknown,
+}
+
+#[test]
+fn a_variant_read_by_a_function_is_built_from_what_it_returns() {
+    assert_eq!(
+        read::<Colour>(r#"{ "rgb": "10, 20, 30" }"#),
+        Ok(Colour::Rgb(10, 20, 30))
+    );
+}
+
+#[test]
+fn a_variant_read_by_a_function_is_checked_by_its_fields_rules() {
+    assert_eq!(
+        issues_reading::<Colour>(r#"{ "rgb": "250, 0, 0" }"#),
+        ["rgb[0]: range(max: 200)"]
+    );
+}
+
+#[test]
+fn a_struct_variant_read_by_a_function_is_checked_at_its_fields_names() {
+    assert_eq!(
+        issues_reading::<Colour>(r#"{ "spot": [91.5, 2.1] }"#),
+        ["spot.latitude: range(min: -90, max: 90)"]
+    );
+}
+
+#[test]
+fn a_nested_value_in_a_variant_read_by_a_function_is_validated_at_its_path() {
+    assert_eq!(
+        issues_reading::<Colour>(r#"{ "mural": "" }"#),
+        ["mural.street: required"]
+    );
+}
+
+#[test]
+fn a_variant_read_with_a_module_is_read_by_its_deserialize_function() {
+    assert_eq!(read::<Colour>(r##"{ "hex": "#00ff00" }"##), Ok(Colour::Hex(0x00_FF_00)));
+}
+
+#[test]
+fn a_unit_variant_read_by_a_function_is_built_once_the_function_reads_its_content() {
+    assert_eq!(read::<Colour>(r#"{ "unknown": [1, 2] }"#), Ok(Colour::Unknown));
+}
+
+#[test]
+fn the_error_of_a_function_reading_a_variant_ends_deserialization() {
+    assert_eq!(
+        issues_reading::<Colour>(r#"{ "rgb": "red" }"#),
+        ["the format's error: not a colour"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+enum Note<'a> {
+    #[serde(borrow)]
+    Text(Cow<'a, str>),
+}
+
+#[test]
+fn a_newtype_variant_with_borrow_borrows_from_the_input() {
+    let note = deserialize::<Note>(r#"{ "Text": "Hola" }"#).unwrap();
+
+    let Note::Text(Cow::Borrowed(text)) = note else {
+        panic!("expected a borrowed text, got {note:?}");
+    };
+    assert_eq!(text, "Hola");
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[allow(dead_code)]
+enum Held<T> {
+    Value(#[validate(range(min = 1))] u32),
+    #[serde(skip)]
+    Kept(T),
+}
+
+#[test]
+fn a_skipped_variant_s_type_parameter_needs_no_deserialize() {
+    assert_eq!(read::<Held<LegacyTerms>>(r#"{ "Value": 3 }"#), Ok(Held::Value(3)));
+}
+
+#[test]
+fn a_tag_given_as_an_index_beyond_the_variants_reads_as_the_other_variant() {
+    assert_eq!(read::<Attachment>(r#"{ "type": 7 }"#), Ok(Attachment::Unsupported));
 }

@@ -379,6 +379,8 @@ An externally tagged variant is read through the `VariantAccess` serde gives for
 
 An enum with untagged variants buffers the whole value as `annotated::__private::Buffered`, and tries each reading on it by reference, through `ContentRefDeserializer`: the tagged reading first, if the enum has a tag, then the seed for each untagged variant. The buffer is never copied. Each attempt reports into a report of its own, which is appended once a variant is built, and dropped otherwise.
 
+A variant with `deserialize_with` is read, as in serde's derive, through a type whose `Deserialize` calls the function. The function returns the variant's fields, which become the variant's slots, and its checking pass runs as for any variant. Every field counts as read by a function, so its nested values are checked with `Validate`. A skipped variant is left out of the variant names, of the bounds, and of the variants an untagged enum tries.
+
 **Everything else works as for a struct:** generics and their bounds, borrowing, failing fast, and the equivalence with serde followed by `validate()`, which tests pin for each representation.
 
 **Cost.** A struct reads exactly as before, since enums generate code of their own. An externally tagged enum buffers nothing, and the other representations buffer what serde buffers. Trying an untagged variant that can't be built may allocate for its issues, which are then dropped. serde allocates an error for it too.

@@ -1,6 +1,7 @@
 use proc_macro2::{Literal, Span, TokenStream};
-use quote::{ToTokens, format_ident, quote};
-use syn::{Generics, Ident, Lifetime, parse_quote};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
+use syn::spanned::Spanned;
+use syn::{ExprPath, Generics, Ident, Lifetime, parse_quote};
 
 use crate::deserialize_expansion::{DeserializeExpansion, with_lifetime, without_lifetime_parameters};
 use crate::deserialized_enum::{DeserializedEnum, DeserializedVariant};
@@ -104,13 +105,11 @@ impl<'a> EnumExpansion<'a> {
         }
     }
 
-    // The bounds of every variant's fields, as each variant's own reading needs them.
+    // The bounds of the fields of every variant read, as each variant's own reading needs them.
     fn generics_reading_variants(&self) -> Generics {
         let mut checking_generics = self.deserialized_enum.input.generics.clone();
         let checking_bounds: Vec<_> = self
-            .contents
-            .iter()
-            .flatten()
+            .contents_read()
             .flat_map(DeserializeExpansion::checking_bounds)
             .collect();
         if !checking_bounds.is_empty() {
@@ -119,17 +118,22 @@ impl<'a> EnumExpansion<'a> {
         let borrowed_lifetimes = &self.deserialized_enum.borrowed_lifetimes;
         let mut generics = checking_generics;
         generics.params.insert(0, parse_quote!('de: #(#borrowed_lifetimes)+*));
-        let reading_bounds = self
-            .contents
-            .iter()
-            .flatten()
-            .flat_map(DeserializeExpansion::reading_bounds);
+        let reading_bounds = self.contents_read().flat_map(DeserializeExpansion::reading_bounds);
         generics.make_where_clause().predicates.extend(reading_bounds);
         generics
     }
 
     fn readable_variants(&self) -> impl Iterator<Item = (usize, &'a DeserializedVariant<'a>)> {
-        self.deserialized_enum.variants.iter().enumerate()
+        self.deserialized_enum
+            .variants
+            .iter()
+            .enumerate()
+            .filter(|(_, variant)| !variant.is_skipped)
+    }
+
+    fn contents_read(&self) -> impl Iterator<Item = &DeserializeExpansion<'a>> {
+        self.readable_variants()
+            .filter_map(|(index, _)| self.contents[index].as_ref())
     }
 
     fn tagged_variants(&self) -> impl Iterator<Item = (usize, &'a DeserializedVariant<'a>)> {
@@ -172,6 +176,36 @@ impl<'a> EnumExpansion<'a> {
         });
         let all_names_read = names_read.iter().copied().flatten();
         let indices_expected = format!("variant index 0 <= i < {}", indices.len());
+        let other = self
+            .tagged_variants()
+            .find(|(_, variant)| variant.is_other)
+            .map(|(index, _)| format_ident!("Variant{index}"));
+        let unknown_index = other.as_ref().map_or_else(
+            || {
+                quote! {
+                    ::core::result::Result::Err(<__E as #serde::de::Error>::invalid_value(
+                        #serde::de::Unexpected::Unsigned(#value),
+                        &#indices_expected,
+                    ))
+                }
+            },
+            |other| quote!(::core::result::Result::Ok(__Variant::#other)),
+        );
+        let unknown_name = other.as_ref().map_or_else(
+            || quote!(::core::result::Result::Err(<__E as #serde::de::Error>::unknown_variant(#value, __VARIANTS))),
+            |other| quote!(::core::result::Result::Ok(__Variant::#other)),
+        );
+        let unknown_bytes = other.as_ref().map_or_else(
+            || {
+                quote! {
+                    {
+                        let #value = &::std::string::String::from_utf8_lossy(#value);
+                        ::core::result::Result::Err(<__E as #serde::de::Error>::unknown_variant(#value, __VARIANTS))
+                    }
+                }
+            },
+            |other| quote!(::core::result::Result::Ok(__Variant::#other)),
+        );
         quote! {
             #variants
 
@@ -189,27 +223,21 @@ impl<'a> EnumExpansion<'a> {
                 fn visit_u64<__E: #serde::de::Error>(self, #value: u64) -> ::core::result::Result<__Variant, __E> {
                     match #value {
                         #(#index_arms)*
-                        _ => ::core::result::Result::Err(<__E as #serde::de::Error>::invalid_value(
-                            #serde::de::Unexpected::Unsigned(#value),
-                            &#indices_expected,
-                        )),
+                        _ => #unknown_index,
                     }
                 }
 
                 fn visit_str<__E: #serde::de::Error>(self, #value: &str) -> ::core::result::Result<__Variant, __E> {
                     match #value {
                         #(#name_arms)*
-                        _ => ::core::result::Result::Err(<__E as #serde::de::Error>::unknown_variant(#value, __VARIANTS)),
+                        _ => #unknown_name,
                     }
                 }
 
                 fn visit_bytes<__E: #serde::de::Error>(self, #value: &[u8]) -> ::core::result::Result<__Variant, __E> {
                     match #value {
                         #(#byte_arms)*
-                        _ => {
-                            let #value = &::std::string::String::from_utf8_lossy(#value);
-                            ::core::result::Result::Err(<__E as #serde::de::Error>::unknown_variant(#value, __VARIANTS))
-                        }
+                        _ => #unknown_bytes,
                     }
                 }
             }
@@ -301,6 +329,16 @@ impl<'a> EnumExpansion<'a> {
                 ),
             };
         }
+        if let Some(function) = &variant.deserialize_with {
+            let wrapper_type = self.variant_wrapper_type();
+            let wrapper_read = quote!(#serde::de::VariantAccess::newtype_variant::<#wrapper_type>(#variant_access)?);
+            let reading = self.variant_read_by_a_function(index, variant, function, &wrapper_read);
+            return quote! {
+                (__Variant::#tag, #variant_access) => {
+                    #reading
+                }
+            };
+        }
         let (Some(content), Some(deserialized_content)) = (&self.contents[index], &variant.content) else {
             return quote! {
                 (__Variant::#tag, #variant_access) => {
@@ -351,7 +389,8 @@ impl<'a> EnumExpansion<'a> {
             Place::Indexed(index) => quote!(&self.#at.index(#index)),
             Place::OfItsParent => quote!(self.#at),
         };
-        let reads_fields_by_name = form == Form::Struct && !content.has_flattened_fields();
+        let reads_fields_by_name =
+            form == Form::Struct && !content.has_flattened_fields() && variant.deserialize_with.is_none();
         let field_identifier = reads_fields_by_name.then(|| content.field_identifier());
         let functions_reading_fields = content.functions_reading_fields();
         let visitor = content.visitor();
@@ -416,6 +455,16 @@ impl<'a> EnumExpansion<'a> {
         let tag = format_ident!("Variant{index}");
         let name = &self.deserialized_enum.input.ident;
         let ident = variant.ident;
+        if let Some(function) = &variant.deserialize_with {
+            let wrapper_type = self.variant_wrapper_type();
+            let wrapper_read = quote!(<#wrapper_type as #serde::Deserialize<'de>>::deserialize(#deserializer)?);
+            let reading = self.variant_read_by_a_function(index, variant, function, &wrapper_read);
+            return quote! {
+                __Variant::#tag => {
+                    #reading
+                }
+            };
+        }
         let is_read_beside_its_tag =
             matches!(&self.deserialized_enum.tag, Tag::Internal { .. }) && !variant.is_untagged;
         let skipping_the_content = if is_read_beside_its_tag {
@@ -617,6 +666,89 @@ impl<'a> EnumExpansion<'a> {
                     ::core::option::Option::None
                 }
             };
+        }
+    }
+}
+
+// As in serde's derive, a variant with `deserialize_with` is read through a type whose `Deserialize` calls the function,
+// since the function is generic over the deserializer. The function returns the variant's fields, which its rules then
+// check, and whose nested values are validated.
+impl EnumExpansion<'_> {
+    fn variant_wrapper_generics(&self) -> Generics {
+        let borrowed_lifetimes = &self.deserialized_enum.borrowed_lifetimes;
+        let mut generics = self.deserialized_enum.input.generics.clone();
+        generics.params.insert(0, parse_quote!('de: #(#borrowed_lifetimes)+*));
+        generics
+    }
+
+    fn variant_wrapper_type(&self) -> TokenStream {
+        let wrapper_generics = self.variant_wrapper_generics();
+        let (_, wrapper_type_generics, _) = wrapper_generics.split_for_impl();
+        quote!(__DeserializeVariantWith #wrapper_type_generics)
+    }
+
+    fn variant_read_by_a_function(
+        &self,
+        index: usize,
+        variant: &DeserializedVariant,
+        function: &ExprPath,
+        wrapper_read: &TokenStream,
+    ) -> TokenStream {
+        let Self {
+            serde, deserializer, ..
+        } = self;
+        let input = self.deserialized_enum.input;
+        let name = &input.ident;
+        let ident = variant.ident;
+        let (_, type_generics, _) = input.generics.split_for_impl();
+        let wrapper_generics = self.variant_wrapper_generics();
+        let (wrapper_impl_generics, wrapper_type_generics, where_clause) = wrapper_generics.split_for_impl();
+        let field_types = variant
+            .content
+            .iter()
+            .flat_map(|content| content.validated.fields.iter().map(|field| field.field_type));
+        let read_by_the_function = quote_spanned!(function.span()=> #function(#deserializer)?);
+        let wrapper = quote! {
+            struct __DeserializeVariantWith #wrapper_impl_generics #where_clause {
+                value: (#(#field_types),*),
+                marker: ::core::marker::PhantomData<fn() -> (#name #type_generics, &'de ())>,
+            }
+
+            impl #wrapper_impl_generics #serde::Deserialize<'de> for __DeserializeVariantWith #wrapper_type_generics
+            #where_clause
+            {
+                fn deserialize<__D: #serde::Deserializer<'de>>(
+                    #deserializer: __D,
+                ) -> ::core::result::Result<Self, __D::Error> {
+                    ::core::result::Result::Ok(Self {
+                        value: #read_by_the_function,
+                        marker: ::core::marker::PhantomData,
+                    })
+                }
+            }
+        };
+        let (Some(content), Some(deserialized_content)) = (&self.contents[index], &variant.content) else {
+            return quote! {
+                #wrapper
+                #wrapper_read;
+                ::core::result::Result::Ok(::core::option::Option::Some(#name::#ident))
+            };
+        };
+        let slots = content.slots();
+        let fields_of_the_variant = if let [slot] = slots.as_slice() {
+            quote!(#slot)
+        } else {
+            quote!((#(#slots,)*))
+        };
+        let new_visitor = content.new_visitor();
+        let reading = quote! {
+            let #fields_of_the_variant = #wrapper_read.value;
+            ::core::result::Result::Ok(#new_visitor.checked_value((#(#slots,)*), ()))
+        };
+        let content_reading = self.content_reading(variant, content, deserialized_content.form, &reading);
+        quote! {
+            #wrapper
+            #content_reading
         }
     }
 }

@@ -1,17 +1,5 @@
-error: with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all`, `untagged` and those that only change serializing
+error: with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all`, `untagged`, `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with`, `borrow` and those that only change serializing
  --> tests/ui/deserialize/unsupported_variant_serde_attribute.rs:6:13
   |
-6 |     #[serde(skip)]
-  |             ^^^^
-
-error: with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all`, `untagged` and those that only change serializing
-  --> tests/ui/deserialize/unsupported_variant_serde_attribute.rs:14:13
-   |
-14 |     #[serde(bound = "")]
-   |             ^^^^^
-
-error: with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all`, `untagged` and those that only change serializing
-  --> tests/ui/deserialize/unsupported_variant_serde_attribute.rs:20:13
-   |
-20 |     #[serde(deserialize_with = "read_phone")]
-   |             ^^^^^^^^^^^^^^^^
+6 |     #[serde(bound = "")]
+  |             ^^^^^

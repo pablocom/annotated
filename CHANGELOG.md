@@ -59,6 +59,10 @@ This file lists every change that users of the crates can notice. The format fol
   - As with serde, the value is buffered once, and the variants are tried in order on that buffer, after the tagged ones. The value is the first variant that can be built. Its broken rules are reported, and the issues found trying the other variants are dropped.
   - The variant's fields are at the enum's own location.
   - A value no variant fits is `Problem::InvalidType` at the enum's location, even without `collect_type_errors`, so reading goes on. Its `expected` is the enum's `expecting`, or `untagged enum Name`.
+- `#[derive(Deserialize)]` reads `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with` and `borrow` on a variant, as serde does.
+  - A skipped variant is never read: its name is unknown, and its fields need no `Deserialize`.
+  - A unit variant with `other` is read for any tag that names no other variant, so the enum never reports `Problem::UnknownVariant`.
+  - A variant with `deserialize_with` or `with` is read by the function, and its fields' rules check the values the function returns. A `nested` rule checks one with `Validate`.
 
 ### Changed
 

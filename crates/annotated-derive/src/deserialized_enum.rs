@@ -1,4 +1,4 @@
-use syn::{DataEnum, DeriveInput, Fields, Ident};
+use syn::{DataEnum, DeriveInput, ExprPath, Fields, Ident};
 
 use crate::deserialized_struct::{
     AcceptedSerdeAttributes, DeserializedStruct, Form, collects_type_errors, refuse_flatten, refuse_options_on,
@@ -25,6 +25,9 @@ pub struct DeserializedVariant<'a> {
     pub ident: &'a Ident,
     pub names_read: Vec<String>,
     pub is_untagged: bool,
+    pub is_skipped: bool,
+    pub is_other: bool,
+    pub deserialize_with: Option<ExprPath>,
     pub content_place: Place,
     pub content: Option<DeserializedStruct<'a>>,
 }
@@ -52,11 +55,18 @@ const ON_A_VARIANT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "alias",
         "rename_all",
         "untagged",
+        "skip_deserializing",
+        "skip",
+        "other",
+        "deserialize_with",
+        "with",
+        "borrow",
         "skip_serializing",
         "serialize_with",
     ],
     refusal: "with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all`, \
-              `untagged` and those that only change serializing",
+              `untagged`, `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with`, `borrow` and those that \
+              only change serializing",
 };
 
 impl<'a> DeserializedEnum<'a> {
@@ -124,12 +134,16 @@ impl<'a> DeserializedEnum<'a> {
                         collects_type_errors,
                         variant: Some(&variant.ident),
                         form,
+                        read_whole_by: serde_variant.deserialize_with.clone(),
                     }
                 });
                 DeserializedVariant {
                     ident: &variant.ident,
                     names_read: serde_variant.names_read,
                     is_untagged: is_untagged || serde_variant.is_untagged,
+                    is_skipped: serde_variant.is_skipped,
+                    is_other: serde_variant.is_other,
+                    deserialize_with: serde_variant.deserialize_with,
                     content_place: validated_variant.content_place,
                     content,
                 }
