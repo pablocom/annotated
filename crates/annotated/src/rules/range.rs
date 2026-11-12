@@ -47,6 +47,9 @@ impl<T> Range<T> {
 
 #[diagnostic::do_not_recommend]
 impl<T: PartialOrd + Display + 'static> Rule<T> for Range<T> {
+    // Inlined where the rule is written: in a struct's serde visitor LLVM left it a call answering its `Result`
+    // through memory, and reading an order of 100 lines ran 1,700 more instructions with LTO.
+    #[inline]
     fn check(&self, value: &T) -> Result<(), Problem> {
         let is_high_enough = self.min.as_ref().is_none_or(|min| value >= min);
         let is_low_enough = self.max.as_ref().is_none_or(|max| value <= max);
