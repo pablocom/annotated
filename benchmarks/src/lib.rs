@@ -2,7 +2,7 @@
 //!
 //! A [`Case`] is one library validating one prepared input of one scenario. The criterion benchmark times
 //! every case, the `allocations` binary counts what every case allocates, and the tests check that every
-//! case finds the violations its scenario expects.
+//! case finds the issues its scenario expects.
 
 pub mod experiments;
 pub mod scenarios;
@@ -64,12 +64,12 @@ pub struct Case {
     /// The bytes of text one validation goes through, for scenarios measured in throughput.
     pub throughput_bytes: Option<u64>,
     validate_once: Box<dyn Fn()>,
-    count_violations: Box<dyn Fn() -> usize>,
+    count_issues: Box<dyn Fn() -> usize>,
 }
 
 impl Case {
     /// The case of `library` checking `input` with `validate`, whose outcome `count` turns into a number of
-    /// violations.
+    /// issues.
     pub fn new<Input, Outcome>(
         scenario: &'static str,
         library: Library,
@@ -92,7 +92,7 @@ impl Case {
             validate_once: Box::new(move || {
                 black_box(timed_validate(black_box(&*timed_input)));
             }),
-            count_violations: Box::new(move || count(&validate(&input))),
+            count_issues: Box::new(move || count(&validate(&input))),
         }
     }
 
@@ -117,10 +117,10 @@ impl Case {
         (self.validate_once)();
     }
 
-    /// How many violations validating the prepared input finds.
+    /// How many issues validating the prepared input finds.
     #[must_use]
-    pub fn violations(&self) -> usize {
-        (self.count_violations)()
+    pub fn issues(&self) -> usize {
+        (self.count_issues)()
     }
 
     /// The name of this case within its scenario: the library, and its variant if any.

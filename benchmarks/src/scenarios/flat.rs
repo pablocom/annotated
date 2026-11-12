@@ -108,7 +108,7 @@ pub mod with_annotated {
 }
 
 /// The same rules read with annotated's collecting deserialization: `annotated::Deserialize` in place of serde's
-/// derive, so the body is checked as it is read and a missing field is one more violation. Its serde `Deserialize`
+/// derive, so the body is checked as it is read and a missing field is one more issue. Its serde `Deserialize`
 /// validates too, so these types are only ever read with `annotated::json`.
 pub mod with_annotated_deserialize {
     #[derive(annotated::Deserialize)]
@@ -154,7 +154,7 @@ pub mod with_annotated_deserialize {
         pub bio: Option<String>,
     }
 
-    /// Reads each field into a buffer before its type, so a value of the wrong type is one more violation too.
+    /// Reads each field into a buffer before its type, so a value of the wrong type is one more issue too.
     #[derive(annotated::Deserialize)]
     #[serde(rename_all = "camelCase")]
     #[annotated(collect_type_errors)]

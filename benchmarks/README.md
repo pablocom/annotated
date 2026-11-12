@@ -10,7 +10,7 @@ Every **case** is one library validating one prepared input of one **scenario**.
 
 - **Time:** criterion's median time of one validation, with its 95% confidence interval. The input is built before timing; only `validate` and dropping its outcome are timed, behind `std::hint::black_box`.
 - **Allocations and bytes:** how many allocations one validation makes and how many bytes it asks for, counted by a global allocator in a binary of its own (`allocations`), so counting never slows the timed runs. A reallocation counts as one allocation of its whole new size. Each case is warmed up first, so lazily compiled regular expressions and their caches aren't charged to the validations counted.
-- **Violations:** how many violations the validation finds. `tests/cases.rs` pins them for every case, so no library is timed rejecting an input it should accept, or doing less work than the others without it showing.
+- **Issues:** how many issues the validation finds. `tests/cases.rs` pins them for every case, so no library is timed rejecting an input it should accept, or doing less work than the others without it showing.
 
 | Scenario | What it is |
 |---|---|
@@ -47,7 +47,7 @@ Every library shares one build of `regex`, `url` and `unicode-segmentation`, wit
 The benchmarks are a workspace of their own, so the other libraries and the LTO profiles stay out of the crates' builds and lockfile. Run these commands from `benchmarks/`, with the current stable toolchain; they say `+1.99.1`.
 
 ```sh
-# Every case finds the violations its scenario expects
+# Every case finds the issues its scenario expects
 cargo +1.99.1 test --release
 
 # Time every case, pinned to one performance core (see "Measuring well")
@@ -90,14 +90,14 @@ To measure what a change gains, time the commit before it and the change in the 
 1. Add it to `[dependencies]` at its latest version (`cargo search`, `cargo info`), with the features the rules need.
 2. Add a `Library` variant in `src/lib.rs`, with its name and version.
 3. In each scenario that it can express, add a `with_<library>` module beside the others with the same rules in its syntax, and a case in that scenario's `cases`. Where its meaning differs, say so in the module's doc. Where it can't express a scenario, leave it out and say why.
-4. Add a function counting its violations to `scenarios::count`.
-5. Add its expected violations to `tests/cases.rs`, and run the tests.
+4. Add a function counting its issues to `scenarios::count`.
+5. Add its expected issues to `tests/cases.rs`, and run the tests.
 
 ## Adding a scenario
 
 1. Add a module to `src/scenarios/`: a doc table of its rules, a function building its JSON body, a `with_<library>` module per library, and `cases()`. Bodies are JSON so every library's input comes from the same text, and so the end-to-end scenario can reuse them.
 2. List it in `scenarios::all`.
-3. Pin its violations per library in `tests/cases.rs`.
+3. Pin its issues per library in `tests/cases.rs`.
 
 ## Collecting deserialization
 

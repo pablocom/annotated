@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use super::count;
-use super::end_to_end::{received, violations_received};
+use super::end_to_end::{issues_received, received};
 use super::nested::{
     self, with_annotated, with_annotated_deserialize, with_garde, with_serde_valid, with_validator, with_wary,
 };
@@ -127,7 +127,7 @@ fn annotated_case<T: DeserializeOwned + annotated::Validate + 'static>(scenario:
         Library::Annotated,
         body.to_owned(),
         |body| received(body, T::validate),
-        |received| violations_received(received, count::annotated),
+        |received| issues_received(received, count::annotated),
     )
     .variant("serde_json, then validate")
 }
@@ -138,7 +138,7 @@ fn validator_case<T: DeserializeOwned + validator::Validate + 'static>(scenario:
         Library::Validator,
         body.to_owned(),
         |body| received(body, T::validate),
-        |received| violations_received(received, count::validator),
+        |received| issues_received(received, count::validator),
     )
 }
 
@@ -151,7 +151,7 @@ fn garde_case<T: DeserializeOwned + garde::Validate<Context = ()> + 'static>(
         Library::Garde,
         body.to_owned(),
         |body| received(body, |value: &T| value.validate()),
-        |received| violations_received(received, count::garde),
+        |received| issues_received(received, count::garde),
     )
 }
 
@@ -161,7 +161,7 @@ fn wary_case<T: DeserializeOwned + wary::Validate<Context = ()> + 'static>(scena
         Library::Wary,
         body.to_owned(),
         |body| received(body, |value: &T| value.validate(&())),
-        |received| violations_received(received, count::wary),
+        |received| issues_received(received, count::wary),
     )
 }
 
@@ -171,7 +171,7 @@ fn serde_valid_case<T: DeserializeOwned + serde_valid::Validate + 'static>(scena
         Library::SerdeValid,
         body.to_owned(),
         |body| received(body, T::validate),
-        |received| violations_received(received, count::serde_valid),
+        |received| issues_received(received, count::serde_valid),
     )
     .variant("graphemes")
 }

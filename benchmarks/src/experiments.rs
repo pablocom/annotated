@@ -1,6 +1,6 @@
 //! What changes to annotated would gain, measured in the same binary as the scenarios so the compiler makes
 //! the same choices for both. Each experiment puts annotated as it is beside code written by hand through
-//! its public API, the way the change would make it run, with the same rules and the same violations.
+//! its public API, the way the change would make it run, with the same rules and the same issues.
 
 use std::sync::LazyLock;
 
@@ -16,14 +16,14 @@ use crate::{Case, Library};
 static USERNAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9_]+$").unwrap());
 static POSTAL_CODE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{5}$").unwrap());
 
-/// Records a violation away from the checks, so a check that passes costs one branch.
+/// Records an issue away from the checks, so a check that passes costs one branch.
 #[cold]
 #[inline(never)]
 fn record(found: &mut Report, at: &Location<'_>, field: &'static str, problem: Problem) {
     found.push(&at.field(field), problem);
 }
 
-/// The order of scenario 4, checked with every rule inline and the violation recorded out of line.
+/// The order of scenario 4, checked with every rule inline and the issue recorded out of line.
 #[derive(Deserialize)]
 pub struct InlineChecksOrder {
     customer: InlineChecksCustomer,
@@ -86,7 +86,7 @@ impl Validate for InlineChecksOrderLine {
     }
 }
 
-/// The sign-up body of scenarios 1 to 3, checked with every rule inline and the violation recorded out of
+/// The sign-up body of scenarios 1 to 3, checked with every rule inline and the issue recorded out of
 /// line, the first failure of a field stopping its other rules.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -201,7 +201,7 @@ fn checked_inline<T: DeserializeOwned + Validate + 'static>(experiment: &'static
         Validate::validate,
         count::annotated,
     )
-    .variant("inline checks, violations recorded out of line")
+    .variant("inline checks, issues recorded out of line")
 }
 
 fn url_cases() -> Vec<Case> {

@@ -3,7 +3,7 @@
 //!
 //! **The cases do different amounts of work, so their timings aren't like for like.** annotated's collecting
 //! deserialization, `annotated::json::from_str`, reads the whole body, checks every field that came, and reports
-//! the missing one beside the broken ones: three violations in one answer. serde's derive stops at the missing
+//! the missing one beside the broken ones: three issues in one answer. serde's derive stops at the missing
 //! field once it has read the body, so with `serde_json::from_str` no library gets to validate: every one,
 //! annotated's `Validate` included, answers serde's error alone, and the client learns about the email and the age
 //! only on its next requests. serde's error counts as one problem.
@@ -26,12 +26,9 @@ pub const MISSING_FIELD_BODY: &str = r#"{
     "bio": "Backend developer in Madrid. Likes long walks and short functions."
 }"#;
 
-/// The problems a client learns about from one answer: the violations validation found, or one, serde's error,
+/// The problems a client learns about from one answer: the issues validation found, or one, serde's error,
 /// when serde refused the body before validation.
-fn problems_received<Violations>(
-    received: &Received<Violations>,
-    count: impl Fn(&Result<(), Violations>) -> usize,
-) -> usize {
+fn problems_received<Issues>(received: &Received<Issues>, count: impl Fn(&Result<(), Issues>) -> usize) -> usize {
     received.as_ref().map_or(1, count)
 }
 

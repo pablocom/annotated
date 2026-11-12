@@ -1,27 +1,27 @@
-//! Every case finds the violations its scenario is built to have, so a benchmark never times a library
+//! Every case finds the issues its scenario is built to have, so a benchmark never times a library
 //! rejecting the input it should accept, or doing less work than the others.
 
 use annotated_benchmarks::all_cases;
 
-fn violations_found_in(scenario: &str) -> Vec<(String, usize)> {
+fn issues_found_in(scenario: &str) -> Vec<(String, usize)> {
     all_cases()
         .into_iter()
         .filter(|case| case.scenario == scenario)
-        .map(|case| (case.label(), case.violations()))
+        .map(|case| (case.label(), case.issues()))
         .collect()
 }
 
-fn expected(violations: &[(&str, usize)]) -> Vec<(String, usize)> {
-    violations
+fn expected(issues: &[(&str, usize)]) -> Vec<(String, usize)> {
+    issues
         .iter()
         .map(|(label, count)| ((*label).to_owned(), *count))
         .collect()
 }
 
 #[test]
-fn a_valid_flat_body_has_no_violations_in_any_library() {
+fn a_valid_flat_body_has_no_issues_in_any_library() {
     assert_eq!(
-        violations_found_in("flat_valid"),
+        issues_found_in("flat_valid"),
         expected(&[
             ("annotated", 0),
             ("annotated (report_all)", 0),
@@ -33,9 +33,9 @@ fn a_valid_flat_body_has_no_violations_in_any_library() {
 }
 
 #[test]
-fn a_flat_body_with_every_field_invalid_has_nine_violations_but_one_per_field_in_annotated_by_default() {
+fn a_flat_body_with_every_field_invalid_has_nine_issues_but_one_per_field_in_annotated_by_default() {
     assert_eq!(
-        violations_found_in("flat_every_field_invalid"),
+        issues_found_in("flat_every_field_invalid"),
         expected(&[
             ("annotated", 8),
             ("annotated (report_all)", 9),
@@ -47,9 +47,9 @@ fn a_flat_body_with_every_field_invalid_has_nine_violations_but_one_per_field_in
 }
 
 #[test]
-fn a_flat_body_with_one_field_invalid_has_one_violation_in_every_library() {
+fn a_flat_body_with_one_field_invalid_has_one_issue_in_every_library() {
     assert_eq!(
-        violations_found_in("flat_one_field_invalid"),
+        issues_found_in("flat_one_field_invalid"),
         expected(&[
             ("annotated", 1),
             ("annotated (report_all)", 1),
@@ -61,9 +61,9 @@ fn a_flat_body_with_one_field_invalid_has_one_violation_in_every_library() {
 }
 
 #[test]
-fn a_valid_order_has_no_violations_in_any_library() {
+fn a_valid_order_has_no_issues_in_any_library() {
     assert_eq!(
-        violations_found_in("nested_valid"),
+        issues_found_in("nested_valid"),
         expected(&[
             ("annotated", 0),
             ("validator", 0),
@@ -75,9 +75,9 @@ fn a_valid_order_has_no_violations_in_any_library() {
 }
 
 #[test]
-fn an_order_with_five_invalid_lines_has_five_violations_in_every_library() {
+fn an_order_with_five_invalid_lines_has_five_issues_in_every_library() {
     assert_eq!(
-        violations_found_in("nested_5pct_invalid"),
+        issues_found_in("nested_5pct_invalid"),
         expected(&[
             ("annotated", 5),
             ("validator", 5),
@@ -89,9 +89,9 @@ fn an_order_with_five_invalid_lines_has_five_violations_in_every_library() {
 }
 
 #[test]
-fn a_valid_stock_map_has_no_violations_in_any_library_that_goes_through_maps() {
+fn a_valid_stock_map_has_no_issues_in_any_library_that_goes_through_maps() {
     assert_eq!(
-        violations_found_in("map_nested_valid"),
+        issues_found_in("map_nested_valid"),
         expected(&[
             ("annotated", 0),
             ("validator", 0),
@@ -102,9 +102,9 @@ fn a_valid_stock_map_has_no_violations_in_any_library_that_goes_through_maps() {
 }
 
 #[test]
-fn a_stock_map_with_five_invalid_entries_has_five_violations_in_every_library_that_goes_through_maps() {
+fn a_stock_map_with_five_invalid_entries_has_five_issues_in_every_library_that_goes_through_maps() {
     assert_eq!(
-        violations_found_in("map_nested_5pct_invalid"),
+        issues_found_in("map_nested_5pct_invalid"),
         expected(&[
             ("annotated", 5),
             ("validator", 5),
@@ -115,17 +115,17 @@ fn a_stock_map_with_five_invalid_entries_has_five_violations_in_every_library_th
 }
 
 #[test]
-fn valid_label_values_have_no_violations() {
+fn valid_label_values_have_no_issues() {
     assert_eq!(
-        violations_found_in("map_string_values_valid"),
+        issues_found_in("map_string_values_valid"),
         expected(&[("annotated", 0)])
     );
 }
 
 #[test]
-fn a_1_kb_text_within_its_length_has_no_violations_however_it_is_counted() {
+fn a_1_kb_text_within_its_length_has_no_issues_however_it_is_counted() {
     assert_eq!(
-        violations_found_in("long_string_1kb"),
+        issues_found_in("long_string_1kb"),
         expected(&[
             ("annotated (chars)", 0),
             ("annotated (bytes)", 0),
@@ -143,9 +143,9 @@ fn a_1_kb_text_within_its_length_has_no_violations_however_it_is_counted() {
 }
 
 #[test]
-fn a_64_kb_text_within_its_length_has_no_violations_however_it_is_counted() {
+fn a_64_kb_text_within_its_length_has_no_issues_however_it_is_counted() {
     assert_eq!(
-        violations_found_in("long_string_64kb"),
+        issues_found_in("long_string_64kb"),
         expected(&[
             ("annotated (chars)", 0),
             ("annotated (bytes)", 0),
@@ -163,9 +163,9 @@ fn a_64_kb_text_within_its_length_has_no_violations_however_it_is_counted() {
 }
 
 #[test]
-fn a_valid_body_received_has_no_violations_in_any_library_however_annotated_reads_it() {
+fn a_valid_body_received_has_no_issues_in_any_library_however_annotated_reads_it() {
     assert_eq!(
-        violations_found_in("end_to_end_valid"),
+        issues_found_in("end_to_end_valid"),
         expected(&[
             ("serde_json alone", 0),
             ("annotated (json::from_str)", 0),
@@ -181,9 +181,9 @@ fn a_valid_body_received_has_no_violations_in_any_library_however_annotated_read
 }
 
 #[test]
-fn a_body_received_with_every_field_invalid_has_the_violations_of_its_flat_scenario_but_one_when_failing_fast() {
+fn a_body_received_with_every_field_invalid_has_the_issues_of_its_flat_scenario_but_one_when_failing_fast() {
     assert_eq!(
-        violations_found_in("end_to_end_every_field_invalid"),
+        issues_found_in("end_to_end_every_field_invalid"),
         expected(&[
             ("serde_json alone", 0),
             ("annotated (json::from_str)", 8),
@@ -200,9 +200,9 @@ fn a_body_received_with_every_field_invalid_has_the_violations_of_its_flat_scena
 }
 
 #[test]
-fn a_body_received_with_one_field_invalid_has_one_violation_in_every_library() {
+fn a_body_received_with_one_field_invalid_has_one_issue_in_every_library() {
     assert_eq!(
-        violations_found_in("end_to_end_one_field_invalid"),
+        issues_found_in("end_to_end_one_field_invalid"),
         expected(&[
             ("serde_json alone", 0),
             ("annotated (json::from_str)", 1),
@@ -219,9 +219,9 @@ fn a_body_received_with_one_field_invalid_has_one_violation_in_every_library() {
 }
 
 #[test]
-fn a_valid_order_received_has_no_violations_in_any_library() {
+fn a_valid_order_received_has_no_issues_in_any_library() {
     assert_eq!(
-        violations_found_in("end_to_end_nested_valid"),
+        issues_found_in("end_to_end_nested_valid"),
         expected(&[
             ("serde_json alone", 0),
             ("annotated (json::from_str)", 0),
@@ -235,9 +235,9 @@ fn a_valid_order_received_has_no_violations_in_any_library() {
 }
 
 #[test]
-fn an_order_received_with_five_invalid_lines_has_five_violations_in_every_library() {
+fn an_order_received_with_five_invalid_lines_has_five_issues_in_every_library() {
     assert_eq!(
-        violations_found_in("end_to_end_nested_5pct_invalid"),
+        issues_found_in("end_to_end_nested_5pct_invalid"),
         expected(&[
             ("serde_json alone", 0),
             ("annotated (json::from_str)", 5),
@@ -251,9 +251,9 @@ fn an_order_received_with_five_invalid_lines_has_five_violations_in_every_librar
 }
 
 #[test]
-fn a_valid_stock_map_received_has_no_violations_in_any_library_that_goes_through_maps() {
+fn a_valid_stock_map_received_has_no_issues_in_any_library_that_goes_through_maps() {
     assert_eq!(
-        violations_found_in("end_to_end_map_nested_valid"),
+        issues_found_in("end_to_end_map_nested_valid"),
         expected(&[
             ("serde_json alone", 0),
             ("annotated (json::from_str)", 0),
@@ -266,9 +266,9 @@ fn a_valid_stock_map_received_has_no_violations_in_any_library_that_goes_through
 }
 
 #[test]
-fn a_stock_map_received_with_five_invalid_entries_has_five_violations_in_every_library_that_goes_through_maps() {
+fn a_stock_map_received_with_five_invalid_entries_has_five_issues_in_every_library_that_goes_through_maps() {
     assert_eq!(
-        violations_found_in("end_to_end_map_nested_5pct_invalid"),
+        issues_found_in("end_to_end_map_nested_5pct_invalid"),
         expected(&[
             ("serde_json alone", 0),
             ("annotated (json::from_str)", 5),
@@ -283,7 +283,7 @@ fn a_stock_map_received_with_five_invalid_entries_has_five_violations_in_every_l
 #[test]
 fn a_body_received_without_a_field_reports_it_beside_the_broken_ones_in_annotated_but_alone_through_serde() {
     assert_eq!(
-        violations_found_in("end_to_end_missing_field"),
+        issues_found_in("end_to_end_missing_field"),
         expected(&[
             ("serde_json alone", 1),
             ("annotated (json::from_str)", 3),
@@ -296,34 +296,34 @@ fn a_body_received_without_a_field_reports_it_beside_the_broken_ones_in_annotate
 }
 
 #[test]
-fn checking_inline_finds_the_same_violations_as_the_derive_on_an_order() {
+fn checking_inline_finds_the_same_issues_as_the_derive_on_an_order() {
     assert_eq!(
-        violations_found_in("experiment_inline_checks_order"),
+        issues_found_in("experiment_inline_checks_order"),
         expected(&[
             ("annotated (derived)", 0),
-            ("hand-written (inline checks, violations recorded out of line)", 0),
+            ("hand-written (inline checks, issues recorded out of line)", 0),
         ])
     );
 }
 
 #[test]
-fn checking_inline_finds_the_same_violations_as_the_derive_on_a_valid_flat_body() {
+fn checking_inline_finds_the_same_issues_as_the_derive_on_a_valid_flat_body() {
     assert_eq!(
-        violations_found_in("experiment_inline_checks_flat"),
+        issues_found_in("experiment_inline_checks_flat"),
         expected(&[
             ("annotated (derived)", 0),
-            ("hand-written (inline checks, violations recorded out of line)", 0),
+            ("hand-written (inline checks, issues recorded out of line)", 0),
         ])
     );
 }
 
 #[test]
-fn checking_inline_finds_the_same_violations_as_the_derive_on_a_flat_body_with_every_field_invalid() {
+fn checking_inline_finds_the_same_issues_as_the_derive_on_a_flat_body_with_every_field_invalid() {
     assert_eq!(
-        violations_found_in("experiment_inline_checks_flat_every_field_invalid"),
+        issues_found_in("experiment_inline_checks_flat_every_field_invalid"),
         expected(&[
             ("annotated (derived)", 8),
-            ("hand-written (inline checks, violations recorded out of line)", 8),
+            ("hand-written (inline checks, issues recorded out of line)", 8),
         ])
     );
 }
@@ -331,7 +331,7 @@ fn checking_inline_finds_the_same_violations_as_the_derive_on_a_flat_body_with_e
 #[test]
 fn a_website_is_a_url_to_both_annotated_and_the_url_crate() {
     assert_eq!(
-        violations_found_in("experiment_url"),
+        issues_found_in("experiment_url"),
         expected(&[
             ("annotated (rules::url())", 0),
             ("hand-written (url::Url::parse alone, as garde and validator check)", 0),
@@ -343,8 +343,8 @@ fn a_website_is_a_url_to_both_annotated_and_the_url_crate() {
 fn settling_a_length_by_bytes_first_accepts_what_counting_chars_accepts() {
     assert_eq!(
         [
-            violations_found_in("experiment_length_short_text"),
-            violations_found_in("experiment_length_64kb")
+            issues_found_in("experiment_length_short_text"),
+            issues_found_in("experiment_length_64kb")
         ]
         .concat(),
         expected(&[

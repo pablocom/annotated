@@ -27,19 +27,16 @@ pub fn all() -> Vec<Case> {
 }
 
 pub(crate) mod count {
-    //! How many violations each library's outcome holds.
+    //! How many issues each library's outcome holds.
 
     use validator::ValidationErrorsKind;
 
     pub fn annotated(outcome: &Result<(), annotated::Issues>) -> usize {
-        outcome
-            .as_ref()
-            .err()
-            .map_or(0, |violations| violations.as_slice().len())
+        outcome.as_ref().err().map_or(0, |issues| issues.as_slice().len())
     }
 
-    /// The violations annotated's collecting deserialization found, or `usize::MAX` for the format's error, so a
-    /// body that couldn't be read can't pass for one without violations.
+    /// The issues annotated's collecting deserialization found, or `usize::MAX` for the format's error, so a
+    /// body that couldn't be read can't pass for one without issues.
     pub fn annotated_deserialized<T>(outcome: &Result<T, annotated::DeserializeError<serde_json::Error>>) -> usize {
         match outcome {
             Ok(_) => 0,

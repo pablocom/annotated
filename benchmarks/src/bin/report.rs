@@ -118,7 +118,7 @@ fn print_scenario(
     let throughput_header = if has_throughput { " Throughput |" } else { "" };
     let throughput_alignment = if has_throughput { "--:|" } else { "" };
     println!(
-        "| Library | Version | Median | 95% CI of the median | vs fastest |{throughput_header} Allocations | Bytes | Violations |"
+        "| Library | Version | Median | 95% CI of the median | vs fastest |{throughput_header} Allocations | Bytes | Issues |"
     );
     println!("|---|---|--:|---|--:|{throughput_alignment}--:|--:|--:|");
     for case in cases {
@@ -160,7 +160,7 @@ fn print_scenario(
             "| {} | {} | {median} | {interval} | {versus_fastest} |{throughput_cell} {allocation_count} | {bytes} | {} |",
             case.label(),
             case.library.version(),
-            case.violations(),
+            case.issues(),
         );
     }
     println!();

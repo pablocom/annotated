@@ -5,8 +5,8 @@
 //!
 //! On the valid body, annotated also reads a struct with `#[annotated(collect_type_errors)]`, to measure what the
 //! opt-in costs a body that has no value of the wrong type. On the invalid ones, it also stops at the first
-//! violation, reading with `annotated::json::from_str_fail_fast` and validating with `validate_fail_fast`: those
-//! answer one violation where the other cases answer every one.
+//! issue, reading with `annotated::json::from_str_fail_fast` and validating with `validate_fail_fast`: those
+//! answer one issue where the other cases answer every one.
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -32,22 +32,22 @@ pub struct PlainSignUp {
     bio: Option<String>,
 }
 
-pub(crate) type Received<Violations> = Result<Result<(), Violations>, serde_json::Error>;
+pub(crate) type Received<Issues> = Result<Result<(), Issues>, serde_json::Error>;
 
 /// Reads `body` with `serde_json::from_str`, then validates what it read.
-pub(crate) fn received<T: DeserializeOwned, Violations>(
+pub(crate) fn received<T: DeserializeOwned, Issues>(
     body: &str,
-    validate: impl Fn(&T) -> Result<(), Violations>,
-) -> Received<Violations> {
+    validate: impl Fn(&T) -> Result<(), Issues>,
+) -> Received<Issues> {
     let value = serde_json::from_str::<T>(body)?;
     Ok(validate(&value))
 }
 
-/// The violations validation found, or `usize::MAX` when serde refused the body, so a case that never validated
+/// The issues validation found, or `usize::MAX` when serde refused the body, so a case that never validated
 /// can't pass for one that found nothing.
-pub(crate) fn violations_received<Violations>(
-    received: &Received<Violations>,
-    count: impl Fn(&Result<(), Violations>) -> usize,
+pub(crate) fn issues_received<Issues>(
+    received: &Received<Issues>,
+    count: impl Fn(&Result<(), Issues>) -> usize,
 ) -> usize {
     received.as_ref().map_or(usize::MAX, count)
 }
@@ -114,7 +114,7 @@ fn annotated_cases(scenario: &'static str, body: &str) -> Vec<Case> {
             Library::Annotated,
             body.to_owned(),
             |body| received(body, with_annotated::SignUp::validate),
-            |received| violations_received(received, count::annotated),
+            |received| issues_received(received, count::annotated),
         )
         .variant("serde_json, then validate"),
         Case::new(
@@ -130,7 +130,7 @@ fn annotated_cases(scenario: &'static str, body: &str) -> Vec<Case> {
             Library::Annotated,
             body.to_owned(),
             |body| received(body, with_annotated::SignUpReportingAll::validate),
-            |received| violations_received(received, count::annotated),
+            |received| issues_received(received, count::annotated),
         )
         .variant("serde_json, then validate, report_all"),
     ]
@@ -166,7 +166,7 @@ fn fail_fast_cases(scenario: &'static str, body: &str) -> Vec<Case> {
             Library::Annotated,
             body.to_owned(),
             |body| received(body, with_annotated::SignUp::validate_fail_fast),
-            |received| violations_received(received, count::annotated),
+            |received| issues_received(received, count::annotated),
         )
         .variant("serde_json, then validate_fail_fast"),
     ]
@@ -183,21 +183,21 @@ fn other_libraries_cases(scenario: &'static str, body: &str) -> Vec<Case> {
             Library::Validator,
             body.to_owned(),
             |body| received(body, with_validator::SignUp::validate),
-            |received| violations_received(received, count::validator),
+            |received| issues_received(received, count::validator),
         ),
         Case::new(
             scenario,
             Library::Garde,
             body.to_owned(),
             |body| received(body, |sign_up: &with_garde::SignUp| sign_up.validate()),
-            |received| violations_received(received, count::garde),
+            |received| issues_received(received, count::garde),
         ),
         Case::new(
             scenario,
             Library::Wary,
             body.to_owned(),
             |body| received(body, |sign_up: &with_wary::SignUp| sign_up.validate(&())),
-            |received| violations_received(received, count::wary),
+            |received| issues_received(received, count::wary),
         ),
     ]
 }
