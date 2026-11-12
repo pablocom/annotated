@@ -1,5 +1,8 @@
 # annotated
 
+[![crates.io](https://img.shields.io/crates/v/annotated)](https://crates.io/crates/annotated)
+[![docs.rs](https://img.shields.io/docsrs/annotated)](https://docs.rs/annotated)
+
 Validation for structs that works with serde. You write rules on a struct's fields. When the struct is deserialized, you get every problem back in one error: broken rules and missing fields together, each with the path of the field it belongs to. If you would rather stop at the first problem, the `_fail_fast` functions do that.
 
 ```rust
