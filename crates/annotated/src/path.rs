@@ -241,6 +241,11 @@ mod tests {
     }
 
     #[test]
+    fn paths_with_different_segments_are_different() {
+        assert_ne!(Path::root().field("name"), Path::root().field("email"));
+    }
+
+    #[test]
     fn a_path_deeper_than_three_segments_renders_every_segment() {
         let path = Path::root()
             .field("orders")

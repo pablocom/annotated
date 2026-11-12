@@ -486,9 +486,9 @@ mod tests {
     #[test]
     fn bounds_set_after_the_unit_bound_the_length_the_same() {
         assert_eq!(
-            length().in_bytes().max(5).check("Renée"),
+            length().in_bytes().min(7).max(9).check("Renée"),
             Err(Problem::Length {
-                bounds: Bounds::AtMost(5),
+                bounds: Bounds::Between { min: 7, max: 9 },
                 unit: LengthUnit::Bytes,
             })
         );
@@ -711,6 +711,12 @@ mod tests {
             length().max(0).in_graphemes().check("a"),
             at_most(0, LengthUnit::Graphemes)
         );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn an_empty_string_follows_a_max_of_none_in_graphemes() {
+        assert_eq!(length().max(0).in_graphemes().check(""), Ok(()));
     }
 
     #[cfg(feature = "unicode")]

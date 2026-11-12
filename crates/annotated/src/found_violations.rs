@@ -197,6 +197,25 @@ mod tests {
     }
 
     #[test]
+    fn violations_are_iterated_by_reference_in_the_order_they_were_found() {
+        let root = Location::root();
+        let mut found = FoundViolations::new();
+        found.push(&root.field("repeatedPassword"), passwords_differ());
+        found.push(&root.field("name"), reserved_name());
+        let violations = found.into_result().unwrap_err();
+
+        let iterated = (&violations).into_iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            iterated,
+            [
+                &Violation::new(Path::root().field("repeatedPassword"), passwords_differ()),
+                &Violation::new(Path::root().field("name"), reserved_name()),
+            ]
+        );
+    }
+
+    #[test]
     fn a_violation_found_with_a_message_keeps_it() {
         let root = Location::root();
         let mut found = FoundViolations::new();

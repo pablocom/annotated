@@ -677,6 +677,13 @@ mod tests {
     }
 
     #[test]
+    fn a_length_of_one_byte_reads_in_the_singular() {
+        let problem = length_problem(Bounds::AtLeast(1), LengthUnit::Bytes);
+
+        assert_eq!(problem.to_string(), "must be at least 1 byte long");
+    }
+
+    #[test]
     fn a_length_in_graphemes_reads_in_characters() {
         let problem = length_problem(Bounds::AtMost(50), LengthUnit::Graphemes);
 

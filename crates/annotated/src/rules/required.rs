@@ -169,6 +169,13 @@ mod tests {
     }
 
     #[test]
+    fn a_shared_string_with_text_is_present() {
+        let name: Arc<str> = Arc::from("Alex");
+
+        assert_eq!(required().check(&name), Ok(()));
+    }
+
+    #[test]
     fn none_is_missing_a_required_value() {
         assert_eq!(required().check(&None::<String>), Err(Problem::Required));
     }
@@ -194,6 +201,11 @@ mod tests {
     }
 
     #[test]
+    fn a_hash_map_with_an_entry_is_present() {
+        assert_eq!(required().check(&HashMap::from([("en", "Settings")])), Ok(()));
+    }
+
+    #[test]
     fn a_map_with_an_entry_is_present() {
         assert_eq!(required().check(&BTreeMap::from([("en", "Settings")])), Ok(()));
     }
@@ -206,8 +218,20 @@ mod tests {
     }
 
     #[test]
+    fn a_slice_with_an_element_is_present() {
+        let names: &[&str] = &["Alex"];
+
+        assert_eq!(required().check(names), Ok(()));
+    }
+
+    #[test]
     fn an_empty_array_is_missing_a_required_value() {
         assert_eq!(required().check(&[0_u8; 0]), Err(Problem::Required));
+    }
+
+    #[test]
+    fn an_array_with_an_element_is_present() {
+        assert_eq!(required().check(&[0_u8; 1]), Ok(()));
     }
 
     #[test]
@@ -216,13 +240,28 @@ mod tests {
     }
 
     #[test]
+    fn a_queue_with_an_element_is_present() {
+        assert_eq!(required().check(&VecDeque::from([0_u8])), Ok(()));
+    }
+
+    #[test]
     fn an_empty_hash_set_is_missing_a_required_value() {
         assert_eq!(required().check(&HashSet::<u8>::new()), Err(Problem::Required));
     }
 
     #[test]
+    fn a_hash_set_with_an_element_is_present() {
+        assert_eq!(required().check(&HashSet::from([0_u8])), Ok(()));
+    }
+
+    #[test]
     fn an_empty_ordered_set_is_missing_a_required_value() {
         assert_eq!(required().check(&BTreeSet::<u8>::new()), Err(Problem::Required));
+    }
+
+    #[test]
+    fn an_ordered_set_with_an_element_is_present() {
+        assert_eq!(required().check(&BTreeSet::from([0_u8])), Ok(()));
     }
 
     #[test]
@@ -236,10 +275,22 @@ mod tests {
     }
 
     #[test]
+    fn a_borrowed_string_with_text_is_present() {
+        assert_eq!(required().check(&"Alex"), Ok(()));
+    }
+
+    #[test]
     fn a_boxed_string_is_checked_like_a_string() {
         let name: Box<str> = Box::from("   ");
 
         assert_eq!(required().check(&name), Err(Problem::Required));
+    }
+
+    #[test]
+    fn a_boxed_string_with_text_is_present() {
+        let name: Box<str> = Box::from("Alex");
+
+        assert_eq!(required().check(&name), Ok(()));
     }
 
     #[test]
@@ -250,9 +301,23 @@ mod tests {
     }
 
     #[test]
+    fn a_reference_counted_string_with_text_is_present() {
+        let name: Rc<str> = Rc::from("Alex");
+
+        assert_eq!(required().check(&name), Ok(()));
+    }
+
+    #[test]
     fn a_copy_on_write_string_is_checked_like_a_string() {
         let name: Cow<'_, str> = Cow::Borrowed("   ");
 
         assert_eq!(required().check(&name), Err(Problem::Required));
+    }
+
+    #[test]
+    fn a_copy_on_write_string_with_text_is_present() {
+        let name: Cow<'_, str> = Cow::Borrowed("Alex");
+
+        assert_eq!(required().check(&name), Ok(()));
     }
 }
