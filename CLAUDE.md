@@ -20,6 +20,12 @@ How we work in this repository. The [README](README.md) shows how to use the lib
 - Every error the derives emit has a `trybuild` compile-fail test under `tests/ui/` pinning its message and span.
 - When reporting work, list the tests you saw fail and why, one line each.
 
+## Performance
+
+- Never make annotated slower without saying why. A fix or a feature can be worth what it costs; tidier code rarely is.
+- Slower means more instructions or allocations in [`benchmarks/compare.sh`](benchmarks/README.md#measuring-a-change-to-annotated), which counts the commit before and the change on the same machine. Time varies too much between machines and runs to judge one change by. Run it before committing a change to the crates; CI runs it on every push.
+- A claim that a change is faster gives before → after medians from the benchmarks, timed in one sitting on one pinned core.
+
 ## Commits
 
 - [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`, scope `core`, `derive`, `examples`, `benchmarks`, `ci`, `docs` or `repo`; imperative, lowercase, no trailing period. Breaking changes take `!` and a `BREAKING CHANGE:` footer. The body says why.
