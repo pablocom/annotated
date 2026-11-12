@@ -100,6 +100,8 @@ pub use validate::Validate;
 ///   element.
 /// - A field is reported under the name serde reads it by, from `#[serde(...)]` attributes such as `rename_all` and
 ///   `rename`. The struct doesn't need to derive serde's traits.
+/// - A field with `#[serde(flatten)]` is reported at the struct's own location, since its keys sit in the struct's
+///   map: issues inside a flattened `address` are at `street`, not `address.street`.
 /// - [`Validate::validate_fail_fast`] checks the same rules in the same order, nested values and elements included, and
 ///   returns only the first issue, even under `report_all`. It stops right after that issue, with one
 ///   exception: when the issue is inside a `nested` value, or inside an element checked with `nested`, the struct

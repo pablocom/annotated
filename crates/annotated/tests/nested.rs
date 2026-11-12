@@ -130,3 +130,26 @@ fn report_all_checks_the_rules_after_a_nested_struct_with_issues() {
         ["dropOff.street: required", "dropOff: unknown_address"]
     );
 }
+
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+struct Customer {
+    #[validate(required)]
+    name: String,
+    #[serde(flatten)]
+    #[validate(nested)]
+    address: Address,
+}
+
+#[test]
+fn a_flattened_nested_struct_is_validated_at_the_struct_s_location() {
+    let customer = Customer {
+        name: String::new(),
+        address: Address {
+            street: String::new(),
+            ..address()
+        },
+    };
+
+    assert_eq!(issues_of(&customer), ["name: required", "street: required"]);
+}

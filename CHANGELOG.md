@@ -27,6 +27,10 @@ This file lists every change that users of the crates can notice. The format fol
   - The implementation requires the input to outlive each lifetime a field borrows, as serde's does.
   - A value the input can't lend, such as a JSON string with an escape in it, is the format's error, or `Problem::InvalidType` under `collect_type_errors`.
 
+### Changed
+
+- `#[derive(Validate)]` reports a field with `#[serde(flatten)]` at the struct's own location, where serde reads its keys, instead of under the field's name.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

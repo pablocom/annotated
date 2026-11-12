@@ -127,8 +127,12 @@ impl Expansion {
         }
     }
 
+    // A flattened field's keys sit in the struct's own map, so its issues are at the struct's location.
     pub fn field_location(&self, field: &ValidatedField) -> TokenStream {
         let at = &self.at;
+        if field.is_flattened {
+            return quote!(#at);
+        }
         let name = &field.name;
         quote!(&#at.field(#name))
     }
@@ -333,8 +337,7 @@ impl Expansion {
             return quote!(let _ = #passes;);
         };
         let field = &validated_struct.fields[field_index];
-        let field_name = &field.name;
-        let passes = self.struct_rule_passes(check, checked, &quote!(&#at.field(#field_name)));
+        let passes = self.struct_rule_passes(check, checked, &self.field_location(field));
         if self.is_reporting_all {
             return quote!(let _ = #passes;);
         }

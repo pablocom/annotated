@@ -16,6 +16,7 @@ pub struct SerdeField {
     pub name: String,
     pub names_read: Vec<String>,
     pub is_skipped: bool,
+    pub is_flattened: bool,
     pub default: Option<DefaultValue>,
     pub deserialize_with: Option<ExprPath>,
 }
@@ -25,9 +26,8 @@ pub enum DefaultValue {
     ReturnedBy(ExprPath),
 }
 
-pub fn field_names(input: &DeriveInput) -> syn::Result<Vec<String>> {
-    let serde_struct = SerdeStruct::from_input(input)?;
-    Ok(serde_struct.fields.into_iter().map(|field| field.name).collect())
+pub fn fields_of(input: &DeriveInput) -> syn::Result<Vec<SerdeField>> {
+    Ok(SerdeStruct::from_input(input)?.fields)
 }
 
 impl SerdeStruct {
@@ -48,6 +48,7 @@ impl SerdeStruct {
                     name: field.attrs.name().deserialize_name().value.clone(),
                     names_read: field.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
                     is_skipped: field.attrs.skip_deserializing(),
+                    is_flattened: field.attrs.flatten(),
                     default: DefaultValue::from_serde(field.attrs.default()),
                     deserialize_with: field.attrs.deserialize_with().map(reachable_function),
                 })

@@ -6,10 +6,11 @@ use syn::{
     PathArguments, Type, TypePath,
 };
 
+use crate::pattern;
+use crate::serde_names::{self, SerdeField};
 use crate::written_rule::{
     NamedArgument, RuleCall, StructCustom, StructRule, WrittenRule, written_rules, written_struct_rules,
 };
-use crate::{pattern, serde_names};
 
 pub struct ValidatedStruct<'a> {
     pub input: &'a DeriveInput,
@@ -30,6 +31,7 @@ pub struct ValidatedField<'a> {
     pub field_type: &'a Type,
     pub attributes: &'a [Attribute],
     pub name: String,
+    pub is_flattened: bool,
     pub is_optional: bool,
     pub rules: Vec<FieldRule>,
 }
@@ -68,8 +70,8 @@ impl<'a> ValidatedStruct<'a> {
         let fields = fields
             .named
             .iter()
-            .zip(serde_names::field_names(input)?)
-            .map(|(field, name)| ValidatedField::from_field(field, name))
+            .zip(serde_names::fields_of(input)?)
+            .map(|(field, serde_field)| ValidatedField::from_field(field, serde_field))
             .collect::<syn::Result<Vec<_>>>()?;
         let struct_rules = written_struct_rules(&input.attrs)?;
         let is_reporting_all = struct_rules.iter().any(|rule| matches!(rule, StructRule::ReportAll));
@@ -129,7 +131,7 @@ fn position_of(field: &Expr, struct_name: &Ident, fields: &[ValidatedField]) -> 
 }
 
 impl<'a> ValidatedField<'a> {
-    fn from_field(field: &'a Field, name: String) -> syn::Result<Self> {
+    fn from_field(field: &'a Field, serde_field: SerdeField) -> syn::Result<Self> {
         let member = field.ident.as_ref().expect("a named field has a name");
         let rules = written_rules(&field.attrs)?
             .into_iter()
@@ -139,7 +141,8 @@ impl<'a> ValidatedField<'a> {
             member,
             field_type: &field.ty,
             attributes: &field.attrs,
-            name,
+            name: serde_field.name,
+            is_flattened: serde_field.is_flattened,
             is_optional: option_content(&field.ty).is_some(),
             rules,
         })
