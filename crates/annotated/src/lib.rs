@@ -30,6 +30,8 @@ mod content;
 #[cfg(feature = "serde")]
 mod content_deserializer;
 #[cfg(feature = "serde")]
+mod content_ref_deserializer;
+#[cfg(feature = "serde")]
 mod deserialize;
 #[cfg(feature = "serde")]
 mod deserialize_containers;
@@ -334,11 +336,12 @@ pub use annotated_derive::Validate;
 /// An enum is read as serde reads it, and the variant read is checked as a struct's fields are. Each issue is at the
 /// path where its value is in the input: under the variant's name by default, as in `card.number`, at the enum's own
 /// location with `#[serde(tag = "type")]`, since the variant's fields sit beside the tag, and under the content's name
-/// with `#[serde(tag = "type", content = "data")]`, as in `data.number`. A newtype variant's value is where the
-/// variant's content is, and a tuple variant's elements are at their index.
+/// with `#[serde(tag = "type", content = "data")]`, as in `data.number`. An untagged variant's fields are at the
+/// enum's own location. A newtype variant's value is where the variant's content is, and a tuple variant's elements are
+/// at their index.
 ///
-/// - The enum takes `tag`, `content`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields` and `expecting`, and a
-///   variant takes `rename`, `alias` and `rename_all`, as with serde. A variant's fields take what a struct's fields
+/// - The enum takes `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields` and `expecting`, and a
+///   variant takes `rename`, `alias`, `rename_all` and `untagged`, as with serde. A variant's fields take what a struct's fields
 ///   take. Any other serde attribute on the enum or a variant is a compile error.
 /// - With `tag`, every key but the tag is buffered, as serde does, and the variant is read from them. A missing tag is
 ///   [`Problem::Missing`] at the tag's name, and a tag that names no variant is a [`Problem::UnknownVariant`] there,
@@ -347,6 +350,11 @@ pub use annotated_derive::Validate;
 ///   it comes after, as with serde. A missing tag, or one that names no variant, is reported at the tag's name as with
 ///   `tag` alone. Missing content is [`Problem::Missing`] at the content's name, unless the variant needs none: a unit
 ///   variant, or a newtype variant whose value is an `Option`, which is then `None`.
+/// - With `untagged`, the value is buffered, as serde does, and the variants are tried in order. The value is the first
+///   variant that can be built, with every field present and of the right type. Its broken rules are reported, while
+///   the issues found trying the others are dropped. A value no variant fits is a [`Problem::InvalidType`] at the enum's
+///   location, with or without `collect_type_errors`: its `expected` is the enum's `expecting`, or `untagged enum Name`.
+///   Variants with `#[serde(untagged)]` in a tagged enum are tried the same way, after the tagged ones.
 /// - Without `tag`, a name that is no variant of the enum is the format's error. With `collect_type_errors` on the enum,
 ///   the enum is buffered whole first, so such a name is a [`Problem::UnknownVariant`] at the enum's location instead, and a value
 ///   that isn't the enum at all is a [`Problem::InvalidType`] there. A value of the wrong type in a variant's field is

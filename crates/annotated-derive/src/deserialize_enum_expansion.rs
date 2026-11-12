@@ -67,6 +67,11 @@ impl<'a> EnumExpansion<'a> {
         let (_, type_generics, _) = input.generics.split_for_impl();
         let variant_identifier = self.variant_identifier();
         let variant_reader = match &self.deserialized_enum.tag {
+            Tag::External if self.has_untagged_variants() => {
+                let enum_visitor = self.enum_visitor();
+                let variant_seed = self.variant_seed();
+                quote!(#enum_visitor #variant_seed)
+            }
             Tag::External => self.enum_visitor(),
             Tag::Adjacent { tag, content } => {
                 let variant_seed = self.variant_seed();
@@ -127,19 +132,36 @@ impl<'a> EnumExpansion<'a> {
         self.deserialized_enum.variants.iter().enumerate()
     }
 
+    fn tagged_variants(&self) -> impl Iterator<Item = (usize, &'a DeserializedVariant<'a>)> {
+        self.readable_variants().filter(|(_, variant)| !variant.is_untagged)
+    }
+
+    fn has_untagged_variants(&self) -> bool {
+        self.readable_variants().any(|(_, variant)| variant.is_untagged)
+    }
+
     fn variant_identifier(&self) -> TokenStream {
         let Self { serde, formatter, .. } = self;
         let value = &self.rules.value;
-        let indices: Vec<_> = self.readable_variants().map(|(index, _)| index).collect();
+        let all_tags = self
+            .readable_variants()
+            .map(|(index, _)| format_ident!("Variant{index}"));
+        let variants = quote! {
+            #[derive(Clone, Copy)]
+            enum __Variant {
+                #(#all_tags,)*
+            }
+        };
+        if let Tag::Untagged = &self.deserialized_enum.tag {
+            return variants;
+        }
+        let indices: Vec<_> = self.tagged_variants().map(|(index, _)| index).collect();
         let tags = indices.iter().map(|index| format_ident!("Variant{index}"));
         let index_arms = tags.clone().enumerate().map(|(position, tag)| {
             let position = position as u64;
             quote!(#position => ::core::result::Result::Ok(__Variant::#tag),)
         });
-        let names_read: Vec<_> = self
-            .readable_variants()
-            .map(|(_, variant)| &variant.names_read)
-            .collect();
+        let names_read: Vec<_> = self.tagged_variants().map(|(_, variant)| &variant.names_read).collect();
         let name_arms = tags
             .clone()
             .zip(&names_read)
@@ -151,10 +173,7 @@ impl<'a> EnumExpansion<'a> {
         let all_names_read = names_read.iter().copied().flatten();
         let indices_expected = format!("variant index 0 <= i < {}", indices.len());
         quote! {
-            #[derive(Clone, Copy)]
-            enum __Variant {
-                #(#tags,)*
-            }
+            #variants
 
             const __VARIANTS: &[&str] = &[#(#all_names_read),*];
 
@@ -274,6 +293,14 @@ impl<'a> EnumExpansion<'a> {
         let tag = format_ident!("Variant{index}");
         let name = &self.deserialized_enum.input.ident;
         let ident = variant.ident;
+        if variant.is_untagged {
+            let variant_name = ident.to_string();
+            return quote! {
+                (__Variant::#tag, _) => ::core::result::Result::Err(
+                    <__A::Error as #serde::de::Error>::unknown_variant(#variant_name, __VARIANTS),
+                ),
+            };
+        }
         let (Some(content), Some(deserialized_content)) = (&self.contents[index], &variant.content) else {
             return quote! {
                 (__Variant::#tag, #variant_access) => {
@@ -389,7 +416,9 @@ impl<'a> EnumExpansion<'a> {
         let tag = format_ident!("Variant{index}");
         let name = &self.deserialized_enum.input.ident;
         let ident = variant.ident;
-        let skipping_the_content = if let Tag::Internal { .. } = &self.deserialized_enum.tag {
+        let is_read_beside_its_tag =
+            matches!(&self.deserialized_enum.tag, Tag::Internal { .. }) && !variant.is_untagged;
+        let skipping_the_content = if is_read_beside_its_tag {
             quote!(#serde::Deserializer::deserialize_ignored_any(#deserializer, #serde::de::IgnoredAny)?;)
         } else {
             let enum_name = name.to_string();
@@ -445,6 +474,7 @@ impl<'a> EnumExpansion<'a> {
         );
         let collects_type_errors = self.deserialized_enum.collects_type_errors;
         let read_value = match &self.deserialized_enum.tag {
+            _ if self.has_untagged_variants() => self.value_read_trying_each_variant(),
             Tag::Internal { tag } => self.internally_tagged_value_read(tag),
             _ if collects_type_errors => self.value_read_collecting_type_errors(),
             _ if enum_checks.is_empty() => return self.enum_read(&quote!(#found)),
@@ -586,6 +616,112 @@ impl<'a> EnumExpansion<'a> {
                     ::annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
                     ::core::option::Option::None
                 }
+            };
+        }
+    }
+}
+
+// As with serde, an enum with untagged variants is buffered, and read as a tagged variant first when it has a tag, then
+// as each untagged variant in turn. The first that can be built is the value. The issues found trying the others are
+// dropped, and when none can be built, the value is the issue.
+impl EnumExpansion<'_> {
+    fn value_read_trying_each_variant(&self) -> TokenStream {
+        let Self {
+            serde,
+            deserializer,
+            read,
+            variant,
+            ..
+        } = self;
+        let Expansion { at, found, .. } = &self.rules;
+        let local = |name| Ident::new(name, Span::mixed_site());
+        let (content, tried) = (local("content"), local("tried"));
+        let variants_label = Lifetime::new("'variants", Span::mixed_site());
+        let by_reference = quote!(::annotated::__private::Buffered::by_reference::<__D::Error>(&#content));
+        let turbofish = self.turbofish();
+        let reporting_into_what_was_tried = quote!(#at, #found: &mut #tried, marker: ::core::marker::PhantomData);
+        let attempt = |reading: TokenStream| {
+            quote! {
+                {
+                    let mut #tried = #found.new_alike();
+                    if let ::core::result::Result::Ok(::core::option::Option::Some(#read)) = #reading {
+                        #found.append(&mut #tried);
+                        break #variants_label ::core::option::Option::Some(#read);
+                    }
+                }
+            }
+        };
+        let enum_name = &self.deserialized_enum.name;
+        let tagged_attempt = match &self.deserialized_enum.tag {
+            Tag::Untagged => None,
+            Tag::External => Some(attempt(quote! {
+                #serde::Deserializer::deserialize_enum(
+                    #by_reference,
+                    #enum_name,
+                    __VARIANTS,
+                    __EnumVisitor #turbofish { #reporting_into_what_was_tried },
+                )
+            })),
+            Tag::Internal { tag } => {
+                let expecting = self.expecting();
+                Some(attempt(quote! {
+                    match ::annotated::__private::read_internally_tagged::<_, __Variant>(
+                        #by_reference,
+                        #tag,
+                        __VARIANTS,
+                        #expecting,
+                        false,
+                    ) {
+                        ::core::result::Result::Ok(::annotated::__private::Tagged::Variant(#variant, buffered)) => {
+                            #serde::de::DeserializeSeed::deserialize(
+                                __VariantSeed #turbofish { #variant, #reporting_into_what_was_tried },
+                                ::annotated::__private::Buffered::deserializer::<__D::Error>(buffered),
+                            )
+                        }
+                        _ => ::core::result::Result::Ok(::core::option::Option::None),
+                    }
+                }))
+            }
+            Tag::Adjacent { .. } => Some(attempt(quote! {
+                #serde::Deserializer::deserialize_struct(
+                    #by_reference,
+                    #enum_name,
+                    __ADJACENT_FIELDS,
+                    __AdjacentVisitor #turbofish { #reporting_into_what_was_tried },
+                )
+            })),
+        };
+        let untagged_attempts = self
+            .readable_variants()
+            .filter(|(_, untagged_variant)| untagged_variant.is_untagged)
+            .map(|(index, _)| {
+                let tag = format_ident!("Variant{index}");
+                attempt(quote! {
+                    #serde::de::DeserializeSeed::deserialize(
+                        __VariantSeed #turbofish { #variant: __Variant::#tag, #reporting_into_what_was_tried },
+                        #by_reference,
+                    )
+                })
+            });
+        let name = &self.deserialized_enum.input.ident;
+        let expecting = self
+            .deserialized_enum
+            .expecting
+            .clone()
+            .unwrap_or_else(|| format!("untagged enum {name}"));
+        quote! {
+            let #content =
+                <::annotated::__private::Buffered<'de> as #serde::Deserialize<'de>>::deserialize(#deserializer)?;
+            let #read = #variants_label: {
+                #tagged_attempt
+                #(#untagged_attempts)*
+                ::annotated::__private::record_issue(
+                    #found,
+                    #at,
+                    ::annotated::__private::Buffered::fitting_no_variant(&#content, #expecting),
+                    ::core::option::Option::None,
+                );
+                ::core::option::Option::None
             };
         }
     }

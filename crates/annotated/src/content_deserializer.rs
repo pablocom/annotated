@@ -98,14 +98,14 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
 
 // serde's visitors for integers narrower than 128 bits take every integer of up to 64 bits, but refuse a 128-bit one
 // whatever its value.
-fn visit_u128<'de, V: Visitor<'de>, E: de::Error>(visitor: V, integer: u128) -> Result<V::Value, E> {
+pub(crate) fn visit_u128<'de, V: Visitor<'de>, E: de::Error>(visitor: V, integer: u128) -> Result<V::Value, E> {
     match u64::try_from(integer) {
         Ok(integer) => visitor.visit_u64(integer),
         Err(_) => visitor.visit_u128(integer),
     }
 }
 
-fn visit_i128<'de, V: Visitor<'de>, E: de::Error>(visitor: V, integer: i128) -> Result<V::Value, E> {
+pub(crate) fn visit_i128<'de, V: Visitor<'de>, E: de::Error>(visitor: V, integer: i128) -> Result<V::Value, E> {
     match i64::try_from(integer) {
         Ok(integer) => visitor.visit_i64(integer),
         Err(_) => visitor.visit_i128(integer),
@@ -366,7 +366,7 @@ impl<'de, E> MapKeyDeserializer<'de, E> {
     }
 }
 
-fn integer_written_in<'de>(text: &str) -> Option<Content<'de>> {
+pub(crate) fn integer_written_in<'de>(text: &str) -> Option<Content<'de>> {
     if !text.starts_with(|first: char| first.is_ascii_digit() || first == '-') {
         return None;
     }
@@ -378,7 +378,7 @@ fn integer_written_in<'de>(text: &str) -> Option<Content<'de>> {
         .ok()
 }
 
-fn boolean_written_in<'de>(text: &str) -> Option<Content<'de>> {
+pub(crate) fn boolean_written_in<'de>(text: &str) -> Option<Content<'de>> {
     match text {
         "true" => Some(Content::Bool(true)),
         "false" => Some(Content::Bool(false)),

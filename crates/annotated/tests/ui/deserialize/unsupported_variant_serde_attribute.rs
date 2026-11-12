@@ -11,7 +11,7 @@ enum Payment {
 #[serde(rename_all = "camelCase")]
 enum Quantity {
     Exact(u32),
-    #[serde(untagged)]
+    #[serde(bound = "")]
     Described(String),
 }
 

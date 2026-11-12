@@ -8,7 +8,7 @@ enum Payment {
 }
 
 #[derive(Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, bound = "")]
 enum Recipient {
     Email { address: String },
     Id(u64),

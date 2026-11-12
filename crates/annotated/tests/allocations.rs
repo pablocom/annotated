@@ -261,6 +261,34 @@ fn deserializing_a_valid_adjacently_tagged_enum_with_its_tag_first_buffers_nothi
 
 #[cfg(feature = "serde")]
 #[derive(annotated::Deserialize)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum Recipient {
+    ByEmail {
+        #[validate(email)]
+        email: String,
+    },
+    ByPhone {
+        #[validate(length(min = 9))]
+        phone: String,
+    },
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_a_valid_untagged_enum_buffers_it_once_and_allocates_only_the_buffer_and_its_string() {
+    let body = r#"{ "email": "alex@example.com" }"#;
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(annotated::from_deserializer::<Recipient, _>(&mut deserializer));
+    });
+
+    assert_eq!(allocations.count_total, 2);
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
 #[allow(dead_code)]
 struct Crew {
     #[validate(nested)]

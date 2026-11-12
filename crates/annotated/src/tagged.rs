@@ -9,6 +9,7 @@ use crate::Problem;
 use crate::collecting_type_errors::problem_of;
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, WrongType};
+use crate::content_ref_deserializer::ContentRefDeserializer;
 use crate::flattened::field_name_of;
 
 /// A value read whole into a buffer, to be read again once its tag says which variant it is.
@@ -162,6 +163,24 @@ impl<'de> serde::Deserialize<'de> for Buffered<'de> {
 }
 
 impl<'de> Buffered<'de> {
+    /// A deserializer that reads the buffered value without taking it, so it can be read again: each variant of an
+    /// untagged enum is tried on it in turn.
+    #[must_use]
+    pub fn by_reference<E: de::Error>(&self) -> impl Deserializer<'de, Error = E> {
+        ContentRefDeserializer::new(&self.content, self.is_human_readable)
+    }
+
+    /// The problem of a buffered value that fits none of an untagged enum's variants: what the enum `expecting` says,
+    /// and the kind of value found.
+    #[cold]
+    #[must_use]
+    pub fn fitting_no_variant(&self, expecting: &'static str) -> Problem {
+        Problem::InvalidType {
+            expected: Cow::Borrowed(expecting),
+            found: self.content.kind().name(),
+        }
+    }
+
     /// Reads the buffered value with `seed`. A value that doesn't fit is returned as the [`Problem`] to report, instead
     /// of ending deserialization. `type_name` says what was expected when serde's error doesn't.
     ///

@@ -24,6 +24,7 @@ pub struct DeserializedEnum<'a> {
 pub struct DeserializedVariant<'a> {
     pub ident: &'a Ident,
     pub names_read: Vec<String>,
+    pub is_untagged: bool,
     pub content_place: Place,
     pub content: Option<DeserializedStruct<'a>>,
 }
@@ -38,15 +39,24 @@ const ON_AN_ENUM: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "into",
         "tag",
         "content",
+        "untagged",
     ],
-    refusal: "with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `rename_all`, \
-              `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting` and those that only change serializing",
+    refusal: "with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `untagged`, \
+              `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting` and those that only \
+              change serializing",
 };
 
 const ON_A_VARIANT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
-    names: &["rename", "alias", "rename_all", "skip_serializing", "serialize_with"],
-    refusal: "with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all` and \
-              those that only change serializing",
+    names: &[
+        "rename",
+        "alias",
+        "rename_all",
+        "untagged",
+        "skip_serializing",
+        "serialize_with",
+    ],
+    refusal: "with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all`, \
+              `untagged` and those that only change serializing",
 };
 
 impl<'a> DeserializedEnum<'a> {
@@ -81,6 +91,7 @@ impl<'a> DeserializedEnum<'a> {
             expecting,
             borrowed_lifetimes,
         } = serde;
+        let is_untagged = matches!(tag, Tag::Untagged);
         let variants = data
             .variants
             .iter()
@@ -118,6 +129,7 @@ impl<'a> DeserializedEnum<'a> {
                 DeserializedVariant {
                     ident: &variant.ident,
                     names_read: serde_variant.names_read,
+                    is_untagged: is_untagged || serde_variant.is_untagged,
                     content_place: validated_variant.content_place,
                     content,
                 }

@@ -377,6 +377,8 @@ An externally tagged variant is read through the `VariantAccess` serde gives for
 - With `collect_type_errors`, an adjacently tagged enum is buffered whole, as an externally tagged one is, and so is its content, so that content of the wrong type is an issue at the content's name.
 - With `deny_unknown_fields`, an extra key is an unknown field, as for a struct. serde's derive reports it as an invalid value instead.
 
+An enum with untagged variants buffers the whole value as `annotated::__private::Buffered`, and tries each reading on it by reference, through `ContentRefDeserializer`: the tagged reading first, if the enum has a tag, then the seed for each untagged variant. The buffer is never copied. Each attempt reports into a report of its own, which is appended once a variant is built, and dropped otherwise.
+
 **Everything else works as for a struct:** generics and their bounds, borrowing, failing fast, and the equivalence with serde followed by `validate()`, which tests pin for each representation.
 
 **Cost.** A struct reads exactly as before, since enums generate code of their own. An externally tagged enum buffers nothing, and the other representations buffer what serde buffers. Trying an untagged variant that can't be built may allocate for its issues, which are then dropped. serde allocates an error for it too.

@@ -55,11 +55,16 @@ This file lists every change that users of the crates can notice. The format fol
   - A missing tag, or one that names no variant, is reported at the tag's name, as for an internally tagged enum. Missing content is `Problem::Missing` at the content's name, unless the variant needs none: a unit variant, or a newtype variant whose value is an `Option`, which is then `None`, as with serde.
   - With `collect_type_errors`, content of the wrong type is `Problem::InvalidType` at the content's name, and a value that isn't a map or a sequence is `Problem::InvalidType` at the enum's location.
   - With `deny_unknown_fields`, a key other than the tag and the content is the format's error. serde words it as an invalid value. annotated words it as an unknown field, as for a struct.
+- `#[derive(Deserialize)]` reads untagged enums, with `#[serde(untagged)]`, and untagged variants in a tagged enum.
+  - As with serde, the value is buffered once, and the variants are tried in order on that buffer, after the tagged ones. The value is the first variant that can be built. Its broken rules are reported, and the issues found trying the other variants are dropped.
+  - The variant's fields are at the enum's own location.
+  - A value no variant fits is `Problem::InvalidType` at the enum's location, even without `collect_type_errors`, so reading goes on. Its `expected` is the enum's `expecting`, or `untagged enum Name`.
 
 ### Changed
 
 - `#[derive(Validate)]` reports a field with `#[serde(flatten)]` at the struct's own location, where serde reads its keys, instead of under the field's name.
 - Under `collect_type_errors`, a field holding a serde enum reports a name that is none of its variants as `Problem::UnknownVariant`, instead of `Problem::InvalidType`.
+- `Problem::InvalidType` is also reported, always, for a value that fits no variant of an untagged enum.
 
 ## [0.1.0] - 2026-11-12
 
