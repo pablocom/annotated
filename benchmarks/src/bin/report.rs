@@ -137,8 +137,7 @@ fn print_scenario(
                     format!("{:.2}×", median.point_estimate / fastest)
                 },
                 case.throughput_bytes
-                    .map(|bytes| throughput(bytes, median.point_estimate))
-                    .unwrap_or_default(),
+                    .map_or_default(|bytes| throughput(bytes, median.point_estimate)),
             ),
             None => ("not run".to_owned(), String::new(), String::new(), String::new()),
         };
