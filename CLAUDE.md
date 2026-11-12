@@ -22,7 +22,7 @@ How we work in this repository. The [README](README.md) shows how to use the lib
 
 ## Commits
 
-- [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`, scope `core`, `derive`, `examples`, `ci`, `docs` or `repo`; imperative, lowercase, no trailing period. Breaking changes take `!` and a `BREAKING CHANGE:` footer. The body says why.
+- [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`, scope `core`, `derive`, `examples`, `benchmarks`, `ci`, `docs` or `repo`; imperative, lowercase, no trailing period. Breaking changes take `!` and a `BREAKING CHANGE:` footer. The body says why.
 - No attribution to Claude: no `Co-Authored-By` trailer and no session link.
 - Trunk-based: small, atomic commits straight to `main`, each green on its own, pushed once its checks pass.
 - Every change users can notice gets a line in `CHANGELOG.md` under *Unreleased*, in the same commit. Versions follow SemVer; before 1.0, a breaking change bumps the minor version.
