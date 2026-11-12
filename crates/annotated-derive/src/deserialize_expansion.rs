@@ -2,11 +2,12 @@ use proc_macro2::{Literal, Span, TokenStream, TokenTree};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
-use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, Type, parse_quote};
+use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, Type, WherePredicate, parse_quote};
 
 use crate::deserialized_struct::DeserializedStruct;
 use crate::expansion::{Expansion, validity_of};
-use crate::validated_struct::{ValidatedField, option_content};
+use crate::serde_names::{DefaultValue, SerdeField};
+use crate::validated_struct::{FieldRule, ValidatedField, nested_rules_in, option_content};
 
 pub fn deserialize_impl(deserialized_struct: &DeserializedStruct) -> TokenStream {
     DeserializeExpansion::new(deserialized_struct).deserialize_impl()
@@ -23,6 +24,8 @@ struct DeserializeExpansion<'a> {
     key: Ident,
     deserialized: Ident,
     has_finished: Ident,
+    read: Ident,
+    element_at: Ident,
     visitor_lifetime: Lifetime,
     field_checks_label: Lifetime,
     struct_checks_label: Lifetime,
@@ -47,6 +50,8 @@ impl<'a> DeserializeExpansion<'a> {
             key: local("key"),
             deserialized: local("deserialized"),
             has_finished: local("has_finished"),
+            read: local("read"),
+            element_at: local("element_at"),
             visitor_lifetime: Lifetime::new("'__visitor", Span::call_site()),
             field_checks_label,
             struct_checks_label: Lifetime::new("'struct_checks", Span::mixed_site()),
@@ -108,28 +113,62 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn generics_reading_fields(&self) -> Generics {
-        let serde = &self.serde;
-        let input = self.input();
-        let parameters = type_and_const_parameters(&input.generics);
-        let mut generics = input.generics.clone();
+        let parameters = type_and_const_parameters(&self.input().generics);
+        let mut generics = self.generics_checking_fields();
         generics.params.insert(0, parse_quote!('de));
         let where_clause = generics.make_where_clause();
         for field in self.fields() {
-            let field_type = field.field_type;
-            if !mentions_any(field_type.to_token_stream(), &parameters) {
-                continue;
-            }
-            if field.has_nested_values() {
-                where_clause
-                    .predicates
-                    .push(parse_quote!(#field_type: ::annotated::Deserialize<'de>));
-            } else {
-                where_clause
-                    .predicates
-                    .push(parse_quote!(#field_type: #serde::Deserialize<'de>));
-            }
+            where_clause
+                .predicates
+                .extend(self.reading_bound_of(field, &parameters));
         }
         generics
+    }
+
+    fn generics_checking_fields(&self) -> Generics {
+        let input = self.input();
+        let parameters = type_and_const_parameters(&input.generics);
+        let checking_bounds: Vec<_> = self
+            .fields()
+            .iter()
+            .flat_map(|field| self.checking_bounds_of(field, &parameters))
+            .collect();
+        let mut generics = input.generics.clone();
+        if !checking_bounds.is_empty() {
+            generics.make_where_clause().predicates.extend(checking_bounds);
+        }
+        generics
+    }
+
+    fn reading_bound_of(&self, field: &ValidatedField, parameters: &[&Ident]) -> Option<WherePredicate> {
+        let serde = &self.serde;
+        let field_type = field.field_type;
+        if !mentions_any(field_type.to_token_stream(), parameters) {
+            return None;
+        }
+        if field.has_nested_values() {
+            return Some(parse_quote!(#field_type: ::annotated::Deserialize<'de>));
+        }
+        Some(parse_quote!(#field_type: #serde::Deserialize<'de>))
+    }
+
+    fn checking_bounds_of(&self, field: &ValidatedField, parameters: &[&Ident]) -> Vec<WherePredicate> {
+        let WhenAbsent::TakesDefault(default) = self.when_absent(field) else {
+            return Vec::new();
+        };
+        let mut bounds = Vec::new();
+        let field_type = field.field_type;
+        let is_its_type_s_default = matches!(default, DefaultValue::OfItsType);
+        if is_its_type_s_default && mentions_any(field_type.to_token_stream(), parameters) {
+            bounds.push(parse_quote!(#field_type: ::core::default::Default));
+        }
+        let validated_type = field
+            .nested_value_type()
+            .filter(|nested_type| mentions_any(nested_type.to_token_stream(), parameters));
+        if let Some(validated_type) = validated_type {
+            bounds.push(parse_quote!(#validated_type: ::annotated::Validate));
+        }
+        bounds
     }
 
     fn field_identifier(&self) -> TokenStream {
@@ -250,6 +289,8 @@ impl<'a> DeserializeExpansion<'a> {
         let visitor_generics = with_lifetime(&input.generics, visitor_lifetime);
         let (visitor_definition_generics, visitor_type_generics, visitor_where_clause) =
             visitor_generics.split_for_impl();
+        let generics_checking_fields = with_lifetime(&self.generics_checking_fields(), visitor_lifetime);
+        let (checking_impl_generics, _, checking_where_clause) = generics_checking_fields.split_for_impl();
         let generics_reading_fields = with_lifetime(&self.generics_reading_fields(), visitor_lifetime);
         let (impl_generics, _, where_clause) = generics_reading_fields.split_for_impl();
         let expecting = self
@@ -288,7 +329,7 @@ impl<'a> DeserializeExpansion<'a> {
                 #visit_map
             }
 
-            impl #visitor_definition_generics __Visitor #visitor_type_generics #visitor_where_clause {
+            impl #checking_impl_generics __Visitor #visitor_type_generics #checking_where_clause {
                 #checked_value
             }
         }
@@ -501,7 +542,7 @@ impl<'a> DeserializeExpansion<'a> {
             .enumerate()
             .map(|(index, field)| {
                 let keeps_validity = self.rules.keeps_validity_of(validated_struct, index);
-                if field.is_optional && !self.is_read_with_issues(field) {
+                if !self.can_be_missing(field) && !self.is_read_with_issues(field) {
                     let slot = slot_of(field);
                     let value_of_field = quote!(&#slot);
                     if keeps_validity {
@@ -538,7 +579,9 @@ impl<'a> DeserializeExpansion<'a> {
         };
         let waiting_for_the_elements = waiting_for_the_elements(field);
         let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built }));
-        let missing_arm = (!field.is_optional).then(|| quote!(::core::option::Option::None => { #missing }));
+        let missing_arm = self
+            .can_be_missing(field)
+            .then(|| quote!(::core::option::Option::None => { #missing }));
         quote! {
             match &#slot {
                 #built => {
@@ -591,7 +634,9 @@ impl<'a> DeserializeExpansion<'a> {
         };
         let waiting_for_the_elements = waiting_for_the_elements(field);
         let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built false }));
-        let missing_arm = (!field.is_optional).then(|| quote!(::core::option::Option::None => { #missing false }));
+        let missing_arm = self
+            .can_be_missing(field)
+            .then(|| quote!(::core::option::Option::None => { #missing false }));
         quote! {
             #is_valid = match &#slot {
                 #built => {
@@ -632,15 +677,15 @@ impl<'a> DeserializeExpansion<'a> {
             #found.append(&mut #read_issues);
             #stop_if_finished
         };
-        let (built, not_built_pattern) = if field.is_optional {
-            (
-                quote!(::core::option::Option::Some(#value)),
-                quote!(::core::option::Option::None),
-            )
-        } else {
+        let (built, not_built_pattern) = if self.can_be_missing(field) {
             (
                 quote!(::core::option::Option::Some(::core::option::Option::Some(#value))),
                 quote!(::core::option::Option::Some(::core::option::Option::None)),
+            )
+        } else {
+            (
+                quote!(::core::option::Option::Some(#value)),
+                quote!(::core::option::Option::None),
             )
         };
         SlotStates {
@@ -670,10 +715,10 @@ impl<'a> DeserializeExpansion<'a> {
         let fields = self.fields().iter().map(|field| {
             let member = field.member;
             let slot = slot_of(field);
-            match (self.is_read_with_issues(field), field.is_optional) {
-                (false, true) => quote!(#member: #slot),
-                (false, false) | (true, true) => quote!(#member: #slot?),
-                (true, false) => quote!(#member: ::core::option::Option::flatten(#slot)?),
+            match (self.is_read_with_issues(field), self.can_be_missing(field)) {
+                (false, false) => quote!(#member: #slot),
+                (false, true) | (true, false) => quote!(#member: #slot?),
+                (true, true) => quote!(#member: ::core::option::Option::flatten(#slot)?),
             }
         });
         let name = &self.input().ident;
@@ -692,17 +737,160 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn value_of_slot(&self, field: &ValidatedField) -> TokenStream {
         let slot = slot_of(field);
-        match (self.is_read_with_issues(field), field.is_optional) {
-            (_, false) => TokenStream::new(),
-            (false, true) => quote!(let #slot = ::core::option::Option::flatten(#slot);),
-            (true, true) => quote! {
+        let is_read_with_issues = self.is_read_with_issues(field);
+        match self.when_absent(field) {
+            WhenAbsent::IsMissing => TokenStream::new(),
+            WhenAbsent::IsNone if is_read_with_issues => quote! {
                 let #slot = ::core::option::Option::unwrap_or(
                     #slot,
                     ::core::option::Option::Some(::core::option::Option::None),
                 );
             },
+            WhenAbsent::IsNone => quote!(let #slot = ::core::option::Option::flatten(#slot);),
+            WhenAbsent::TakesDefault(default) => {
+                let read = &self.read;
+                let value_when_absent = self.value_when_absent(field, default);
+                quote! {
+                    let #slot = match #slot {
+                        ::core::option::Option::Some(#read) => #read,
+                        ::core::option::Option::None => #value_when_absent,
+                    };
+                }
+            }
         }
     }
+
+    fn when_absent(&self, field: &ValidatedField) -> WhenAbsent<'a> {
+        if let Some(default) = &self.serde_field_of(field).default {
+            return WhenAbsent::TakesDefault(default);
+        }
+        if field.is_optional {
+            return WhenAbsent::IsNone;
+        }
+        WhenAbsent::IsMissing
+    }
+
+    fn can_be_missing(&self, field: &ValidatedField) -> bool {
+        matches!(self.when_absent(field), WhenAbsent::IsMissing)
+    }
+
+    fn serde_field_of(&self, field: &ValidatedField) -> &'a SerdeField {
+        let position = self
+            .fields()
+            .iter()
+            .position(|candidate| candidate.member == field.member)
+            .expect("the field is one of the struct's");
+        &self.deserialized_struct.serde.fields[position]
+    }
+
+    fn value_when_absent(&self, field: &ValidatedField, default: &DefaultValue) -> TokenStream {
+        let default_value = default_value(field, default);
+        if !self.is_read_with_issues(field) {
+            return default_value;
+        }
+        if !field.has_nested_values() {
+            return quote!(::core::option::Option::Some(#default_value));
+        }
+        let value = &self.rules.value;
+        let field_type = field.field_type;
+        let validating_nested_values = self.validating_nested_values(field, &quote!(&#value));
+        quote! {
+            {
+                let #value: #field_type = #default_value;
+                #validating_nested_values
+                ::core::option::Option::Some(#value)
+            }
+        }
+    }
+
+    // Nothing waits in the field's buffer for a value annotated didn't read. Validating its nested values into the
+    // buffer lets the field's rules find them there, as for a value read, so the rules are expanded once for both.
+    fn validating_nested_values(&self, field: &ValidatedField, value: &TokenStream) -> TokenStream {
+        let Expansion { at, .. } = &self.rules;
+        let name = &field.name;
+        self.validating_nested_values_in(
+            &field.rules,
+            field.is_optional,
+            value,
+            &quote!(&#at.field(#name)),
+            &FieldBuffer {
+                read_issues: read_issues_of(field),
+                field_type_span: field.field_type.span(),
+            },
+        )
+    }
+
+    fn validating_nested_values_in(
+        &self,
+        rules: &[FieldRule],
+        is_value_optional: bool,
+        value: &TokenStream,
+        value_at: &TokenStream,
+        buffer: &FieldBuffer,
+    ) -> TokenStream {
+        let Self { element_at, .. } = self;
+        let FieldBuffer {
+            read_issues,
+            field_type_span,
+        } = buffer;
+        let present = &self.rules.value;
+        let present_value = if is_value_optional {
+            quote!(#present)
+        } else {
+            value.clone()
+        };
+        let validating = rules
+            .iter()
+            .find_map(|rule| match rule {
+                FieldRule::Nested { .. } => Some(quote_spanned! {*field_type_span=>
+                    ::annotated::Validate::validate_into(#present_value, #value_at, &mut #read_issues);
+                }),
+                FieldRule::Each {
+                    element_rules,
+                    are_elements_optional,
+                    ..
+                } if !nested_rules_in(element_rules).is_empty() => {
+                    let validating_the_element = self.validating_nested_values_in(
+                        element_rules,
+                        *are_elements_optional,
+                        &quote!(#present),
+                        &quote!(#element_at),
+                        buffer,
+                    );
+                    Some(quote! {
+                        ::annotated::rules::HasElements::for_each_element(
+                            #present_value,
+                            #value_at,
+                            |#present, #element_at| {
+                                #validating_the_element
+                                true
+                            },
+                        );
+                    })
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+        if !is_value_optional {
+            return validating;
+        }
+        quote! {
+            if let ::core::option::Option::Some(#present) = #value {
+                #validating
+            }
+        }
+    }
+}
+
+enum WhenAbsent<'a> {
+    IsMissing,
+    IsNone,
+    TakesDefault(&'a DefaultValue),
+}
+
+struct FieldBuffer {
+    read_issues: Ident,
+    field_type_span: Span,
 }
 
 struct SlotStates {
@@ -716,6 +904,16 @@ struct UnknownField {
     by_index: TokenStream,
     by_name: TokenStream,
     by_bytes: TokenStream,
+}
+
+fn default_value(field: &ValidatedField, default: &DefaultValue) -> TokenStream {
+    let field_type = field.field_type;
+    match default {
+        DefaultValue::OfItsType => {
+            quote_spanned!(field_type.span()=> <#field_type as ::core::default::Default>::default())
+        }
+        DefaultValue::ReturnedBy(function) => quote_spanned!(function.span()=> #function()),
+    }
 }
 
 fn slot_of(field: &ValidatedField) -> Ident {

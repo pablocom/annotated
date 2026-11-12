@@ -210,6 +210,23 @@ pub fn nested_rules_in(rules: &[FieldRule]) -> Vec<Span> {
         .collect()
 }
 
+impl<'a> ValidatedField<'a> {
+    pub fn nested_value_type(&self) -> Option<&'a Type> {
+        nested_value_type_in(&self.rules, self.field_type)
+    }
+}
+
+fn nested_value_type_in<'a>(rules: &[FieldRule], checked_type: &'a Type) -> Option<&'a Type> {
+    let checked_type = option_content(checked_type).unwrap_or(checked_type);
+    rules.iter().find_map(|rule| match rule {
+        FieldRule::Nested { .. } => Some(checked_type),
+        FieldRule::Each { element_rules, .. } => {
+            element_type(checked_type).and_then(|element| nested_value_type_in(element_rules, element))
+        }
+        FieldRule::Check(_) => None,
+    })
+}
+
 impl ValidatedField<'_> {
     pub fn has_nested_values(&self) -> bool {
         !nested_rules_in(&self.rules).is_empty()

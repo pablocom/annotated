@@ -1,0 +1,15 @@
+error[E0277]: `Address` doesn't implement `Validate`
+  --> tests/ui/deserialize/defaulted_nested_value_that_does_not_validate.rs:9:10
+   |
+ 9 | #[derive(Deserialize)]
+   |          ^^^^^^^^^^^ unsatisfied trait bound
+...
+13 |     shipping_address: Address,
+   |                       ------- required by a bound introduced by this call
+   |
+help: the trait `Validate` is not implemented for `Address`
+  --> tests/ui/deserialize/defaulted_nested_value_that_does_not_validate.rs:4:1
+   |
+ 4 | struct Address {
+   | ^^^^^^^^^^^^^^
+   = note: derive it with `#[derive(Validate)]`, or implement it by hand

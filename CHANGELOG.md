@@ -2,6 +2,15 @@
 
 This file lists every change that users of the crates can notice. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crates follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `#[derive(Deserialize)]` reads `#[serde(default)]` and `#[serde(default = "path")]` on a field.
+  - An absent field takes `Default::default()`, or what the function returns, instead of being `Problem::Missing`. An absent `Option` field takes it instead of `None`.
+  - The field's rules check the default like a value read. A `nested` rule checks it with `Validate`, so the nested type must implement `Validate`.
+  - The default is made only when the field is absent.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added
@@ -74,4 +83,5 @@ This file lists every change that users of the crates can notice. The format fol
 - The `json` feature, which adds `serde_json` and turns on `serde`. `annotated::json::from_str` and `from_slice` read a JSON document and collect every issue in it. Like `serde_json`, they reject characters after the value, and that error comes before any issue. `from_str_fail_fast` and `from_slice_fail_fast` return only the first issue.
 - `examples/axum`, an axum extractor to copy into your app. It reads a JSON body with `annotated::json::from_slice`, and rejects a request it can't read the way axum's `Json` does. It responds to issues with 422 and RFC 9457 problem details, which list each issue's JSON Pointer, code, params and message.
 
+[Unreleased]: https://github.com/pablocom/annotated/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/pablocom/annotated/releases/tag/v0.1.0

@@ -1,7 +1,7 @@
 use proc_macro2::Span;
 use serde_derive_internals::ast::{Container, Data};
-use serde_derive_internals::{Ctxt, Derive};
-use syn::{DeriveInput, Ident};
+use serde_derive_internals::{Ctxt, Derive, attr};
+use syn::{DeriveInput, ExprPath, Ident};
 
 pub struct SerdeStruct {
     pub name: String,
@@ -13,6 +13,12 @@ pub struct SerdeStruct {
 pub struct SerdeField {
     pub name: String,
     pub names_read: Vec<String>,
+    pub default: Option<DefaultValue>,
+}
+
+pub enum DefaultValue {
+    OfItsType,
+    ReturnedBy(ExprPath),
 }
 
 pub fn field_names(input: &DeriveInput) -> syn::Result<Vec<String>> {
@@ -37,6 +43,7 @@ impl SerdeStruct {
                 .map(|field| SerdeField {
                     name: field.attrs.name().deserialize_name().value.clone(),
                     names_read: field.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
+                    default: DefaultValue::from_serde(field.attrs.default()),
                 })
                 .collect(),
             Data::Enum(_) => Vec::new(),
@@ -46,6 +53,16 @@ impl SerdeStruct {
             fields,
             is_denying_unknown_fields: container.attrs.deny_unknown_fields(),
             expecting: container.attrs.expecting().map(ToOwned::to_owned),
+        }
+    }
+}
+
+impl DefaultValue {
+    fn from_serde(default: &attr::Default) -> Option<Self> {
+        match default {
+            attr::Default::None => None,
+            attr::Default::Default => Some(Self::OfItsType),
+            attr::Default::Path(function) => Some(Self::ReturnedBy(function.clone())),
         }
     }
 }

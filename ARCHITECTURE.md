@@ -259,6 +259,9 @@ Any other serde attribute is a compile error that names the accepted ones, until
 
 **Generics.** Type parameters are supported. As in serde's derive, the bounds come from the fields: each field type that mentions a type parameter is bounded by the trait the field is read through. A field type that can't be read is then an error at the field, not a bound that no caller can meet. Lifetime parameters are supported for borrowing, as [Borrowing](#borrowing) says.
 
+- A field whose default is `Default::default()` is also bounded by `Default`.
+- A nested value checked with `Validate`, as [Serde attributes](#serde-attributes) says, is bounded by `Validate`. Its type is found the way `each` finds an element's type, by how the field's type is written.
+
 ### Serde attributes
 
 The derive reads a field the way serde's derive reads it with the same attributes. It reads these:
@@ -277,6 +280,7 @@ The derive reads a field the way serde's derive reads it with the same attribute
 - On a field, `#[serde(default)]` gives an absent field `Default::default()`, and `#[serde(default = "path")]` gives it `path()`. The field is never `Problem::Missing`.
 - On the struct, `#[serde(default)]` gives each absent field its value in `Self::default()`, and `#[serde(default = "path")]` its value in `path()`. A field's own `default` comes first.
 - annotated makes a default only when a field is absent, so a complete input pays nothing for it.
+- Only an absent field takes its default. An `Option` field given as `null` is `None`, as with serde.
 - A struct read from a sequence gives a missing element at the end its default the same way.
 
 #### `skip_deserializing` and `skip`
