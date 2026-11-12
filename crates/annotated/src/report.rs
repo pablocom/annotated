@@ -7,15 +7,15 @@ use crate::{Issue, Issues, Location, Problem};
 ///
 /// It allocates when it records its first issue, not before, so a valid value never pays for it.
 ///
-/// A report started with [`FoundIssues::failing_fast`] keeps only its first issue. Once it has that issue,
-/// it [is finished](FoundIssues::is_finished) and records nothing more.
+/// A report started with [`Report::failing_fast`] keeps only its first issue. Once it has that issue,
+/// it [is finished](Report::is_finished) and records nothing more.
 #[derive(Debug, Default)]
-pub struct FoundIssues {
+pub struct Report {
     issues: Vec<Issue>,
     is_failing_fast: bool,
 }
 
-impl FoundIssues {
+impl Report {
     /// An empty report that keeps every issue found.
     #[must_use]
     pub const fn new() -> Self {
@@ -37,7 +37,7 @@ impl FoundIssues {
     /// An empty report that gathers as this one does: every issue, or only the first when this report is failing
     /// fast.
     ///
-    /// Use it to keep the issues found in one part of a value apart, until [`append`](FoundIssues::append)
+    /// Use it to keep the issues found in one part of a value apart, until [`append`](Report::append)
     /// moves them into this report.
     #[must_use]
     pub const fn new_alike(&self) -> Self {
@@ -78,7 +78,7 @@ impl FoundIssues {
     ///
     /// A finished report takes none of them, and a report that is failing fast takes only the first. An empty report
     /// takes them without copying them.
-    pub fn append(&mut self, other: &mut FoundIssues) {
+    pub fn append(&mut self, other: &mut Report) {
         if self.is_finished() {
             other.issues.clear();
             return;
@@ -102,7 +102,7 @@ impl FoundIssues {
 
     /// Moves every issue after the first `kept` into a new report that gathers as this one does, and leaves the
     /// first `kept` here.
-    pub(crate) fn take_those_after(&mut self, kept: usize) -> FoundIssues {
+    pub(crate) fn take_those_after(&mut self, kept: usize) -> Report {
         let taken = if kept == 0 {
             mem::take(&mut self.issues)
         } else {
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn finding_no_issue_is_no_error() {
-        let found = FoundIssues::new();
+        let found = Report::new();
 
         assert_eq!(found.into_result(), Ok(()));
     }
@@ -165,7 +165,7 @@ mod tests {
     fn an_issue_is_found_at_the_path_of_its_location() {
         let root = Location::root();
         let members = root.field("members");
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
 
         found.push(&members.index(1).field("name"), reserved_name());
 
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn issues_are_answered_in_the_order_they_were_found() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
 
         found.push(&root.field("repeatedPassword"), passwords_differ());
         found.push(&root.field("name"), reserved_name());
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn issues_are_iterated_by_reference_in_the_order_they_were_found() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
         found.push(&root.field("repeatedPassword"), passwords_differ());
         found.push(&root.field("name"), reserved_name());
         let issues = found.into_result().unwrap_err();
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn an_issue_found_with_a_message_keeps_it() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
 
         found.push_with_message(&root.field("name"), reserved_name(), "is taken");
 
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn issues_read_as_one_issue_per_line() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
         found.push(&root.field("name"), reserved_name());
         found.push(&root, passwords_differ());
 
@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn a_report_failing_fast_is_finished_once_it_has_an_issue() {
         let root = Location::root();
-        let mut found = FoundIssues::failing_fast();
+        let mut found = Report::failing_fast();
 
         found.push(&root.field("name"), reserved_name());
 
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn a_report_failing_fast_is_not_finished_before_its_first_issue() {
-        let found = FoundIssues::failing_fast();
+        let found = Report::failing_fast();
 
         assert!(!found.is_finished());
     }
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn a_report_of_every_issue_is_never_finished() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
 
         found.push(&root.field("name"), reserved_name());
 
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn a_finished_report_records_no_later_issue() {
         let root = Location::root();
-        let mut found = FoundIssues::failing_fast();
+        let mut found = Report::failing_fast();
         found.push(&root.field("name"), reserved_name());
 
         found.push(&root.field("repeatedPassword"), passwords_differ());
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn a_report_started_alike_a_report_failing_fast_fails_fast() {
         let root = Location::root();
-        let mut found = FoundIssues::failing_fast().new_alike();
+        let mut found = Report::failing_fast().new_alike();
 
         found.push(&root.field("name"), reserved_name());
 
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn a_report_started_alike_a_report_of_every_issue_keeps_every_issue() {
         let root = Location::root();
-        let mut found = FoundIssues::new().new_alike();
+        let mut found = Report::new().new_alike();
 
         found.push(&root.field("name"), reserved_name());
         found.push(&root, passwords_differ());
@@ -306,9 +306,9 @@ mod tests {
     #[test]
     fn appended_issues_come_after_those_found_before_in_their_order() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
         found.push(&root.field("name"), reserved_name());
-        let mut found_in_a_part = FoundIssues::new();
+        let mut found_in_a_part = Report::new();
         found_in_a_part.push(&root.field("repeatedPassword"), passwords_differ());
         found_in_a_part.push(&root, passwords_differ());
 
@@ -328,8 +328,8 @@ mod tests {
     #[test]
     fn appended_issues_are_kept_by_an_empty_report() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
-        let mut found_in_a_part = FoundIssues::new();
+        let mut found = Report::new();
+        let mut found_in_a_part = Report::new();
         found_in_a_part.push(&root.field("name"), reserved_name());
 
         found.append(&mut found_in_a_part);
@@ -344,8 +344,8 @@ mod tests {
     #[test]
     fn appending_issues_leaves_the_report_they_came_from_empty() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
-        let mut found_in_a_part = FoundIssues::new();
+        let mut found = Report::new();
+        let mut found_in_a_part = Report::new();
         found_in_a_part.push(&root.field("name"), reserved_name());
 
         found.append(&mut found_in_a_part);
@@ -356,9 +356,9 @@ mod tests {
     #[test]
     fn a_finished_report_takes_no_appended_issue() {
         let root = Location::root();
-        let mut found = FoundIssues::failing_fast();
+        let mut found = Report::failing_fast();
         found.push(&root.field("name"), reserved_name());
-        let mut found_in_a_part = FoundIssues::failing_fast();
+        let mut found_in_a_part = Report::failing_fast();
         found_in_a_part.push(&root.field("repeatedPassword"), passwords_differ());
 
         found.append(&mut found_in_a_part);
@@ -373,8 +373,8 @@ mod tests {
     #[test]
     fn a_report_failing_fast_takes_only_the_first_appended_issue() {
         let root = Location::root();
-        let mut found = FoundIssues::failing_fast();
-        let mut found_in_a_part = FoundIssues::new();
+        let mut found = Report::failing_fast();
+        let mut found_in_a_part = Report::new();
         found_in_a_part.push(&root.field("repeatedPassword"), passwords_differ());
         found_in_a_part.push(&root, passwords_differ());
 
@@ -388,9 +388,9 @@ mod tests {
     }
 
     #[test]
-    fn found_issues_count_what_was_found_so_far() {
+    fn a_report_counts_what_was_found_so_far() {
         let root = Location::root();
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
 
         found.push(&root.field("name"), reserved_name());
 

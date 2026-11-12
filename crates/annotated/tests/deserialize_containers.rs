@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt::Debug;
 use std::hash::{BuildHasherDefault, Hasher};
 
-use annotated::{Deserialize, FoundIssues, Issue, Location};
+use annotated::{Deserialize, Issue, Location, Report};
 use serde::Deserializer;
 use serde::de::value::{MapDeserializer, SeqAccessDeserializer, SeqDeserializer};
 use serde::de::{DeserializeSeed, IntoDeserializer, SeqAccess, Visitor};
@@ -29,14 +29,14 @@ fn gran_via() -> Address {
 }
 
 fn read<'de, T: Deserialize<'de>>(json: &'de str) -> (Option<T>, Vec<String>) {
-    read_into(json, FoundIssues::new())
+    read_into(json, Report::new())
 }
 
 fn read_failing_fast<'de, T: Deserialize<'de>>(json: &'de str) -> (Option<T>, Vec<String>) {
-    read_into(json, FoundIssues::failing_fast())
+    read_into(json, Report::failing_fast())
 }
 
-fn read_into<'de, T: Deserialize<'de>>(json: &'de str, mut found: FoundIssues) -> (Option<T>, Vec<String>) {
+fn read_into<'de, T: Deserialize<'de>>(json: &'de str, mut found: Report) -> (Option<T>, Vec<String>) {
     let mut deserializer = serde_json::Deserializer::from_str(json);
     let value = T::deserialize_at(&mut deserializer, &Location::root(), &mut found).unwrap();
     let issues = found
@@ -165,7 +165,7 @@ impl<'de> Deserializer<'de> for EveryValueAsUnit {
 
 #[test]
 fn unit_is_read_as_no_value() {
-    let read = Option::<Address>::deserialize_at(EveryValueAsUnit, &Location::root(), &mut FoundIssues::new());
+    let read = Option::<Address>::deserialize_at(EveryValueAsUnit, &Location::root(), &mut Report::new());
 
     assert_eq!(read, Ok(Some(None)));
 }
@@ -425,7 +425,7 @@ impl<'de> annotated::Deserialize<'de> for Quantity {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         _: &Location<'_>,
-        _: &mut FoundIssues,
+        _: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         Ok(Some(Self(serde::Deserialize::deserialize(deserializer)?)))
     }
@@ -436,7 +436,7 @@ fn a_sequence_is_read_into_room_for_the_elements_it_says_it_has() {
     let quantities = SeqDeserializer::<_, ValueError>::new([1_u32, 2, 3, 4, 5].into_iter());
 
     let allocations = allocation_counter::measure(|| {
-        let _ = Vec::<Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundIssues::new());
+        let _ = Vec::<Quantity>::deserialize_at(quantities, &Location::root(), &mut Report::new());
     });
 
     assert_eq!(allocations.count_total, 1);
@@ -447,7 +447,7 @@ fn a_queue_is_read_into_room_for_the_elements_it_says_it_has() {
     let quantities = SeqDeserializer::<_, ValueError>::new([1_u32, 2, 3, 4, 5].into_iter());
 
     let allocations = allocation_counter::measure(|| {
-        let _ = VecDeque::<Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundIssues::new());
+        let _ = VecDeque::<Quantity>::deserialize_at(quantities, &Location::root(), &mut Report::new());
     });
 
     assert_eq!(allocations.count_total, 1);
@@ -470,7 +470,7 @@ fn a_hash_map_is_read_into_room_for_the_values_it_says_it_has() {
     let quantities = MapDeserializer::<_, ValueError>::new(quantities.into_iter());
 
     let allocations = allocation_counter::measure(|| {
-        let _ = HashMap::<u64, Quantity>::deserialize_at(quantities, &Location::root(), &mut FoundIssues::new());
+        let _ = HashMap::<u64, Quantity>::deserialize_at(quantities, &Location::root(), &mut Report::new());
     });
 
     assert_eq!(allocations.count_total, 1);
@@ -504,7 +504,7 @@ fn a_sequence_saying_it_has_more_elements_than_memory_holds_is_read() {
     let read = Vec::<Quantity>::deserialize_at(
         SeqAccessDeserializer::new(quantities),
         &Location::root(),
-        &mut FoundIssues::new(),
+        &mut Report::new(),
     );
 
     assert_eq!(read, Ok(Some(vec![Quantity(1), Quantity(2)])));
@@ -512,7 +512,7 @@ fn a_sequence_saying_it_has_more_elements_than_memory_holds_is_read() {
 
 fn format_error_reading<'de, T: Deserialize<'de> + Debug>(json: &'de str) -> String {
     let mut deserializer = serde_json::Deserializer::from_str(json);
-    T::deserialize_at(&mut deserializer, &Location::root(), &mut FoundIssues::new())
+    T::deserialize_at(&mut deserializer, &Location::root(), &mut Report::new())
         .unwrap_err()
         .to_string()
 }

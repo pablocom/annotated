@@ -7,13 +7,13 @@ use serde::Deserializer;
 use serde::de::{MapAccess, SeqAccess, Visitor};
 
 use crate::deserialize::DeserializeAt;
-use crate::{Deserialize, FoundIssues, Location};
+use crate::{Deserialize, Location, Report};
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Option<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_option(VisitorAt::<Self>::new(at, found))
     }
@@ -23,7 +23,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         let value = T::deserialize_at(deserializer, at, found)?;
         Ok(value.map(Box::new))
@@ -34,7 +34,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<[T]> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         let elements = Vec::<T>::deserialize_at(deserializer, at, found)?;
         Ok(elements.map(Vec::into_boxed_slice))
@@ -45,7 +45,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Vec<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_seq(VisitorAt::<Self>::new(at, found))
     }
@@ -55,7 +55,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for VecDeque<T> {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_seq(VisitorAt::<Self>::new(at, found))
     }
@@ -69,7 +69,7 @@ where
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_map(VisitorAt::<Self>::new(at, found))
     }
@@ -86,7 +86,7 @@ where
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         deserializer.deserialize_map(VisitorAt::<Self>::new(at, found))
     }
@@ -94,12 +94,12 @@ where
 
 struct VisitorAt<'a, 'l, C> {
     at: &'a Location<'l>,
-    found: &'a mut FoundIssues,
+    found: &'a mut Report,
     container: PhantomData<fn() -> C>,
 }
 
 impl<'a, 'l, C> VisitorAt<'a, 'l, C> {
-    fn new(at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self {
+    fn new(at: &'a Location<'l>, found: &'a mut Report) -> Self {
         Self {
             at,
             found,
@@ -264,7 +264,7 @@ where
 }
 
 struct IssuesByKey<K, S> {
-    issues_by_key: Option<HashMap<K, FoundIssues, S>>,
+    issues_by_key: Option<HashMap<K, Report, S>>,
 }
 
 impl<K: Eq + Hash, S: BuildHasher + Default> IssuesByKey<K, S> {
@@ -272,7 +272,7 @@ impl<K: Eq + Hash, S: BuildHasher + Default> IssuesByKey<K, S> {
         Self { issues_by_key: None }
     }
 
-    fn keep(&mut self, key: K, found_in_value: FoundIssues) {
+    fn keep(&mut self, key: K, found_in_value: Report) {
         self.issues_by_key
             .get_or_insert_with(|| HashMap::with_hasher(S::default()))
             .insert(key, found_in_value);
@@ -291,7 +291,7 @@ impl<K: Eq + Hash, S: BuildHasher + Default> IssuesByKey<K, S> {
             .all(|key| values.contains_key(key))
     }
 
-    fn join_in_the_order_of<V>(self, values: &HashMap<K, V, S>, found: &mut FoundIssues) {
+    fn join_in_the_order_of<V>(self, values: &HashMap<K, V, S>, found: &mut Report) {
         let Some(mut issues_by_key) = self.issues_by_key else {
             return;
         };

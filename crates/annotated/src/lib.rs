@@ -33,13 +33,13 @@ mod deserialize;
 mod deserialize_containers;
 #[cfg(feature = "serde")]
 mod deserialize_error;
-mod found_issues;
 mod issue;
 mod issues;
 mod location;
 mod param_value;
 mod path;
 mod problem;
+mod report;
 mod rule;
 mod validate;
 
@@ -47,11 +47,11 @@ mod validate;
 pub use deserialize::{Deserialize, from_deserializer, from_deserializer_fail_fast};
 #[cfg(feature = "serde")]
 pub use deserialize_error::DeserializeError;
-pub use found_issues::FoundIssues;
 pub use location::Location;
 pub use param_value::ParamValue;
 pub use path::{Path, PathSegment};
 pub use problem::{Bounds, LengthUnit, Problem};
+pub use report::Report;
 pub use rule::Rule;
 pub use validate::Validate;
 

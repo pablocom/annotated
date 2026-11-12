@@ -1,4 +1,4 @@
-use crate::{FoundIssues, Issues, Location};
+use crate::{Issues, Location, Report};
 
 /// A value that can be checked against its rules.
 ///
@@ -7,11 +7,11 @@ use crate::{FoundIssues, Issues, Location};
 /// - [`Validate::validate_into`] pushes every issue it finds into the report, each at the location of the value it
 ///   was found in.
 /// - [`Validate::validate`] returns all of them, and [`Validate::validate_fail_fast`] only the first.
-/// - When failing fast, the report is [finished](FoundIssues::is_finished) after its first issue and keeps
+/// - When failing fast, the report is [finished](Report::is_finished) after its first issue and keeps
 ///   nothing more. So once a push leaves the report finished, `validate_into` should return.
 ///
 /// ```
-/// use annotated::{FoundIssues, Location, Problem, Validate};
+/// use annotated::{Report, Location, Problem, Validate};
 ///
 /// struct NewPassword {
 ///     password: String,
@@ -19,7 +19,7 @@ use crate::{FoundIssues, Issues, Location};
 /// }
 ///
 /// impl Validate for NewPassword {
-///     fn validate_into(&self, at: &Location<'_>, found: &mut FoundIssues) {
+///     fn validate_into(&self, at: &Location<'_>, found: &mut Report) {
 ///         if self.password.chars().count() < 8 {
 ///             found.push(&at.field("password"), Problem::custom("too_short", "must be 8 characters or more"));
 ///             if found.is_finished() {
@@ -48,7 +48,7 @@ use crate::{FoundIssues, Issues, Location};
 pub trait Validate {
     /// Checks this value, which is at the location `at`, and pushes every issue into `found`. It should return as
     /// soon as `found` is finished.
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundIssues);
+    fn validate_into(&self, at: &Location<'_>, found: &mut Report);
 
     /// Checks this value, starting at the root.
     ///
@@ -56,7 +56,7 @@ pub trait Validate {
     ///
     /// Returns every issue found, in the order they were found.
     fn validate(&self) -> Result<(), Issues> {
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
         self.validate_into(&Location::root(), &mut found);
         found.into_result()
     }
@@ -71,7 +71,7 @@ pub trait Validate {
     ///
     /// Returns the first issue found, alone.
     fn validate_fail_fast(&self) -> Result<(), Issues> {
-        let mut found = FoundIssues::failing_fast();
+        let mut found = Report::failing_fast();
         self.validate_into(&Location::root(), &mut found);
         found.into_result()
     }

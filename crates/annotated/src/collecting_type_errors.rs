@@ -6,7 +6,7 @@ use serde::de::DeserializeSeed;
 
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, WrongType};
-use crate::{Deserialize, FoundIssues, Location, Problem};
+use crate::{Deserialize, Location, Problem, Report};
 
 /// The `DeserializeSeed` that a struct collecting type errors reads a field with.
 ///
@@ -16,14 +16,14 @@ use crate::{Deserialize, FoundIssues, Location, Problem};
 pub struct CollectingTypeErrorsAt<'a, 'l, T> {
     type_name: &'static str,
     at: &'a Location<'l>,
-    found: &'a mut FoundIssues,
+    found: &'a mut Report,
     read: PhantomData<fn() -> T>,
 }
 
 impl<'a, 'l, T> CollectingTypeErrorsAt<'a, 'l, T> {
     /// A seed that reads a `T` at `at` and pushes a value of the wrong type into `found`. `type_name` says what was
     /// expected when serde's error doesn't.
-    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self
+    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut Report) -> Self
     where
         T: serde::Deserialize<'de>,
     {
@@ -57,14 +57,14 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
 pub struct NestedCollectingTypeErrorsAt<'a, 'l, T> {
     type_name: &'static str,
     at: &'a Location<'l>,
-    found: &'a mut FoundIssues,
+    found: &'a mut Report,
     read: PhantomData<fn() -> T>,
 }
 
 impl<'a, 'l, T> NestedCollectingTypeErrorsAt<'a, 'l, T> {
     /// A seed that reads a `T` at `at` and pushes its issues into `found`, or a single issue when it has the
     /// wrong type. `type_name` says what was expected when serde's error doesn't.
-    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self
+    pub fn new<'de>(type_name: &'static str, at: &'a Location<'l>, found: &'a mut Report) -> Self
     where
         T: Deserialize<'de>,
     {
@@ -127,7 +127,7 @@ mod tests {
         type_name: &'static str,
         at: &Location<'_>,
     ) -> (Result<Option<T>, String>, Result<(), Issues>) {
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
         let read = CollectingTypeErrorsAt::<T>::new(type_name, at, &mut found)
             .deserialize(&mut serde_json::Deserializer::from_str(json))
             .map_err(|format_error| format_error.to_string());
@@ -139,7 +139,7 @@ mod tests {
         type_name: &'static str,
         at: &Location<'_>,
     ) -> (Result<Option<T>, String>, Result<(), Issues>) {
-        let mut found = FoundIssues::new();
+        let mut found = Report::new();
         let read = NestedCollectingTypeErrorsAt::<T>::new(type_name, at, &mut found)
             .deserialize(&mut serde_json::Deserializer::from_str(json))
             .map_err(|format_error| format_error.to_string());
@@ -174,7 +174,7 @@ mod tests {
         fn deserialize_at<D: Deserializer<'de>>(
             deserializer: D,
             at: &Location<'_>,
-            found: &mut FoundIssues,
+            found: &mut Report,
         ) -> Result<Option<Self>, D::Error> {
             let handle = String::deserialize(deserializer)?;
             if !handle.starts_with('@') {
@@ -191,7 +191,7 @@ mod tests {
         fn deserialize_at<D: Deserializer<'de>>(
             deserializer: D,
             _: &Location<'_>,
-            _: &mut FoundIssues,
+            _: &mut Report,
         ) -> Result<Option<Self>, D::Error> {
             IgnoredAny::deserialize(deserializer)?;
             Err(D::Error::custom("refused"))
@@ -214,7 +214,7 @@ mod tests {
 
     impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for ReadCollectingTypeErrors<T> {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            let mut found = FoundIssues::new();
+            let mut found = Report::new();
             let read =
                 CollectingTypeErrorsAt::<T>::new("T", &Location::root(), &mut found).deserialize(deserializer)?;
             Ok(Self(read))

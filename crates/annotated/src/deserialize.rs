@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use serde::Deserializer;
 use serde::de::DeserializeSeed;
 
-use crate::{DeserializeError, FoundIssues, Location};
+use crate::{DeserializeError, Location, Report};
 
 /// A value that can be deserialized while collecting the issues in it: missing fields and broken rules together,
 /// instead of stopping at the first.
@@ -19,7 +19,7 @@ use crate::{DeserializeError, FoundIssues, Location};
 /// - `Err` with the format's own error, such as a syntax error. It ends deserialization, as it would end serde's.
 ///
 /// A value that could be built is returned even when `found` is already finished from
-/// [failing fast](FoundIssues::failing_fast), because the value around it may still have to check it.
+/// [failing fast](Report::failing_fast), because the value around it may still have to check it.
 ///
 /// The crate implements the trait for the containers that hold a nested value, whenever what they hold implements it:
 ///
@@ -33,7 +33,7 @@ use crate::{DeserializeError, FoundIssues, Location};
 /// [`from_deserializer`] reads a value from the root, and returns it or every issue found.
 ///
 /// ```
-/// use annotated::{FoundIssues, Location, Problem};
+/// use annotated::{Report, Location, Problem};
 /// use serde::Deserializer;
 ///
 /// #[derive(Debug)]
@@ -43,7 +43,7 @@ use crate::{DeserializeError, FoundIssues, Location};
 ///     fn deserialize_at<D: Deserializer<'de>>(
 ///         deserializer: D,
 ///         at: &Location<'_>,
-///         found: &mut FoundIssues,
+///         found: &mut Report,
 ///     ) -> Result<Option<Self>, D::Error> {
 ///         let handle: String = serde::Deserialize::deserialize(deserializer)?;
 ///         if !handle.starts_with('@') {
@@ -72,7 +72,7 @@ pub trait Deserialize<'de>: Sized {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error>;
 }
 
@@ -80,13 +80,13 @@ pub trait Deserialize<'de>: Sized {
 /// elements with it, and a struct its nested fields.
 pub struct DeserializeAt<'a, 'l, T> {
     at: &'a Location<'l>,
-    found: &'a mut FoundIssues,
+    found: &'a mut Report,
     read: PhantomData<fn() -> T>,
 }
 
 impl<'a, 'l, T> DeserializeAt<'a, 'l, T> {
     /// A seed that reads a `T` at `at` and pushes its issues into `found`.
-    pub fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self
+    pub fn new<'de>(at: &'a Location<'l>, found: &'a mut Report) -> Self
     where
         T: Deserialize<'de>,
     {
@@ -115,7 +115,7 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for DeserializeAt<'_, '_, T>
 pub fn from_deserializer<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<T, DeserializeError<D::Error>> {
-    deserialize_reporting_to(deserializer, FoundIssues::new())
+    deserialize_reporting_to(deserializer, Report::new())
 }
 
 /// Reads a `T` from `deserializer`, and returns only its first issue.
@@ -131,12 +131,12 @@ pub fn from_deserializer<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
 pub fn from_deserializer_fail_fast<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<T, DeserializeError<D::Error>> {
-    deserialize_reporting_to(deserializer, FoundIssues::failing_fast())
+    deserialize_reporting_to(deserializer, Report::failing_fast())
 }
 
 fn deserialize_reporting_to<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
-    mut found: FoundIssues,
+    mut found: Report,
 ) -> Result<T, DeserializeError<D::Error>> {
     let value = T::deserialize_at(deserializer, &Location::root(), &mut found).map_err(DeserializeError::Format)?;
     deserialized_or_issues(value, found)
@@ -144,7 +144,7 @@ fn deserialize_reporting_to<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
 
 pub(crate) fn deserialized_or_issues<T, E: serde::de::Error>(
     value: Option<T>,
-    found: FoundIssues,
+    found: Report,
 ) -> Result<T, DeserializeError<E>> {
     found.into_result().map_err(DeserializeError::Issues)?;
     value.ok_or_else(|| DeserializeError::Format(E::custom("the value couldn't be built, and no issue says why")))

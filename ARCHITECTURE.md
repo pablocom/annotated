@@ -21,6 +21,7 @@ Use these words, with these meanings, in code, docs and conversation.
 - **Problem:** the kind of issue: a stable code, its parameters and an English message.
 - **Path:** where in the value an issue was found: a field, an element's index, a map's key, or the value itself.
 - **Issues:** all the issues found in one validation. This is the error type, and it is never empty.
+- **Report:** the issues found so far, while a value is being checked. It can be empty, and when it fails fast it keeps only its first issue. At the end it becomes `Issues`, or `Ok(())` when it is empty.
 - **Validation:** checking a value that already exists against its rules, with `Validate::validate`.
 - **Collecting deserialization:** deserializing through `annotated::Deserialize`. It reports missing fields and broken rules together, and values of the wrong type too when the struct opts in.
 
@@ -65,9 +66,9 @@ A **`Path`** is a list of segments.
 
 ## Nothing to pay on the success path
 
-- `Validate::validate_into(&self, at: &Location<'_>, found: &mut FoundIssues)` does the work. `validate()` is a provided method that calls it at the root.
+- `Validate::validate_into(&self, at: &Location<'_>, found: &mut Report)` does the work. `validate()` is a provided method that calls it at the root.
 - A `Location` is a linked list on the stack: it is `Root`, or a parent location plus one segment. So descending into a field or an element allocates nothing. A `Location` is turned into an owned `Path` only when an issue is recorded.
-- `FoundIssues` allocates when it records its first issue, not before.
+- `Report` allocates when it records its first issue, not before.
 - A rule is a small value built inline where it is used: `rules::length().max(50)`. Its constructor and builder methods are `const fn` wherever they can be, so the compiler folds them away. A check is a call to `Rule::check(&rule, value) -> Result<(), Problem>`, and a `Problem` is built only when the check fails.
 - `pattern` is the one rule with expensive setup. The derive generates a `static` `LazyLock<Regex>` where the rule is written, so each regular expression is compiled once. The derive also parses the expression at compile time, and one that doesn't parse is a compile error.
 
@@ -146,7 +147,7 @@ They run after every field, in the order written.
 
 - It is always the issue the full report would list first, so the two modes agree on it.
 - The same struct is checked either way, and nested values follow the mode of the call.
-- `FoundIssues::failing_fast()` starts a fail-fast report, and `is_finished()` returns whether it already has its one issue. Generated code calls `is_finished()` only right after recording an issue, so the success path pays nothing for it. When the report is finished, the generated code stops. If it was checking an element, it also tells `HasElements` to skip the remaining elements.
+- `Report::failing_fast()` starts a fail-fast report, and `is_finished()` returns whether it already has its one issue. Generated code calls `is_finished()` only right after recording an issue, so the success path pays nothing for it. When the report is finished, the generated code stops. If it was checking an element, it also tells `HasElements` to skip the remaining elements.
 - During validation, when a nested value finishes the report, its parent doesn't stop at once, because checking for that after every nested value would slow down the valid path. The parent records nothing more, and stops at its own next issue or at its end. Under `each(nested)`, the remaining elements are still checked, and the parent stops when that `each` ends.
 - During deserialization, the parent does stop at once. It appends the nested value's buffered issues itself, and calls `is_finished()` right after.
 - Deserializing still reads the input to its end, because a field is known to be missing only then. Nested values are checked while they are read, into a buffer that fails fast too, so their rules run whatever was found before them. The checking pass that follows is what stops at the first issue.
@@ -193,7 +194,7 @@ pub trait Deserialize<'de>: Sized {
     fn deserialize_at<D: serde::Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error>;
 }
 ```
@@ -224,7 +225,7 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 **A serde visitor for the struct.** It has a field identifier that matches the serde names and aliases (read with `serde_derive_internals`, as the `Validate` derive reads them), `visit_map` and `visit_seq`, and one slot per field.
 
 - A field without `nested` is read with serde's `Deserialize`.
-- A field with `nested`, or with `each(...)` holding `nested` at any depth, is read through `annotated::Deserialize`, with a `DeserializeSeed` at `at.field(name)`. Its issues go into a `FoundIssues` buffer of the field's own, where they wait until the field's turn in declaration order. The buffer allocates only if something inside the field fails.
+- A field with `nested`, or with `each(...)` holding `nested` at any depth, is read through `annotated::Deserialize`, with a `DeserializeSeed` at `at.field(name)`. Its issues go into a `Report` of the field's own, where they wait until the field's turn in declaration order. The buffer allocates only if something inside the field fails.
 
 **A checking pass after the last field is read.** The pass goes through the fields in declaration order. It runs inside the visitor, where the slots are, so the struct is built straight from them.
 
@@ -262,7 +263,7 @@ Any other serde attribute is a compile error that names the accepted ones, until
 
 ### Entry points and the error
 
-- `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with an empty `FoundIssues`.
+- `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with an empty `Report`.
 - `DeserializeError<E>` is a `#[non_exhaustive]` enum: `Format(E)` or `Issues(Issues)`. `issues()` returns the issues as a slice, which is empty for the format's own error, so a caller can read them without matching. The type implements `Display`, `Debug` and `std::error::Error`.
 - The `json` feature adds `annotated::json::from_str` and `from_slice`. Like `serde_json::from_str`, they also reject characters after the JSON value.
 

@@ -3,7 +3,7 @@ pub use regex::Regex;
 #[cfg(feature = "serde")]
 pub use serde;
 
-use crate::{FoundIssues, Issue, Location, Problem};
+use crate::{Issue, Location, Problem, Report};
 
 #[cfg(feature = "serde")]
 pub use crate::collecting_type_errors::{CollectingTypeErrorsAt, NestedCollectingTypeErrorsAt};
@@ -14,7 +14,7 @@ pub use crate::deserialize::DeserializeAt;
 // 357 ns instead of 429 ns with LTO, and in 581 ns instead of 1.03 µs without.
 #[cold]
 #[inline(never)]
-pub fn record_issue(found: &mut FoundIssues, at: &Location<'_>, problem: Problem, message: Option<&'static str>) {
+pub fn record_issue(found: &mut Report, at: &Location<'_>, problem: Problem, message: Option<&'static str>) {
     match message {
         Some(message) => found.push_with_message(at, problem, message),
         None => found.push(at, problem),
@@ -43,14 +43,14 @@ pub struct ElementIssues {
 
 impl ElementIssues {
     #[must_use]
-    pub fn new(found_in_elements: FoundIssues) -> Self {
+    pub fn new(found_in_elements: Report) -> Self {
         Self {
             waiting: found_in_elements.into_issues().into_iter(),
         }
     }
 
     /// Moves the next waiting issues that are at `at` or under it into `found`, and returns whether there were any.
-    pub fn join_those_at(&mut self, at: &Location<'_>, found: &mut FoundIssues) -> bool {
+    pub fn join_those_at(&mut self, at: &Location<'_>, found: &mut Report) -> bool {
         let mut has_joined_any = false;
         while let Some(issue) = self.next_at(at) {
             found.push_issue(issue);

@@ -41,7 +41,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
     quote! {
         impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
-            fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::FoundIssues) {
+            fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
                 #(#field_checks)*
                 #(#struct_checks)*
             }

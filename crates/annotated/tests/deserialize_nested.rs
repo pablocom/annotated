@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{BuildHasherDefault, DefaultHasher};
 
-use annotated::{Deserialize, DeserializeError, FoundIssues, Issue, Location, Problem, Validate};
+use annotated::{Deserialize, DeserializeError, Issue, Location, Problem, Report, Validate};
 
 fn deserialize<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
     annotated::from_deserializer(&mut serde_json::Deserializer::from_str(json))
@@ -284,7 +284,7 @@ impl<'de> annotated::Deserialize<'de> for Handle {
     fn deserialize_at<D: serde::Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         let handle: String = serde::Deserialize::deserialize(deserializer)?;
         if !handle.starts_with('@') {
@@ -591,7 +591,7 @@ impl<'de, T: Deserialize<'de>> annotated::Deserialize<'de> for Pair<T> {
     fn deserialize_at<D: serde::Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         let [first, second]: [serde_json::Value; 2] = serde::Deserialize::deserialize(deserializer)?;
         let mut found_in_first = found.new_alike();

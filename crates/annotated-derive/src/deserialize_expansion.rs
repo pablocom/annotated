@@ -80,7 +80,7 @@ impl<'a> DeserializeExpansion<'a> {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
                     #at: &::annotated::Location<'_>,
-                    #found: &mut ::annotated::FoundIssues,
+                    #found: &mut ::annotated::Report,
                 ) -> ::core::result::Result<::core::option::Option<Self>, __D::Error> {
                     #field_identifier
                     #visitor
@@ -272,7 +272,7 @@ impl<'a> DeserializeExpansion<'a> {
 
             struct __Visitor #visitor_definition_generics #visitor_where_clause {
                 #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
-                #found: &#visitor_lifetime mut ::annotated::FoundIssues,
+                #found: &#visitor_lifetime mut ::annotated::Report,
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
@@ -445,7 +445,7 @@ impl<'a> DeserializeExpansion<'a> {
         let slots = fields.iter().map(slot_of);
         let slot_types = fields.iter().map(|field| self.slot_type_of(field));
         let read_issues = self.fields_read_with_issues().map(read_issues_of);
-        let read_issues_types = self.fields_read_with_issues().map(|_| quote!(::annotated::FoundIssues));
+        let read_issues_types = self.fields_read_with_issues().map(|_| quote!(::annotated::Report));
         let values_of_slots = fields.iter().map(|field| self.value_of_slot(field));
         let validities = self.fields_keeping_their_validity().map(validity_of);
         let field_checks = self.field_checks();

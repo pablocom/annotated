@@ -22,7 +22,7 @@
 use serde_json::de::{Read, SliceRead, StrRead};
 
 use crate::deserialize::deserialized_or_issues;
-use crate::{Deserialize, DeserializeError, FoundIssues, Location};
+use crate::{Deserialize, DeserializeError, Location, Report};
 
 /// Reads a `T` from JSON text, collecting every issue in it.
 ///
@@ -31,7 +31,7 @@ use crate::{Deserialize, DeserializeError, FoundIssues, Location};
 /// Returns [`DeserializeError::Issues`] with every issue found, in the order found, or
 /// [`DeserializeError::Format`] when the text isn't a JSON document that `T` can be read from.
 pub fn from_str<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
-    read_whole_document(StrRead::new(json), FoundIssues::new())
+    read_whole_document(StrRead::new(json), Report::new())
 }
 
 /// Reads a `T` from JSON bytes, collecting every issue in it.
@@ -41,7 +41,7 @@ pub fn from_str<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Deseriali
 /// Returns [`DeserializeError::Issues`] with every issue found, in the order found, or
 /// [`DeserializeError::Format`] when the bytes aren't a JSON document that `T` can be read from.
 pub fn from_slice<'de, T: Deserialize<'de>>(json: &'de [u8]) -> Result<T, DeserializeError<serde_json::Error>> {
-    read_whole_document(SliceRead::new(json), FoundIssues::new())
+    read_whole_document(SliceRead::new(json), Report::new())
 }
 
 /// Reads a `T` from JSON text, and returns only its first issue: the one [`from_str`] would list first.
@@ -51,7 +51,7 @@ pub fn from_slice<'de, T: Deserialize<'de>>(json: &'de [u8]) -> Result<T, Deseri
 /// Returns [`DeserializeError::Issues`] with the first issue found, alone, or [`DeserializeError::Format`] when
 /// the text isn't a JSON document that `T` can be read from.
 pub fn from_str_fail_fast<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, DeserializeError<serde_json::Error>> {
-    read_whole_document(StrRead::new(json), FoundIssues::failing_fast())
+    read_whole_document(StrRead::new(json), Report::failing_fast())
 }
 
 /// Reads a `T` from JSON bytes, and returns only its first issue: the one [`from_slice`] would list first.
@@ -63,12 +63,12 @@ pub fn from_str_fail_fast<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T,
 pub fn from_slice_fail_fast<'de, T: Deserialize<'de>>(
     json: &'de [u8],
 ) -> Result<T, DeserializeError<serde_json::Error>> {
-    read_whole_document(SliceRead::new(json), FoundIssues::failing_fast())
+    read_whole_document(SliceRead::new(json), Report::failing_fast())
 }
 
 fn read_whole_document<'de, R: Read<'de>, T: Deserialize<'de>>(
     json: R,
-    mut found: FoundIssues,
+    mut found: Report,
 ) -> Result<T, DeserializeError<serde_json::Error>> {
     let mut deserializer = serde_json::Deserializer::new(json);
     // The value stays inside `read` across `end()` on purpose: moved out first, it was copied twice more, and

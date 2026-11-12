@@ -24,7 +24,7 @@ help: the trait `annotated::Deserialize<'_>` is not implemented for `Address`
 note: required by a bound in `annotated::__private::DeserializeAt::<'a, 'l, T>::new`
   --> src/deserialize.rs
    |
-   |     pub fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self
+   |     pub fn new<'de>(at: &'a Location<'l>, found: &'a mut Report) -> Self
    |            --- required by a bound in this associated function
    |     where
    |         T: Deserialize<'de>,
@@ -57,7 +57,7 @@ help: the trait `annotated::Deserialize<'_>` is not implemented for `Address`
 note: required by a bound in `annotated::__private::DeserializeAt::<'a, 'l, T>::new`
   --> src/deserialize.rs
    |
-   |     pub fn new<'de>(at: &'a Location<'l>, found: &'a mut FoundIssues) -> Self
+   |     pub fn new<'de>(at: &'a Location<'l>, found: &'a mut Report) -> Self
    |            --- required by a bound in this associated function
    |     where
    |         T: Deserialize<'de>,

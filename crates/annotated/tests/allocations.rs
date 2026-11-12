@@ -3,7 +3,7 @@
 
 use std::hint::black_box;
 
-use annotated::{FoundIssues, Location, Problem, Validate};
+use annotated::{Location, Problem, Report, Validate};
 
 struct Team {
     members: Vec<Member>,
@@ -14,7 +14,7 @@ struct Member {
 }
 
 impl Validate for Team {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundIssues) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut Report) {
         let members = at.field("members");
         for (index, member) in self.members.iter().enumerate() {
             member.validate_into(&members.index(index), found);
@@ -23,7 +23,7 @@ impl Validate for Team {
 }
 
 impl Validate for Member {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundIssues) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut Report) {
         if self.name.is_empty() {
             found.push(&at.field("name"), Problem::custom("empty_name", "is empty"));
         }
@@ -242,9 +242,9 @@ fn deserializing_a_valid_nested_value_allocates_only_its_three_strings_and_its_l
 #[test]
 fn issues_appended_to_an_empty_report_are_moved_without_allocating() {
     let root = Location::root();
-    let mut found_in_a_part = FoundIssues::new();
+    let mut found_in_a_part = Report::new();
     found_in_a_part.push(&root.field("name"), Problem::custom("empty_name", "is empty"));
-    let mut found = FoundIssues::new();
+    let mut found = Report::new();
 
     let allocations = allocation_counter::measure(|| {
         found.append(black_box(&mut found_in_a_part));

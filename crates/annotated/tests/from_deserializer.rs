@@ -5,7 +5,7 @@
 use std::error::Error;
 use std::{fmt, io};
 
-use annotated::{DeserializeError, FoundIssues, Issue, Location, Path, Problem};
+use annotated::{DeserializeError, Issue, Location, Path, Problem, Report};
 use serde::Deserializer;
 
 #[derive(Debug, PartialEq)]
@@ -23,7 +23,7 @@ impl<'de> annotated::Deserialize<'de> for Handle {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         at: &Location<'_>,
-        found: &mut FoundIssues,
+        found: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         let Some(handle) = <Option<String> as serde::Deserialize>::deserialize(deserializer)? else {
             found.push(at, Problem::Missing);
@@ -137,7 +137,7 @@ impl<'de> annotated::Deserialize<'de> for Unbuildable {
     fn deserialize_at<D: Deserializer<'de>>(
         deserializer: D,
         _: &Location<'_>,
-        _: &mut FoundIssues,
+        _: &mut Report,
     ) -> Result<Option<Self>, D::Error> {
         <serde::de::IgnoredAny as serde::Deserialize>::deserialize(deserializer)?;
         Ok(None)

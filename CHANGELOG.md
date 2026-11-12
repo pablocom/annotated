@@ -6,7 +6,8 @@ This file lists every change that users of the crates can notice. The format fol
 
 ### Changed
 
-- **Breaking:** a violation is now called an issue, a plainer word for one thing wrong with a value. `Violation` is now `Issue`, `Violations` is `Issues` and `FoundViolations` is `FoundIssues`. `DeserializeError::Violations` is now `DeserializeError::Issues`, and its `violations()` method is `issues()`. Nothing else changes: codes, parameters and messages stay the same.
+- **Breaking:** a violation is now called an issue, a plainer word for one thing wrong with a value. `Violation` is now `Issue` and `Violations` is `Issues`. `DeserializeError::Violations` is now `DeserializeError::Issues`, and its `violations()` method is `issues()`. Nothing else changes: codes, parameters and messages stay the same.
+- **Breaking:** `FoundViolations` is now `Report`, the word its docs already used for it. It is the issues found so far while a value is being checked.
 
 ## [0.1.0] - 2026-11-12
 
