@@ -171,7 +171,7 @@ pub use annotated_derive::Validate;
 /// The struct is read as serde's derive would read it, by the names serde gives the struct and its fields.
 ///
 /// - **Supported:** `rename_all`, `rename`, `deny_unknown_fields`, `expecting` and `default` on the struct, and
-///   `rename`, `alias` and `default` on a field.
+///   `rename`, `alias`, `default`, `skip_deserializing` and `skip` on a field.
 /// - **Accepted and ignored:** attributes that only change serializing, so that the struct can derive serde's
 ///   `Serialize` too. These are `into` and `bound(serialize = "...")` on the struct, and `skip_serializing`,
 ///   `skip_serializing_if`, `serialize_with`, `getter` and `bound(serialize = "...")` on a field. When a `rename` or
@@ -194,6 +194,9 @@ pub use annotated_derive::Validate;
 ///   either on the struct, an absent field without a default of its own takes its value in the struct's default.
 ///   Its rules check that value like a value read. A `nested` rule checks it with [`Validate`], so the nested type
 ///   must implement `Validate` too.
+/// - A field with `#[serde(skip_deserializing)]` or `#[serde(skip)]` is never read. It takes its default, or
+///   `Default::default()` when it has none, and its rules check that value the same way. A key with its name is an
+///   unknown field.
 /// - A field that is present is checked by its `#[validate(...)]` rules exactly as [`Validate`] checks it. So for input
 ///   that has every field, the issues are the same, in the same order, as when deserializing with serde and then
 ///   validating.

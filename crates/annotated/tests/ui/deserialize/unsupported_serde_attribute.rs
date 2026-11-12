@@ -9,7 +9,7 @@ struct NewMember {
 
 #[derive(Deserialize)]
 struct NewTeam {
-    #[serde(alias = "title", skip)]
+    #[serde(alias = "title", bound = "")]
     name: String,
 }
 

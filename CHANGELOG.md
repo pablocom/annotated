@@ -13,6 +13,10 @@ This file lists every change that users of the crates can notice. The format fol
 - `#[derive(Deserialize)]` reads `#[serde(default)]` and `#[serde(default = "path")]` on the struct.
   - An absent field without a default of its own takes its value in `Self::default()`, or in what the function returns. Its rules check that value like a value read.
   - The struct's default is made once, and only when such a field is absent.
+- `#[derive(Deserialize)]` reads `#[serde(skip_deserializing)]` and `#[serde(skip)]` on a field.
+  - The field is never read. It takes its own default, or its value in the struct's default, or `Default::default()`, and its rules check that value like a value read.
+  - A key with its name is an unknown field: ignored, or the format's error under `deny_unknown_fields`. A struct read from a sequence has no element for it.
+  - Its type needs no `Deserialize` implementation.
 
 ## [0.1.0] - 2026-11-12
 

@@ -709,3 +709,235 @@ fn a_body_without_the_fields_the_struct_s_default_gives_is_reported_as_serde_the
         issues_validating_after_serde::<RouteThenValidated>(body)
     );
 }
+
+fn unsaved() -> String {
+    "unsaved".to_owned()
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct Draft {
+    #[validate(required)]
+    title: String,
+    #[serde(skip_deserializing)]
+    revision: u32,
+    #[serde(skip, default = "unsaved")]
+    status: String,
+}
+
+#[test]
+fn a_skipped_field_takes_its_type_s_default() {
+    let draft = deserialize::<Draft>(r#"{ "title": "Notes" }"#).unwrap();
+
+    assert_eq!(
+        draft,
+        Draft {
+            title: "Notes".to_owned(),
+            revision: 0,
+            status: "unsaved".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn a_key_with_a_skipped_field_s_name_is_ignored() {
+    let draft = deserialize::<Draft>(r#"{ "title": "Notes", "revision": 7, "status": "saved" }"#).unwrap();
+
+    assert_eq!(
+        draft,
+        Draft {
+            title: "Notes".to_owned(),
+            revision: 0,
+            status: "unsaved".to_owned(),
+        }
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct Revision {
+    title: String,
+    #[serde(skip)]
+    number: u32,
+    author: String,
+}
+
+#[test]
+fn a_skipped_field_is_not_an_element_of_a_struct_read_from_a_sequence() {
+    let revision = deserialize::<Revision>(r#"["Notes", "Ada"]"#).unwrap();
+
+    assert_eq!(
+        revision,
+        Revision {
+            title: "Notes".to_owned(),
+            number: 0,
+            author: "Ada".to_owned(),
+        }
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct LogIn {
+    #[allow(dead_code)]
+    email: String,
+    #[serde(skip)]
+    #[allow(dead_code)]
+    attempts: u32,
+}
+
+#[test]
+fn a_key_with_a_skipped_field_s_name_is_the_format_s_error_when_the_struct_denies_unknown_fields() {
+    let error = deserialize::<LogIn>(r#"{ "email": "ada@example.com", "attempts": 3 }"#).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "unknown field `attempts`, expected `email` at line 1 column 40"
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct DraftCollectingTypeErrors {
+    #[allow(dead_code)]
+    title: String,
+    #[serde(skip)]
+    #[allow(dead_code)]
+    revision: u32,
+}
+
+#[test]
+fn a_struct_collecting_type_errors_reads_no_type_for_a_skipped_field() {
+    let body = r#"{ "title": "Notes", "revision": "seventh" }"#;
+
+    assert_eq!(issues_reading::<DraftCollectingTypeErrors>(body), Vec::<String>::new());
+}
+
+#[derive(Deserialize, Debug)]
+struct Counter {
+    #[serde(skip)]
+    #[validate(range(min = 1))]
+    #[allow(dead_code)]
+    step: u32,
+}
+
+#[test]
+fn a_skipped_field_is_checked_by_its_rules() {
+    assert_eq!(issues_reading::<Counter>("{}"), ["step: range"]);
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Invoice {
+    #[validate(required)]
+    #[allow(dead_code)]
+    number: String,
+    #[serde(skip)]
+    #[validate(nested)]
+    #[allow(dead_code)]
+    billing_address: Address,
+}
+
+#[test]
+fn a_skipped_nested_field_is_validated_at_its_name() {
+    assert_eq!(
+        issues_reading::<Invoice>(r#"{ "number": "" }"#),
+        [
+            "number: required",
+            "billingAddress.street: required",
+            "billingAddress.postalCode: length"
+        ]
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(default = "fifty_results_by_date_in_spanish_skipping_the_order")]
+struct ResultsPageWithAFixedOrder {
+    size: u32,
+    #[serde(skip)]
+    order: String,
+}
+
+fn fifty_results_by_date_in_spanish_skipping_the_order() -> ResultsPageWithAFixedOrder {
+    ResultsPageWithAFixedOrder {
+        size: 50,
+        order: "date".to_owned(),
+    }
+}
+
+#[test]
+fn a_skipped_field_takes_its_value_in_the_struct_s_default() {
+    let page = deserialize::<ResultsPageWithAFixedOrder>(r#"{ "size": 10, "order": "price" }"#).unwrap();
+
+    assert_eq!(
+        page,
+        ResultsPageWithAFixedOrder {
+            size: 10,
+            order: "date".to_owned(),
+        }
+    );
+}
+
+#[derive(Debug, PartialEq, Default)]
+struct Session {
+    started_at: u64,
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct Cached<T> {
+    key: String,
+    #[serde(skip)]
+    value: T,
+}
+
+#[test]
+fn a_skipped_field_whose_type_is_a_type_parameter_needs_no_deserialize() {
+    let cached = deserialize::<Cached<Session>>(r#"{ "key": "ada" }"#).unwrap();
+
+    assert_eq!(
+        cached,
+        Cached {
+            key: "ada".to_owned(),
+            value: Session { started_at: 0 },
+        }
+    );
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct Trip {
+    #[validate(required)]
+    name: String,
+    #[serde(skip)]
+    #[validate(nested)]
+    origin: Address,
+    #[serde(skip, default = "a_restricted_stop_then_an_unnamed_one")]
+    #[validate(each(custom(not_a_restricted_stop), nested))]
+    stops: Vec<Address>,
+    #[validate(range(min = 1))]
+    days: u8,
+}
+
+#[derive(serde::Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+struct TripThenValidated {
+    #[validate(required)]
+    name: String,
+    #[serde(skip)]
+    #[validate(nested)]
+    origin: AddressThenValidated,
+    #[serde(skip, default = "a_restricted_stop_then_an_unnamed_one_then_validated")]
+    #[validate(each(custom(not_a_restricted_stop_once_validated), nested))]
+    stops: Vec<AddressThenValidated>,
+    #[validate(range(min = 1))]
+    days: u8,
+}
+
+#[test]
+fn a_body_for_a_struct_with_skipped_fields_is_reported_as_serde_then_validate_report_it() {
+    let body = r#"{ "name": "", "origin": { "street": "Sol 1", "postalCode": "28013" }, "days": 0 }"#;
+
+    assert_eq!(
+        issues_found_reading::<Trip>(body),
+        issues_validating_after_serde::<TripThenValidated>(body)
+    );
+}

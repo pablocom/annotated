@@ -14,6 +14,7 @@ pub struct SerdeStruct {
 pub struct SerdeField {
     pub name: String,
     pub names_read: Vec<String>,
+    pub is_skipped: bool,
     pub default: Option<DefaultValue>,
 }
 
@@ -44,6 +45,7 @@ impl SerdeStruct {
                 .map(|field| SerdeField {
                     name: field.attrs.name().deserialize_name().value.clone(),
                     names_read: field.attrs.aliases().iter().map(|name| name.value.clone()).collect(),
+                    is_skipped: field.attrs.skip_deserializing(),
                     default: DefaultValue::from_serde(field.attrs.default()),
                 })
                 .collect(),
