@@ -91,12 +91,26 @@ jobs:
       TAG: ${{ needs.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
+      # Read before publishing, so a version without its changelog section never reaches crates.io.
+      - name: Read the version's changelog section
+        run: |
+          version="${TAG#v}"
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 { is_in_section = 1; next }
+            is_in_section && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+            is_in_section { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@stable
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - run: cargo publish --workspace
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - run: |
-          git tag "$TAG"
-          git push origin "$TAG"
+      - name: Create the GitHub release and its tag
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
