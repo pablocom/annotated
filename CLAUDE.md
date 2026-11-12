@@ -23,7 +23,7 @@ How we work in this repository. The [README](README.md) shows how to use the lib
 ## Performance
 
 - Never make annotated slower without saying why. A fix or a feature can be worth what it costs; tidier code rarely is.
-- Slower means more instructions or allocations in [`benchmarks/compare.sh`](benchmarks/README.md#measuring-a-change-to-annotated), which counts the commit before and the change on the same machine. Time varies too much between machines and runs to judge one change by. Run it before committing a change to the crates; CI runs it on every push.
+- Slower means more instructions or allocations in [`benchmarks/compare.sh`](benchmarks/README.md#measuring-a-change-to-annotated), which counts the commit before and the change on the same machine. Time varies too much between machines and runs to judge one change by. CI doesn't run it, so run it yourself before committing a change to the crates. When it lists a case, look for a way that doesn't cost it; if there is none, the commit body says why the cost is worth paying.
 - A claim that a change is faster gives before → after medians from the benchmarks, timed in one sitting on one pinned core.
 
 ## Commits
@@ -40,6 +40,11 @@ cargo fmt --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+```
+
+and check the benchmarks, which CI leaves out for now:
+
+```sh
 cargo fmt --check --manifest-path benchmarks/Cargo.toml
 cargo clippy --manifest-path benchmarks/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path benchmarks/Cargo.toml
