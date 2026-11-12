@@ -7,7 +7,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
-annotated = { git = "https://github.com/pablocom/annotated", rev = "f881d35", features = ["regex", "unicode", "json"] }
+annotated = { path = "../crates/annotated", features = ["regex", "unicode", "json"] }
 garde = { version = "0.23.0", features = ["derive", "email", "url", "regex", "unicode"] }
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }

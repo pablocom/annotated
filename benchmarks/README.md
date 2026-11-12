@@ -1,6 +1,6 @@
 # annotated benchmarks
 
-How fast [annotated](https://github.com/pablocom/annotated) validates, and how much it allocates, against the other Rust validation crates with a derive. The aim is for annotated to be the fastest; this project is how we show it, and how we find where it isn't yet.
+How fast [annotated](../README.md) validates, and how much it allocates, against the other Rust validation crates with a derive. The aim is for annotated to be the fastest; this project is how we show it, and how we find where it isn't yet.
 
 The results, the environment they were measured on, and what annotated could change are in [RESULTS.md](RESULTS.md). [results.html](results.html) shows the same run as a page to open in a browser, with charts and a switch between the two build profiles. It's a snapshot of that run, its data embedded.
 
@@ -32,7 +32,7 @@ Each scenario module (`src/scenarios/`) starts with a table of its rules and hol
 
 | Library | Version | Why |
 |---|---|---|
-| [annotated](https://github.com/pablocom/annotated) | git `f881d35` | The library under test, features `regex`, `unicode` and `json`. |
+| [annotated](../crates/annotated) | this checkout | The library under test, features `regex`, `unicode` and `json`. |
 | [validator](https://crates.io/crates/validator) | 0.21.0 | The most used validation crate. |
 | [garde](https://crates.io/crates/garde) | 0.23.0 | The most used of the newer ones. |
 | [serde_valid](https://crates.io/crates/serde_valid) | 3.2.0 | Widely used, JSON-Schema-style rules. It has no email or URL rule and counts string lengths only in graphemes, so it is in the nested, map and long-string scenarios only, and reads the order and the warehouse end to end. |
@@ -44,7 +44,7 @@ Every library shares one build of `regex`, `url` and `unicode-segmentation`, wit
 
 ## How to run
 
-Use the current stable toolchain; the commands say `+1.99.1`.
+The benchmarks are a workspace of their own, so the other libraries and the LTO profiles stay out of the crates' builds and lockfile. Run these commands from `benchmarks/`, with the current stable toolchain; they say `+1.99.1`.
 
 ```sh
 # Every case finds the violations its scenario expects
@@ -79,16 +79,11 @@ CRITERION_HOME=target/criterion-without-lto cargo +1.99.1 run --release --bin re
 - Each case warms up for 0.5 s and is measured for 2 s, set in `benches/validation.rs`; the medians stay within a run's own spread of criterion's 3 s and 5 s. A run to publish can still ask for those: `-- --warm-up-time 3 --measurement-time 5`.
 - `--quick` is for development only: it takes few samples.
 
-## Measuring a local annotated checkout
+## Measuring a change to annotated
 
-annotated is a git dependency pinned to a revision of the public repository, so every result names what it measured. To measure your working tree instead, while you optimise it, add this to `Cargo.toml`:
+annotated is a path dependency on `crates/annotated`, so the benchmarks measure the working tree, and tables label it `this checkout`. Say in your results which commit they measured, and whether the tree had changes on top.
 
-```toml
-[patch."https://github.com/pablocom/annotated"]
-annotated = { path = "../annotated/crates/annotated" }
-```
-
-`annotated-derive` comes along, as annotated's own path dependency. Tables still label annotated with the pinned revision, so note in your results that they measured a patched tree. Remove the patch, and move `rev` and `Library::version` in `src/lib.rs` to the new revision once it is pushed.
+To measure what a change gains, time the commit before it and the change in the same sitting, on the same core: check the commit before out into a worktree (`git worktree add ../annotated-before HEAD`), and run the same cases in each, alternating.
 
 ## Adding a library
 

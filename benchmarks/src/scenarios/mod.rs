@@ -31,7 +31,7 @@ pub(crate) mod count {
 
     use validator::ValidationErrorsKind;
 
-    pub fn annotated(outcome: &Result<(), annotated::Violations>) -> usize {
+    pub fn annotated(outcome: &Result<(), annotated::Issues>) -> usize {
         outcome
             .as_ref()
             .err()
@@ -43,7 +43,7 @@ pub(crate) mod count {
     pub fn annotated_deserialized<T>(outcome: &Result<T, annotated::DeserializeError<serde_json::Error>>) -> usize {
         match outcome {
             Ok(_) => 0,
-            Err(annotated::DeserializeError::Violations(violations)) => violations.as_slice().len(),
+            Err(annotated::DeserializeError::Issues(issues)) => issues.as_slice().len(),
             Err(_) => usize::MAX,
         }
     }

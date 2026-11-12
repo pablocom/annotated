@@ -29,7 +29,6 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 [[package]]
 name = "annotated"
 version = "0.1.0"
-source = "git+https://github.com/pablocom/annotated?rev=f881d35#f881d35b6ac5179aad3a19b4fef650e38d728c8e"
 dependencies = [
  "annotated-derive",
  "regex",
@@ -57,7 +56,6 @@ dependencies = [
 [[package]]
 name = "annotated-derive"
 version = "0.1.0"
-source = "git+https://github.com/pablocom/annotated?rev=f881d35#f881d35b6ac5179aad3a19b4fef650e38d728c8e"
 dependencies = [
  "proc-macro2",
  "quote",

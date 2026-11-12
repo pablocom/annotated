@@ -44,13 +44,13 @@ impl Library {
     #[must_use]
     pub const fn version(self) -> &'static str {
         match self {
-            Self::Annotated => "git f881d35",
+            Self::Annotated => "this checkout",
             Self::Validator => "0.21.0",
             Self::Garde => "0.23.0",
             Self::Wary => "0.3.2",
             Self::SerdeValid => "3.2.0",
             Self::SerdeJsonAlone => "1.0.154",
-            Self::HandWritten => "on annotated git f881d35",
+            Self::HandWritten => "on this checkout",
         }
     }
 }

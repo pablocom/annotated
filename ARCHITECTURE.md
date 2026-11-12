@@ -72,7 +72,7 @@ A **`Path`** is a list of segments.
 - A rule is a small value built inline where it is used: `rules::length().max(50)`. Its constructor and builder methods are `const fn` wherever they can be, so the compiler folds them away. A check is a call to `Rule::check(&rule, value) -> Result<(), Problem>`, and a `Problem` is built only when the check fails.
 - `pattern` is the one rule with expensive setup. The derive generates a `static` `LazyLock<Regex>` where the rule is written, so each regular expression is compiled once. The derive also parses the expression at compile time, and one that doesn't parse is a compile error.
 
-Claims about speed are backed by a separate benchmark project, kept outside this repository. It compares validation and collecting deserialization against `validator`, `garde`, `serde_valid` and `wary`.
+Claims about speed are backed by the [benchmarks](benchmarks/README.md), a workspace of their own beside the crates. They compare validation and collecting deserialization against `validator`, `garde`, `serde_valid` and `wary`.
 
 ## Rules
 

@@ -4,7 +4,7 @@
 
 use std::sync::LazyLock;
 
-use annotated::{FoundViolations, Location, Problem, Rule, Validate, rules};
+use annotated::{Location, Problem, Report, Rule, Validate, rules};
 use regex::Regex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -19,7 +19,7 @@ static POSTAL_CODE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{5}$").un
 /// Records a violation away from the checks, so a check that passes costs one branch.
 #[cold]
 #[inline(never)]
-fn record(found: &mut FoundViolations, at: &Location<'_>, field: &'static str, problem: Problem) {
+fn record(found: &mut Report, at: &Location<'_>, field: &'static str, problem: Problem) {
     found.push(&at.field(field), problem);
 }
 
@@ -47,7 +47,7 @@ struct InlineChecksOrderLine {
 }
 
 impl Validate for InlineChecksOrder {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut Report) {
         self.customer.validate_into(&at.field("customer"), found);
         let lines_at = at.field("lines");
         for (index, line) in self.lines.iter().enumerate() {
@@ -57,7 +57,7 @@ impl Validate for InlineChecksOrder {
 }
 
 impl Validate for InlineChecksCustomer {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut Report) {
         if let Err(problem) = rules::length().min(1).max(50).check(&self.name) {
             record(found, at, "name", problem);
         }
@@ -68,7 +68,7 @@ impl Validate for InlineChecksCustomer {
 }
 
 impl Validate for InlineChecksOrderLine {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut Report) {
         if let Err(problem) = rules::length().min(4).max(16).check(&self.sku) {
             record(found, at, "sku", problem);
         }
@@ -102,7 +102,7 @@ pub struct InlineChecksSignUp {
 }
 
 impl Validate for InlineChecksSignUp {
-    fn validate_into(&self, at: &Location<'_>, found: &mut FoundViolations) {
+    fn validate_into(&self, at: &Location<'_>, found: &mut Report) {
         if let Err(problem) = rules::length().min(3).max(30).check(&self.username) {
             record(found, at, "username", problem);
         } else if let Err(problem) = rules::pattern(&USERNAME).check(&self.username) {
