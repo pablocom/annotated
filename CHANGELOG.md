@@ -69,6 +69,7 @@ This file lists every change that users of the crates can notice. The format fol
 - `#[derive(Validate)]` reports a field with `#[serde(flatten)]` at the struct's own location, where serde reads its keys, instead of under the field's name.
 - Under `collect_type_errors`, a field holding a serde enum reports a name that is none of its variants as `Problem::UnknownVariant`, instead of `Problem::InvalidType`.
 - `Problem::InvalidType` is also reported, always, for a value that fits no variant of an untagged enum.
+- The minimum supported Rust version is 1.98, since Rust 1.100 is out.
 
 ## [0.1.0] - 2026-11-12
 
