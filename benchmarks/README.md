@@ -10,6 +10,7 @@ Every **case** is one library validating one prepared input of one **scenario**.
 
 - **Time:** criterion's median time of one validation, with its 95% confidence interval. The input is built before timing; only `validate` and dropping its outcome are timed, behind `std::hint::black_box`.
 - **Allocations and bytes:** how many allocations one validation makes and how many bytes it asks for, counted by a global allocator in a binary of its own (`allocations`), so counting never slows the timed runs. A reallocation counts as one allocation of its whole new size. Each case is warmed up first, so lazily compiled regular expressions and their caches aren't charged to the validations counted.
+- **Instructions, for annotated's cases:** how many instructions one validation runs, and how many blocks and bytes it allocates, counted under Valgrind by `benches/instructions.rs`. Unlike time, the counts are the same on any machine, so they can say whether one commit is slower than another.
 - **Issues:** how many issues the validation finds. `tests/cases.rs` pins them for every case, so no library is timed rejecting an input it should accept, or doing less work than the others without it showing.
 
 | Scenario | What it is |
@@ -83,6 +84,15 @@ CRITERION_HOME=target/criterion-without-lto cargo +1.99.1 run --release --bin re
 
 annotated is a path dependency on `crates/annotated`, so the benchmarks measure the working tree, and tables label it `this checkout`. Say in your results which commit they measured, and whether the tree had changes on top.
 
+To see what a change costs, count its instructions against the commit before:
+
+```sh
+./compare.sh          # the working tree against HEAD
+./compare.sh main~3   # ...or against any commit
+```
+
+It lists every case of annotated that runs more than 1% more instructions, or allocates more blocks or bytes, and then exits with status 3. It builds and runs both from one checkout, with the same toolchain, so only annotated's code differs, and the same code counts the same. The 1% leaves room for a change that moves code or data and so shifts other cases a little, as running from another directory did, by up to 0.5%. It needs Valgrind, and gungraun-runner at the version of `gungraun` in `Cargo.lock`: `cargo install gungraun-runner --version 0.20.0 --locked`.
+
 To measure what a change gains, time the commit before it and the change in the same sitting, on the same core: check the commit before out into a worktree (`git worktree add ../annotated-before HEAD`), and run the same cases in each, alternating.
 
 ## Adding a library
@@ -98,6 +108,7 @@ To measure what a change gains, time the commit before it and the change in the 
 1. Add a module to `src/scenarios/`: a doc table of its rules, a function building its JSON body, a `with_<library>` module per library, and `cases()`. Bodies are JSON so every library's input comes from the same text, and so the end-to-end scenario can reuse them.
 2. List it in `scenarios::all`.
 3. Pin its issues per library in `tests/cases.rs`.
+4. Give each of annotated's cases a `#[bench]` in `benches/instructions.rs`. `tests/instructions.rs` fails until they have one.
 
 ## Collecting deserialization
 
