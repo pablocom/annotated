@@ -25,7 +25,7 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Derives `annotated::Deserialize`, and serde's `Deserialize` through it, reading a struct collecting every
+/// Derives `annotated::Deserialize`, and serde's `Deserialize` through it. Reading the struct then collects every
 /// missing field and broken rule in it.
 #[proc_macro_derive(Deserialize, attributes(validate, serde, annotated))]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
