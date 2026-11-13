@@ -122,7 +122,10 @@ pub enum Problem {
 ///
 /// [`Display`] prints them as `at least 1`, `at most 50`, `between 1 and 50`, or `exactly 5` when both ends are the
 /// same.
+///
+/// New kinds of bounds may be added without a breaking change, so a `match` on it needs a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Bounds<T> {
     /// No less than this.
     AtLeast(T),

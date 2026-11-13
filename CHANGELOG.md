@@ -11,6 +11,10 @@ This file lists every change that users of the crates can notice. The format fol
   - The rule reports where the variant's content is in the input, such as `card`. `custom(check, field = name)` reports at that field of the variant instead, and counts as its last rule, as on a struct. A tuple variant's element is named by its index: `field = 1`.
   - A unit variant takes no rules, since it has no fields to check.
 
+### Changed
+
+- `Bounds` is `#[non_exhaustive]`, as `Problem` is, so a `match` on it needs a wildcard arm. A new kind of bounds can then be added without a breaking change.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added

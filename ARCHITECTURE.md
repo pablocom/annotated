@@ -49,7 +49,7 @@ Issues ──1..*── Issue ──── Path ──0..*── PathSegment (Fi
 
 A **`Issue`** has a `Path`, a `Problem` and an optional message override. `message()` returns the override when there is one, with its `{param}` placeholders filled from the problem's parameters. Otherwise it returns the problem's English message.
 
-**`Problem`** is `#[non_exhaustive]`, so adding a built-in problem is not a breaking change.
+**`Problem`** is `#[non_exhaustive]`, so adding a built-in problem is not a breaking change. The `Bounds` a length or a range problem holds are too, so neither is adding a kind of bounds.
 
 - Every variant has a stable snake_case `code()`. For a problem reported by a built-in rule, the code is the rule's name: the `ipv4` rule reports the code `ipv4`.
 - Every variant has named `params()`, for code that translates messages or reacts to a problem.
