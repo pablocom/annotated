@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Run on main, it publishes a release commit that an earlier run left unpublished.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -59,40 +61,46 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
-  version:
+  release:
     if: github.ref == 'refs/heads/main'
     needs: [format, lint, test, docs]
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      is_tagged: ${{ steps.tag.outputs.is_tagged }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: tag
-        run: |
-          version=$(cargo metadata --no-deps --format-version 1 | jq --raw-output '.packages[] | select(.name == "annotated") | .version')
-          tag="v$version"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag"; then
-            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_tagged=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  release:
-    needs: version
-    if: needs.version.outputs.is_tagged == 'false'
-    runs-on: ubuntu-latest
     environment: release
+    # A release reads what the one before it left on main, so they run one at a time.
+    concurrency: release
     permissions:
       contents: write
       id-token: write
-    env:
-      TAG: ${{ needs.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The commits since the tag of the last release decide the next version.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Write the release commit, unless this commit is one
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq --raw-output '.packages[] | select(.name == "annotated") | .version')
+          if ! git ls-remote --exit-code --tags origin "refs/tags/v$version"; then
+            echo "TAG=v$version" >> "$GITHUB_ENV"
+            exit
+          fi
+          if [ "$(git ls-remote origin refs/heads/main | cut --fields=1)" != "$GITHUB_SHA" ]; then
+            echo "::notice::main has moved on from this commit, so the run of its newest commit releases"
+            exit
+          fi
+          next_version=$(cargo run --quiet --package annotated-release -- "$(date --utc +%F)")
+          if [ -z "$next_version" ]; then
+            echo "::notice::No commit since v$version changes the crates' code, so there is nothing to release"
+            exit
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --all --message "chore(repo): release $next_version"
+          git push origin HEAD:main
+          echo "TAG=v$next_version" >> "$GITHUB_ENV"
       # Read before publishing, so a version without its changelog section never reaches crates.io.
       - name: Read the version's changelog section
+        if: env.TAG
         run: |
           version="${TAG#v}"
           awk -v heading="## [$version]" '
@@ -104,13 +112,15 @@ jobs:
             echo "::error::CHANGELOG.md has no section for $version"
             exit 1
           fi
-      - uses: dtolnay/rust-toolchain@stable
       - uses: rust-lang/crates-io-auth-action@v1
+        if: env.TAG
         id: auth
       - run: cargo publish --workspace
+        if: env.TAG
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       - name: Create the GitHub release and its tag
-        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file release-notes.md
+        if: env.TAG
+        run: gh release create "$TAG" --target "$(git rev-parse HEAD)" --title "$TAG" --notes-file release-notes.md
         env:
           GH_TOKEN: ${{ github.token }}
