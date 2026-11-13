@@ -53,7 +53,7 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 
 ```toml
 [dependencies]
-annotated = { version = "0.1", features = ["json"] }
+annotated = { version = "0.2", features = ["json"] }
 ```
 
 `annotated` is the only crate to add. It re-exports its derive macros, and the code they generate doesn't need serde among your dependencies.
