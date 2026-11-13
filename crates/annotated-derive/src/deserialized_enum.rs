@@ -6,7 +6,7 @@ use crate::deserialized_struct::{
 };
 use crate::serde_names::{SerdeEnum, SerdeStruct, Tag};
 use crate::validated_enum::ValidatedEnum;
-use crate::validated_struct::{Place, StructCheck, ValidatedStruct};
+use crate::validated_struct::{Place, StructCheck};
 
 pub struct DeserializedEnum<'a> {
     pub input: &'a DeriveInput,
@@ -79,12 +79,12 @@ impl<'a> DeserializedEnum<'a> {
             refuse_serde_attributes_other_than(&ON_A_VARIANT, &variant.attrs)?;
         }
         for variant in &validated.variants {
-            refuse_what_fields_can_t_take(&variant.fields, "enum")?;
+            refuse_what_fields_can_t_take(&variant.content.fields, "enum")?;
         }
         let serde = SerdeEnum::from_input(input)?;
         if serde.is_denying_unknown_fields {
             for variant in &validated.variants {
-                refuse_flatten(&variant.fields, "an enum")?;
+                refuse_flatten(&variant.content.fields, "an enum")?;
             }
         }
         let ValidatedEnum {
@@ -117,12 +117,7 @@ impl<'a> DeserializedEnum<'a> {
                 let content = form.map(|form| {
                     let kind = if form == Form::Struct { "struct" } else { "tuple" };
                     DeserializedStruct {
-                        validated: ValidatedStruct {
-                            input,
-                            fields: validated_variant.fields,
-                            is_reporting_all,
-                            struct_checks: Vec::new(),
-                        },
+                        validated: validated_variant.content,
                         serde: SerdeStruct {
                             name: name.clone(),
                             fields: serde_variant.fields,

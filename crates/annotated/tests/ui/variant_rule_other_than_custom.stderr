@@ -1,0 +1,11 @@
+error: a variant's `#[validate(...)]` takes `custom(...)`: its fields take the other rules, and the enum takes `report_all`
+ --> tests/ui/variant_rule_other_than_custom.rs:5:16
+  |
+5 |     #[validate(required)]
+  |                ^^^^^^^^
+
+error: a variant's `#[validate(...)]` takes `custom(...)`: its fields take the other rules, and the enum takes `report_all`
+  --> tests/ui/variant_rule_other_than_custom.rs:12:16
+   |
+12 |     #[validate(report_all)]
+   |                ^^^^^^^^^^

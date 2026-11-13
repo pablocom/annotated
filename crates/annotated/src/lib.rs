@@ -183,6 +183,43 @@ pub use validate::Validate;
 ///
 /// assert_eq!(payment.validate().unwrap_err().to_string(), "card.number: must be at least 16 characters long");
 /// ```
+///
+/// ## Rules across a variant's fields
+///
+/// `#[validate(custom(check))]` on a variant with fields checks the enum when it holds that variant. `check` gets the
+/// enum, as a rule on the enum does.
+///
+/// - The rule reports where the variant's content is, such as `card`. `custom(check, field = expires_in)` reports at
+///   that field of the variant instead, and counts as its last rule, as on a struct. A tuple variant's element is
+///   named by its index: `field = 1`.
+/// - A variant's rules are checked after its fields, in the order written, and before the enum's rules.
+/// - A unit variant takes no rules, since it has no fields to check.
+///
+/// ```
+/// use annotated::{Problem, Validate};
+///
+/// #[derive(Validate)]
+/// #[serde(rename_all = "camelCase")]
+/// enum Payment {
+///     #[validate(custom(a_card_expires_after_it_starts, field = expires_in))]
+///     Card { valid_from: u16, expires_in: u16 },
+///     Cash,
+/// }
+///
+/// fn a_card_expires_after_it_starts(payment: &Payment) -> Result<(), Problem> {
+///     let Payment::Card { valid_from, expires_in } = payment else {
+///         return Ok(());
+///     };
+///     if expires_in <= valid_from {
+///         return Err(Problem::custom("expires_too_soon", "must be after the card starts"));
+///     }
+///     Ok(())
+/// }
+///
+/// let payment = Payment::Card { valid_from: 2030, expires_in: 2026 };
+///
+/// assert_eq!(payment.validate().unwrap_err().to_string(), "card.expires_in: must be after the card starts");
+/// ```
 pub use annotated_derive::Validate;
 
 /// Implements [`Deserialize`](trait@Deserialize), and serde's own `Deserialize` through it, for a struct with named
@@ -365,7 +402,8 @@ pub use annotated_derive::Validate;
 ///   enum's location, with or without `collect_type_errors`: its `expected` is the enum's `expecting`, or
 ///   `untagged enum Name`. Variants with `#[serde(untagged)]` in a tagged enum are tried the same way, after the
 ///   tagged ones.
-/// - `#[validate(custom(check))]` on the enum runs after the variant's fields, once the variant could be built.
+/// - `#[validate(custom(check))]` on a variant, and then on the enum, runs after the variant's fields, once the
+///   variant could be built.
 ///
 /// ```
 /// use annotated::Deserialize;

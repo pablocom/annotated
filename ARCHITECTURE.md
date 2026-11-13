@@ -327,7 +327,12 @@ The derive reads a field the way serde's derive reads it with the same attribute
 Both derives work on enums, with every kind of variant: unit, newtype, tuple and struct.
 
 - A variant's fields take `#[validate(...)]` rules as a struct's fields do. A newtype or tuple variant takes them on its unnamed fields: `Card(#[validate(nested)] CardDetails)`.
-- On the enum, `#[validate(...)]` takes `custom(f)` rules and `report_all`, as on a struct. A rule gets `&Self` and reports at the enum's location, after the variant's fields. `custom(f, field = name)` is a compile error on an enum, since a field belongs to one variant.
+- On the enum, `#[validate(...)]` takes `custom(f)` rules and `report_all`, as on a struct. A rule gets `&Self` and reports at the enum's location, after the variant's fields. `custom(f, field = name)` is a compile error on an enum, since a field belongs to one variant: such a rule goes on that variant.
+- On a variant with fields, `#[validate(...)]` takes `custom(f)` rules, for a rule across the variant's fields. A rule gets `&Self`, the enum, since a variant's fields are not a type of their own. It is checked only when the value is that variant, after the variant's fields and before the enum's rules.
+  - It reports where the variant's content is in the input: `card` when externally tagged, the enum's own location with `tag` or `untagged`, and `data` with `tag` and `content`.
+  - `custom(f, field = name)` reports at that field of the variant instead, and counts as the field's last rule, as [on a struct](#struct-level-rules-come-last). A tuple variant's element is named by its index: `field = 1`. A newtype variant's value is where the variant's content is, so a rule naming it with `field = 0` reports there too, and is skipped once the value has failed a rule of its own.
+  - A unit variant takes no rules, since it has no fields to check. Its rule goes on the enum.
+  - A struct in a newtype variant, `Card(#[validate(nested)] CardDetails)`, can check the same thing with a struct-level rule, which gets the struct.
 
 **Paths follow the input.** An issue inside a variant is reported where its value is in the input, as serde lays the variant out. The `Validate` derive reads the same serde attributes, so validating reports the same paths as deserializing.
 
@@ -380,6 +385,8 @@ An externally tagged variant is read through the `VariantAccess` serde gives for
 An enum with untagged variants buffers the whole value as `annotated::__private::Buffered`, and tries each reading on it by reference, through `ContentRefDeserializer`: the tagged reading first, if the enum has a tag, then the seed for each untagged variant. The buffer is never copied. Each attempt reports into a report of its own, which is appended once a variant is built, and dropped otherwise.
 
 A variant with `deserialize_with` is read, as in serde's derive, through a type whose `Deserialize` calls the function. The function returns the variant's fields, which become the variant's slots, and its checking pass runs as for any variant. Every field counts as read by a function, so its nested values are checked with `Validate`. A skipped variant is left out of the variant names, of the bounds, and of the variants an untagged enum tries.
+
+**A variant's rules** are kept as the struct-level rules of the variant's content. So both derives check them with the code a struct's rules get: `Validate` in the variant's match arm, and deserialization at the end of the variant's checking pass, once the variant could be built. In an untagged enum, they are reported for the variant that was built, with its other issues.
 
 **Everything else works as for a struct:** generics and their bounds, borrowing, failing fast, and the equivalence with serde followed by `validate()`, which tests pin for each representation.
 

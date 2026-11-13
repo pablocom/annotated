@@ -1,4 +1,4 @@
-error: `custom` on an enum takes no `field`: each field belongs to one variant
+error: `custom` on an enum takes no `field`: each field belongs to one variant, so write the rule on that variant
  --> tests/ui/enum_level_custom_at_a_field.rs:4:37
   |
 4 | #[validate(custom(within_the_limit, field = cents))]

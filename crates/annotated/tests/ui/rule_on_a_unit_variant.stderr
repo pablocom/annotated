@@ -1,0 +1,5 @@
+error: a unit variant has no fields for a rule to check: `custom(...)` goes on the enum
+ --> tests/ui/rule_on_a_unit_variant.rs:6:16
+  |
+6 |     #[validate(custom(is_accepted))]
+  |                ^^^^^^

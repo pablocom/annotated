@@ -2,8 +2,8 @@ use annotated::Validate;
 
 #[derive(Validate)]
 enum Payment {
-    #[validate(custom(is_valid_card))]
     Card { number: String },
+    #[validate(custom(is_accepted))]
     Cash,
 }
 

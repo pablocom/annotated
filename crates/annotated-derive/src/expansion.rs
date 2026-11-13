@@ -137,15 +137,23 @@ impl Expansion {
 
     fn variant_checks(&self, variant: &ValidatedVariant) -> TokenStream {
         let at = &self.at;
-        let ident = variant.ident;
-        let checked_fields: Vec<_> = variant.fields.iter().filter(|field| !field.rules.is_empty()).collect();
+        let ValidatedVariant {
+            ident,
+            content_place,
+            content,
+        } = variant;
+        let checked_fields: Vec<_> = content.fields.iter().filter(|field| !field.rules.is_empty()).collect();
         let members = checked_fields.iter().map(|field| &field.member);
-        let values: Vec<_> = checked_fields.iter().map(|field| field.local("value")).collect();
-        let field_checks = checked_fields
-            .iter()
-            .zip(&values)
-            .map(|(field, value)| self.field_checks(field, &value.to_token_stream()));
-        let content_at = match &variant.content_place {
+        let values = checked_fields.iter().map(|field| field.local("value"));
+        let field_checks = content.fields.iter().enumerate().map(|(index, field)| {
+            let value_of_field = field.local("value").to_token_stream();
+            if self.keeps_validity_of(content, index) {
+                return self.field_validity(field, &value_of_field);
+            }
+            self.field_checks(field, &value_of_field)
+        });
+        let variant_rule_checks = self.struct_checks(content, &quote!(self), &quote!(Self));
+        let content_at = match content_place {
             Place::OfItsParent => TokenStream::new(),
             content_place => {
                 let content_location = self.location_of(content_place);
@@ -156,6 +164,7 @@ impl Expansion {
             Self::#ident { #(#members: ref #values,)* .. } => {
                 #content_at
                 #(#field_checks)*
+                #(#variant_rule_checks)*
             }
         }
     }

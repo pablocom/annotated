@@ -1,0 +1,17 @@
+error: `custom` on a variant takes one function checking the enum, then optionally `field = ...` and `message = ...`: `custom(check, field = name)`
+ --> tests/ui/variant_level_custom_without_a_function.rs:5:16
+  |
+5 |     #[validate(custom)]
+  |                ^^^^^^
+
+error: `custom` on a variant takes one function checking the enum, then optionally `field = ...` and `message = ...`: `custom(check, field = name)`
+  --> tests/ui/variant_level_custom_without_a_function.rs:11:16
+   |
+11 |     #[validate(custom(field = last_night))]
+   |                ^^^^^^
+
+error: `custom` on a variant takes one function checking the enum, then optionally `field = ...` and `message = ...`: `custom(check, field = name)`
+  --> tests/ui/variant_level_custom_without_a_function.rs:17:43
+   |
+17 |     #[validate(custom(bounds_are_ordered, at = 1))]
+   |                                           ^^

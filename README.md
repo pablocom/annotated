@@ -90,7 +90,7 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 - **`Option` fields.** `required` checks that the field is `Some`. Every other rule checks the value inside, and is skipped when the field is `None`.
 - **Messages.** Give a rule `message = "..."` to replace its English message. `{param}` placeholders are filled from the problem's parameters: `length(max = 50, message = "use {max} characters or fewer")`.
 - **Rules across fields.** `#[validate(custom(function))]` on the struct checks the whole struct, after its fields, with any `Fn(&Self) -> Result<(), Problem>`. `custom(function, field = repeated_password)` reports the problem at that field.
-- **Enums.** Rules go on the fields of an enum's variants, named or not. The variant the value holds is checked, and each issue is at the path where serde reads its value, such as `card.number` under the variant's name.
+- **Enums.** Rules go on the fields of an enum's variants, named or not. The variant the value holds is checked, and each issue is at the path where serde reads its value, such as `card.number` under the variant's name. For a rule across a variant's fields, put `#[validate(custom(function))]` on the variant: the function gets the enum, and runs when the value is that variant. `custom(function, field = expires_in)` reports the problem at that field.
 - **Rules of your own.** Besides `custom`, a rule can be a type of yours that implements `Rule`. Write it by its path, with the same syntax as the built-in rules: `my_rules::iban(country = "ES")`.
 - **No I/O.** A rule looks at the value and nothing else. A check that needs I/O, like "is this email already taken", belongs in your application, after validation.
 

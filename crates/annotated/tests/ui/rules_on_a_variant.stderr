@@ -1,5 +1,0 @@
-error: `#[validate(...)]` goes on a variant's fields, or on the enum for `custom` and `report_all`
- --> tests/ui/rules_on_a_variant.rs:5:7
-  |
-5 |     #[validate(custom(is_valid_card))]
-  |       ^^^^^^^^

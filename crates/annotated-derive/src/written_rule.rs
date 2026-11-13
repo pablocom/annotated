@@ -57,15 +57,18 @@ pub fn written_enum_rules(attributes: &[Attribute]) -> syn::Result<Vec<StructRul
     whole_value_rules(attributes, StructRule::parse_on_an_enum)
 }
 
-fn whole_value_rules(
-    attributes: &[Attribute],
-    parse: fn(ParseStream) -> syn::Result<StructRule>,
-) -> syn::Result<Vec<StructRule>> {
+pub fn written_variant_rules(attributes: &[Attribute]) -> syn::Result<Vec<StructCustom>> {
+    whole_value_rules(attributes, StructCustom::parse_on_a_variant)
+}
+
+fn whole_value_rules<R>(attributes: &[Attribute], parse: fn(ParseStream) -> syn::Result<R>) -> syn::Result<Vec<R>> {
     let mut rules = Vec::new();
     for attribute in validate_attributes(attributes) {
-        rules.extend(attribute.parse_args_with(|input: ParseStream| {
-            Punctuated::<StructRule, Token![,]>::parse_terminated_with(input, parse)
-        })?);
+        rules.extend(
+            attribute.parse_args_with(|input: ParseStream| {
+                Punctuated::<R, Token![,]>::parse_terminated_with(input, parse)
+            })?,
+        );
     }
     Ok(rules)
 }
@@ -129,7 +132,17 @@ const ON_AN_ENUM: WholeValueRules = WholeValueRules {
     refusal: "an enum's `#[validate(...)]` takes `report_all` and `custom(...)`",
     custom_arguments: "`custom` on an enum takes one function checking the enum, then optionally `message = ...`: \
                        `custom(check)`",
-    field_refusal: Some("`custom` on an enum takes no `field`: each field belongs to one variant"),
+    field_refusal: Some(
+        "`custom` on an enum takes no `field`: each field belongs to one variant, so write the rule on that variant",
+    ),
+};
+
+const ON_A_VARIANT: WholeValueRules = WholeValueRules {
+    refusal: "a variant's `#[validate(...)]` takes `custom(...)`: its fields take the other rules, and the enum \
+              takes `report_all`",
+    custom_arguments: "`custom` on a variant takes one function checking the enum, then optionally `field = ...` \
+                       and `message = ...`: `custom(check, field = name)`",
+    field_refusal: None,
 };
 
 impl StructRule {
@@ -158,6 +171,14 @@ impl StructRule {
 }
 
 impl StructCustom {
+    fn parse_on_a_variant(input: ParseStream) -> syn::Result<Self> {
+        let path = input.call(Path::parse_mod_style)?;
+        if !path.is_ident("custom") {
+            return Err(Error::new_spanned(path, ON_A_VARIANT.refusal));
+        }
+        Self::parse_after(&path, input, &ON_A_VARIANT)
+    }
+
     fn parse_after(custom: &Path, input: ParseStream, whole_value_rules: &WholeValueRules) -> syn::Result<Self> {
         let refusal = whole_value_rules.custom_arguments;
         if !input.peek(token::Paren) {

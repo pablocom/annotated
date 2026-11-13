@@ -1,0 +1,11 @@
+error: `Payment::Card` has no field `expires_on`
+ --> tests/ui/variant_level_custom_at_a_field_that_does_not_exist.rs:5:63
+  |
+5 |     #[validate(custom(a_card_expires_after_it_starts, field = expires_on))]
+  |                                                               ^^^^^^^^^^
+
+error: `Filter::Between` has no field `2`
+  --> tests/ui/variant_level_custom_at_a_field_that_does_not_exist.rs:12:51
+   |
+12 |     #[validate(custom(bounds_are_ordered, field = 2))]
+   |                                                   ^

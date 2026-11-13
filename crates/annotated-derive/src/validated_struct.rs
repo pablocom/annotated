@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote_spanned};
 use syn::spanned::Spanned;
@@ -114,10 +116,10 @@ impl ValidatedStruct<'_> {
 }
 
 impl StructCheck {
-    fn from_custom(custom: StructCustom, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<Self> {
+    pub fn from_custom(custom: StructCustom, owner: &dyn Display, fields: &[ValidatedField]) -> syn::Result<Self> {
         let field = custom
             .field
-            .map(|field| position_of(&field, struct_name, fields))
+            .map(|field| position_of(&field, owner, fields))
             .transpose()?;
         Ok(Self {
             check: custom.check,
@@ -128,18 +130,24 @@ impl StructCheck {
     }
 }
 
-fn position_of(field: &Expr, struct_name: &Ident, fields: &[ValidatedField]) -> syn::Result<usize> {
+fn position_of(field: &Expr, owner: &dyn Display, fields: &[ValidatedField]) -> syn::Result<usize> {
     fields
         .iter()
-        .position(|validated| {
-            matches!((field, &validated.member), (Expr::Path(path), Member::Named(member)) if path.path.is_ident(member))
-        })
-        .ok_or_else(|| {
-            Error::new_spanned(
-                field,
-                format!("`{struct_name}` has no field `{}`", field.to_token_stream()),
-            )
-        })
+        .position(|validated| is_named_by(&validated.member, field))
+        .ok_or_else(|| Error::new_spanned(field, format!("`{owner}` has no field `{}`", field.to_token_stream())))
+}
+
+fn is_named_by(member: &Member, written: &Expr) -> bool {
+    match (written, member) {
+        (Expr::Path(name), Member::Named(member)) => name.path.is_ident(member),
+        (
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(index), ..
+            }),
+            Member::Unnamed(member),
+        ) => index.base10_parse::<u32>().is_ok_and(|index| index == member.index),
+        _ => false,
+    }
 }
 
 impl Place {
