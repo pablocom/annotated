@@ -47,13 +47,12 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 - **Nothing to pay for valid input.** Validating a valid value allocates nothing.
 - **Any serde format.** JSON has ready-made functions, and every other format works through its `Deserializer`.
 
-> **Status:** 0.2. Until 1.0, a release may change the API. When one does, the changelog says what changed.
+> **Status:** before 1.0. Until 1.0, a release may change the API. When one does, the changelog says what changed.
 
 ## Getting started
 
-```toml
-[dependencies]
-annotated = { version = "0.2", features = ["json"] }
+```sh
+cargo add annotated --features json
 ```
 
 `annotated` is the only crate to add. It re-exports its derive macros, and the code they generate doesn't need serde among your dependencies.
