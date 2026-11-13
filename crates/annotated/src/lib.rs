@@ -23,6 +23,8 @@ pub mod __private;
 
 #[cfg(feature = "serde")]
 mod borrowed;
+#[cfg(feature = "json-schema")]
+mod checked_type;
 #[cfg(feature = "serde")]
 mod collecting_type_errors;
 #[cfg(feature = "serde")]
@@ -31,6 +33,8 @@ mod content;
 mod content_deserializer;
 #[cfg(feature = "serde")]
 mod content_ref_deserializer;
+#[cfg(feature = "json-schema")]
+mod described_rules;
 #[cfg(feature = "serde")]
 mod deserialize;
 #[cfg(feature = "serde")]
@@ -51,6 +55,8 @@ mod rule;
 mod tagged;
 mod validate;
 
+#[cfg(feature = "json-schema")]
+pub use described_rules::{FieldRules, Rules, ValueRules};
 #[cfg(feature = "serde")]
 pub use deserialize::{Deserialize, from_deserializer, from_deserializer_fail_fast};
 #[cfg(feature = "serde")]
@@ -220,6 +226,11 @@ pub use validate::Validate;
 ///
 /// assert_eq!(payment.validate().unwrap_err().to_string(), "card.expires_in: must be after the card starts");
 /// ```
+///
+/// # Rules as data
+///
+/// With the `json-schema` feature, the derive also implements `Validate::rules` for a struct. It returns the rules of
+/// each field as data.
 pub use annotated_derive::Validate;
 
 /// Implements [`Deserialize`](trait@Deserialize), and serde's own `Deserialize` through it, for a struct with named
@@ -425,6 +436,11 @@ pub use annotated_derive::Validate;
 ///
 /// assert_eq!(error.to_string(), "card.number: must be at least 16 characters long\ncard.holder: is missing");
 /// ```
+///
+/// # Rules as data
+///
+/// With the `json-schema` feature, the derive also implements `Deserialize::rules` for a struct. It returns the rules
+/// of each field as data.
 #[cfg(feature = "serde")]
 pub use annotated_derive::Deserialize;
 pub use issue::Issue;

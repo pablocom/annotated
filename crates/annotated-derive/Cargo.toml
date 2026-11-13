@@ -14,6 +14,7 @@ categories = ["data-structures", "encoding", "rust-patterns"]
 proc-macro = true
 
 [features]
+json-schema = []
 regex = ["dep:regex-syntax"]
 
 [dependencies]

@@ -75,4 +75,17 @@ pub trait Validate {
         self.validate_into(&Location::root(), &mut found);
         found.into_result()
     }
+
+    /// This type's rules, as data: what `#[validate(...)]` requires of each of its fields.
+    ///
+    /// `#[derive(Validate)]` implements it for a struct. A type that implements `Validate` by hand has no rules as
+    /// data, unless it implements this too.
+    #[cfg(feature = "json-schema")]
+    #[must_use]
+    fn rules() -> crate::Rules
+    where
+        Self: Sized,
+    {
+        crate::Rules::default()
+    }
 }

@@ -52,10 +52,6 @@ pub enum DefaultValue {
     ReturnedBy(ExprPath),
 }
 
-pub fn fields_of(input: &DeriveInput) -> syn::Result<Vec<SerdeField>> {
-    Ok(SerdeStruct::from_input(input)?.fields)
-}
-
 fn read<T>(input: &DeriveInput, reading: impl FnOnce(&Container) -> T) -> syn::Result<T> {
     let context = Ctxt::new();
     let serde_private_module = Ident::new("__private", Span::call_site());

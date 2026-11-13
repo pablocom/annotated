@@ -4,6 +4,7 @@ use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, Type, WherePredicate, parse_quote};
 
+use crate::described_rules::rules_function;
 use crate::deserialized_struct::{DeserializedStruct, Form};
 use crate::expansion::{Expansion, validity_of};
 use crate::serde_names::{DefaultValue, SerdeField};
@@ -96,6 +97,7 @@ impl<'a> DeserializeExpansion<'a> {
         let functions_reading_fields = self.functions_reading_fields();
         let visitor = self.visitor();
         let new_visitor = self.new_visitor();
+        let rules_function = rules_function(&self.deserialized_struct.validated);
         let (field_identifier, deserializing) = if self.has_flattened_fields() {
             (
                 TokenStream::new(),
@@ -119,6 +121,8 @@ impl<'a> DeserializeExpansion<'a> {
                     #visitor
                     #deserializing
                 }
+
+                #rules_function
             }
 
             impl #impl_generics #serde::Deserialize<'de> for #name #type_generics #where_clause {

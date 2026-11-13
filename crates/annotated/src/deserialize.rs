@@ -74,6 +74,16 @@ pub trait Deserialize<'de>: Sized {
         at: &Location<'_>,
         found: &mut Report,
     ) -> Result<Option<Self>, D::Error>;
+
+    /// This type's rules, as data: what `#[validate(...)]` requires of each of its fields.
+    ///
+    /// [`#[derive(Deserialize)]`](macro@crate::Deserialize) implements it for a struct. A type that implements
+    /// `Deserialize` by hand has no rules as data, unless it implements this too.
+    #[cfg(feature = "json-schema")]
+    #[must_use]
+    fn rules() -> crate::Rules {
+        crate::Rules::default()
+    }
 }
 
 /// A `DeserializeSeed` that reads a `T` at a location and pushes its issues into a report. A collection reads its

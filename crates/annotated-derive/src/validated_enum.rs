@@ -76,6 +76,7 @@ fn variant_content<'a>(
     Ok(ValidatedStruct {
         input,
         fields,
+        has_default: false,
         is_reporting_all,
         struct_checks,
     })

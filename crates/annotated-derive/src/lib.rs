@@ -1,5 +1,6 @@
 //! The derive macros of [`annotated`](https://docs.rs/annotated), which re-exports and documents them.
 
+mod described_rules;
 mod deserialize_enum_expansion;
 mod deserialize_expansion;
 mod deserialized_enum;

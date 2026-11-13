@@ -9,7 +9,7 @@ use syn::{
 };
 
 use crate::pattern;
-use crate::serde_names::{self, SerdeField};
+use crate::serde_names::{SerdeField, SerdeStruct};
 use crate::written_rule::{
     NamedArgument, RuleCall, StructCustom, StructRule, WrittenRule, written_rules, written_struct_rules,
 };
@@ -17,6 +17,7 @@ use crate::written_rule::{
 pub struct ValidatedStruct<'a> {
     pub input: &'a DeriveInput,
     pub fields: Vec<ValidatedField<'a>>,
+    pub has_default: bool,
     pub is_reporting_all: bool,
     pub struct_checks: Vec<StructCheck>,
 }
@@ -35,8 +36,17 @@ pub struct ValidatedField<'a> {
     pub name: String,
     pub place: Place,
     pub is_flattened: bool,
+    pub checked_value: CheckedValue,
     pub is_optional: bool,
     pub rules: Vec<FieldRule>,
+}
+
+// Where the value that a field's rules check comes from.
+pub enum CheckedValue {
+    // As the input holds it, or the field's default when it has one and the input lacks the field.
+    FromTheInput { has_default: bool },
+    // What a function of the user's made of the input, or the default of a skipped field.
+    NotInTheInput,
 }
 
 // Where a value is in the input, from where its parent is.
@@ -75,10 +85,11 @@ impl<'a> ValidatedStruct<'a> {
         else {
             return Err(Error::new_spanned(&input.ident, refusal));
         };
+        let serde_struct = SerdeStruct::from_input(input)?;
         let fields = fields
             .named
             .iter()
-            .zip(serde_names::fields_of(input)?)
+            .zip(serde_struct.fields)
             .enumerate()
             .map(|(index, (field, serde_field))| {
                 let place = Place::of_a_named_field(&serde_field);
@@ -97,6 +108,7 @@ impl<'a> ValidatedStruct<'a> {
         Ok(Self {
             input,
             fields,
+            has_default: serde_struct.default.is_some(),
             is_reporting_all,
             struct_checks,
         })
@@ -173,12 +185,24 @@ impl<'a> ValidatedField<'a> {
             member,
             field_type: &field.ty,
             attributes: &field.attrs,
+            checked_value: CheckedValue::of(&serde_field),
             name: serde_field.name,
             place,
             is_flattened: serde_field.is_flattened,
             is_optional: option_content(&field.ty).is_some(),
             rules,
         })
+    }
+}
+
+impl CheckedValue {
+    fn of(serde_field: &SerdeField) -> Self {
+        if serde_field.is_skipped || serde_field.deserialize_with.is_some() {
+            return Self::NotInTheInput;
+        }
+        Self::FromTheInput {
+            has_default: serde_field.default.is_some(),
+        }
     }
 }
 

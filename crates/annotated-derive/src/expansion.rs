@@ -2,6 +2,7 @@ use proc_macro2::{Group, Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote, quote_spanned};
 use syn::{Expr, Ident};
 
+use crate::described_rules::rules_function;
 use crate::validated_enum::{ValidatedEnum, ValidatedVariant};
 use crate::validated_struct::{
     FieldRule, Place, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in,
@@ -39,6 +40,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
         expansion.field_checks(field, &value_of_field)
     });
     let struct_checks = expansion.struct_checks(validated_struct, &quote!(self), &quote!(Self));
+    let rules_function = rules_function(validated_struct);
     let input = validated_struct.input;
     let name = &input.ident;
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
@@ -48,6 +50,8 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
                 #(#field_checks)*
                 #(#struct_checks)*
             }
+
+            #rules_function
         }
     }
 }

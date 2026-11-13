@@ -9,6 +9,10 @@ This file lists every change that users of the crates can notice. The format fol
 - `Rule::problem`: a rule says what it requires, as the problem that every value breaking it has.
   - Each built-in rule answers its own problem: `length().max(50)` answers a `Problem::Length` of at most 50, counted in chars for a string and in elements for a collection. A `length` or a `range` without bounds answers `None`.
   - It answers `None` by default, so `custom(...)` and rules of your own say nothing until they implement it.
+- The `json-schema` feature, with which a struct's rules can be read as data.
+  - `Validate::rules` and `Deserialize::rules` return a type's rules as data: `Rules`, with a `FieldRules` for each field that has rules and the `ValueRules` of its value. Both derives implement them for a struct. An enum and a type implemented by hand answer no rules.
+  - A field read by a function, a skipped field and a flattened field are left out, and so are `nested`, `custom(...)` and rules across fields.
+  - Without the feature, the derives generate what they did before.
 - `#[validate(custom(check))]` on a variant of an enum, in both derives: a rule across the variant's fields.
   - `check` gets the enum, and runs only when the value is that variant, after the variant's fields and before the enum's rules. When deserializing, it runs once the variant could be built.
   - The rule reports where the variant's content is in the input, such as `card`. `custom(check, field = name)` reports at that field of the variant instead, and counts as its last rule, as on a struct. A tuple variant's element is named by its index: `field = 1`.

@@ -7,6 +7,10 @@ use crate::{Issue, Location, Problem, Report};
 
 #[cfg(feature = "serde")]
 pub use crate::borrowed::{borrow_cow_bytes, borrow_cow_str};
+#[cfg(feature = "json-schema")]
+pub use crate::checked_type::{
+    Checked, ElementOfACollection, ElementOfAnotherValue, Said, SaidByARule, SaidByNoRule, Unnamed,
+};
 #[cfg(feature = "serde")]
 pub use crate::collecting_type_errors::{
     CollectingTypeErrorsAt, CollectingTypeErrorsOfAFunctionAt, NestedCollectingTypeErrorsAt,
