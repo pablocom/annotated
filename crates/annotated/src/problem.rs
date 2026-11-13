@@ -155,6 +155,16 @@ impl<T> Bounds<T> {
         }
     }
 
+    /// The least and the greatest value accepted, each when there is one.
+    #[cfg(feature = "json-schema")]
+    pub(crate) fn ends(&self) -> (Option<&T>, Option<&T>) {
+        match self {
+            Self::AtLeast(min) => (Some(min), None),
+            Self::AtMost(max) => (None, Some(max)),
+            Self::Between { min, max } => (Some(min), Some(max)),
+        }
+    }
+
     pub(crate) fn of(min: Option<T>, max: Option<T>) -> Option<Self> {
         match (min, max) {
             (Some(min), Some(max)) => Some(Self::Between { min, max }),

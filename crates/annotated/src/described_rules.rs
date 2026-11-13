@@ -4,8 +4,9 @@ use crate::Problem;
 
 /// A type's rules, as data: what `#[validate(...)]` requires of each of its fields.
 ///
-/// [`Validate::rules`](crate::Validate::rules) and [`Deserialize::rules`](crate::Deserialize::rules) return it. Both
-/// derives implement `rules()` for a struct:
+/// [`Validate::rules`](crate::Validate::rules) and [`Deserialize::rules`](crate::Deserialize::rules) return it, and
+/// [`json_schema::write_rules`](crate::json_schema::write_rules) writes it into the type's JSON Schema. Both derives
+/// implement `rules()` for a struct:
 ///
 /// ```
 /// use annotated::{FieldRules, Problem, Rules, Validate, ValueRules};

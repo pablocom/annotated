@@ -11,11 +11,16 @@
 //!   in its message.
 //!
 //! The `json` feature adds [`json::from_str`] and [`json::from_slice`], which read JSON this way.
+//!
+//! The `json-schema` feature adds [`json_schema::write_rules`], which writes a struct's rules into the JSON Schema
+//! that a schema library generated for it, so an API's document says what the rules require.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "json")]
 pub mod json;
+#[cfg(feature = "json-schema")]
+pub mod json_schema;
 pub mod rules;
 
 #[doc(hidden)]
@@ -230,7 +235,7 @@ pub use validate::Validate;
 /// # Rules as data
 ///
 /// With the `json-schema` feature, the derive also implements `Validate::rules` for a struct. It returns the rules of
-/// each field as data.
+/// each field as data, which `annotated::json_schema::write_rules` writes into the struct's JSON Schema.
 pub use annotated_derive::Validate;
 
 /// Implements [`Deserialize`](trait@Deserialize), and serde's own `Deserialize` through it, for a struct with named
@@ -440,7 +445,7 @@ pub use annotated_derive::Validate;
 /// # Rules as data
 ///
 /// With the `json-schema` feature, the derive also implements `Deserialize::rules` for a struct. It returns the rules
-/// of each field as data.
+/// of each field as data, which `annotated::json_schema::write_rules` writes into the struct's JSON Schema.
 #[cfg(feature = "serde")]
 pub use annotated_derive::Deserialize;
 pub use issue::Issue;

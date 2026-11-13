@@ -9,8 +9,10 @@ This file lists every change that users of the crates can notice. The format fol
 - `Rule::problem`: a rule says what it requires, as the problem that every value breaking it has.
   - Each built-in rule answers its own problem: `length().max(50)` answers a `Problem::Length` of at most 50, counted in chars for a string and in elements for a collection. A `length` or a `range` without bounds answers `None`.
   - It answers `None` by default, so `custom(...)` and rules of your own say nothing until they implement it.
-- The `json-schema` feature, with which a struct's rules can be read as data.
+- The `json-schema` feature, which writes a struct's rules into the JSON Schema that a schema library generated for it. It needs `serde_json`, and depends on no schema library.
   - `Validate::rules` and `Deserialize::rules` return a type's rules as data: `Rules`, with a `FieldRules` for each field that has rules and the `ValueRules` of its value. Both derives implement them for a struct. An enum and a type implemented by hand answer no rules.
+  - `annotated::json_schema::write_rules` adds a keyword for each rule that has one: `maxLength`, `minItems`, `minimum`, `format`, `pattern` and the others its documentation lists. `required` on an `Option` removes `null` and lists the field as required.
+  - The schema never rejects a value the rules accept: where no keyword says exactly what a rule requires, a looser one is written, or none. A keyword already in the schema is never loosened.
   - A field read by a function, a skipped field and a flattened field are left out, and so are `nested`, `custom(...)` and rules across fields.
   - Without the feature, the derives generate what they did before.
 - `#[validate(custom(check))]` on a variant of an enum, in both derives: a rule across the variant's fields.

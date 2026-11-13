@@ -130,10 +130,25 @@ A value of the wrong type, like `"age": "twelve"`, ends deserialization with the
 | `json` | `annotated::json`, built on `serde_json` |
 | `regex` | The `pattern` rule |
 | `unicode` | `length(unit = "graphemes")` |
+| `json-schema` | `annotated::json_schema`, which writes a struct's rules into its JSON Schema, built on `serde_json` |
 
 ## Web frameworks
 
 There is no crate for any framework. [`examples/axum`](examples/axum) is an axum extractor to copy into your app instead. It responds with 422 and lists every issue as RFC 9457 problem details.
+
+## OpenAPI and JSON Schema
+
+A schema library documents a type's fields, and knows nothing of its rules. With the `json-schema` feature, annotated writes them into the schema that library generated:
+
+```rust
+annotated::json_schema::write_rules(&<NewMember as Validate>::rules(), schema);
+```
+
+- `length(max = 50)` becomes `maxLength: 50`, `range(min = 18)` becomes `minimum: 18`, and `required` on an `Option` makes the field required and never `null`. The [module's documentation](https://docs.rs/annotated/latest/annotated/json_schema/) lists what each rule writes.
+- The schema never rejects a value the rules accept. Where no keyword says exactly what a rule requires, a looser one is written, or none.
+- The schema is JSON, so this works with any library that generates JSON Schema or OpenAPI 3.1, and annotated depends on none of them.
+- It covers the rules on a struct's fields. Enums, flattened fields and rules across fields are not written yet.
+- `Validate` and `Deserialize` both have `rules()`, since a type can derive either. `NewMember` derives both, so the call says which one it means.
 
 ## Learn more
 

@@ -14,7 +14,7 @@ categories = ["data-structures", "encoding", "rust-patterns"]
 default = ["serde"]
 serde = ["dep:serde"]
 json = ["serde", "dep:serde_json"]
-json-schema = ["annotated-derive/json-schema"]
+json-schema = ["dep:serde_json", "annotated-derive/json-schema"]
 regex = ["dep:regex", "annotated-derive/regex"]
 unicode = ["dep:unicode-segmentation"]
 
