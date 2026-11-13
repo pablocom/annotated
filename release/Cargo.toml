@@ -1,0 +1,13 @@
+[package]
+name = "annotated-release"
+description = "Writes the next release of annotated into the repository, from the commits since the last one"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true
