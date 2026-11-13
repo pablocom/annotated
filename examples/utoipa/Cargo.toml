@@ -1,0 +1,15 @@
+[package]
+name = "annotated-example-utoipa"
+description = "Writes annotated's rules into the schemas of an OpenAPI document that utoipa generates"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+annotated = { path = "../../crates/annotated", features = ["json-schema", "regex"] }
+serde_json = "1.0.154"
+utoipa = "6.0.0"
+
+[lints]
+workspace = true

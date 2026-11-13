@@ -150,6 +150,8 @@ annotated::json_schema::write_rules(&<NewMember as Validate>::rules(), schema);
 - It covers the rules on a struct's fields. Enums, flattened fields and rules across fields are not written yet.
 - `Validate` and `Deserialize` both have `rules()`, since a type can derive either. `NewMember` derives both, so the call says which one it means.
 
+[`examples/utoipa`](examples/utoipa) writes the rules into a document that utoipa generated.
+
 ## Learn more
 
 - The [API documentation](https://docs.rs/annotated) describes every rule, type and option.
