@@ -84,6 +84,8 @@ pub trait Rule<T: ?Sized> {
 }
 ```
 
+It can also say what it requires, as data, through `Rule::problem`. [Rules in a JSON Schema](#rules-in-a-json-schema) is built on that.
+
 Built-in rules are generic over small capability traits, not over concrete types:
 
 - `length` checks anything that has a length: `str`, `String`, `Cow<str>`, `Vec`, slices, sets, maps.
@@ -434,12 +436,96 @@ There is no crate for any framework. [`examples/axum`](examples/axum) shows a sh
 - It responds to a body that isn't JSON as axum's own `Json` does.
 - It responds to issues with 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body. The body's `errors` member lists each issue's JSON Pointer, code, params and message.
 
+## Rules in a JSON Schema
+
+An API's document says what a request must look like, and its rules are part of that: `length(max = 50)` on a field is `maxLength: 50` in its schema. With the `json-schema` feature, annotated writes a type's rules into the JSON Schema that a schema library generated for it.
+
+- **It generates no schema.** A schema library already knows a type's fields and their types. annotated adds what only the rules know.
+- **It depends on no schema library.** It writes into a schema held as JSON, a `serde_json::Map`. An OpenAPI 3.1 schema is a JSON Schema, and a library that generates one can turn it into JSON and read it back.
+- **It costs nothing unless asked for.** Without the feature, the derives generate exactly what they generate today.
+
+It is built in three layers, and each can be used without the next.
+
+### A rule says what it requires
+
+`Rule::problem` answers the problem that every value breaking the rule has, or `None` when the rule can't say:
+
+- **A built-in rule's problem describes the rule.** It holds the rule's parameters and never the value checked. `length().max(50)` answers a `Problem::Length` of at most 50, counted in `LengthUnit::Chars` for a `String` and in `LengthUnit::Elements` for a `Vec`.
+- **A rule with nothing to require answers `None`:** a `length` or a `range` with no bounds.
+- **`custom(f)` answers `None`**, which is the method's default. So does a rule of your own, until it implements `problem`.
+
+The method needs no feature, so a crate of rules can implement it without turning one on.
+
+### A type's rules, as data
+
+With the feature on, `Validate` and `Deserialize` each have a `rules()` function, and both derives implement it for a struct. It returns the type's `Rules`: one `FieldRules` for each field that has rules, in the order the fields are declared.
+
+- **`FieldRules`** holds the field's name, as serde reads it, whether the field takes a default when the input lacks it (`#[serde(default)]` on the field or on its struct), and the `ValueRules` of its value.
+- **`ValueRules`** holds what the rules require of one value:
+  - Whether the value is an `Option`. `required` then asks for a `Some`, and every other rule checks the value inside.
+  - The problem of each rule that says one, in the order the rules are written.
+  - The `ValueRules` of its elements, from `each(...)`. Several `each(...)` on a field are described together.
+
+What the data leaves out:
+
+- **A field whose rules don't check what the input holds.** A field read by a function (`deserialize_with`, `with`) has rules that check what the function returned, and a skipped field isn't in the input. Neither is listed.
+- **A flattened field**, for now. Its rules belong in its parent's schema.
+- **`nested`, `custom(...)`, a rule across fields and `message`.** A nested type has rules of its own, under its own `rules()`.
+- **Enums**, for now. `rules()` answers no fields for one.
+
+A type that implements `Validate` or `Deserialize` by hand answers no fields, unless it implements `rules()` too. The function is on both traits because a type can derive either. A type that derives both answers the same from each, and a call that could mean either says which: `<Member as Validate>::rules()`.
+
+**How the derive asks.** It calls `Rule::problem` on the rule it builds for each check, for the type that check is given: the field's type, the type inside its `Option`, or its element type as `HasElements` names it. So a rule over a capability trait answers for the right type, as `length` does. A rule that can't check that type is already a compile error where the field is checked, and so is `each(...)` on a value without elements. `rules()` asks through traits picked by autoref, which answer nothing in those cases, so the mistake is reported once.
+
+### Writing the rules into a schema
+
+`annotated::json_schema::write_rules(&rules, schema)` takes the JSON Schema of the type the rules belong to. For each field, it adds to the property of that name what the field's rules require.
+
+**The schema never rejects a value the rules accept.** Where no keyword says exactly what a rule requires, a looser one is written, or none.
+
+| Problem | Written on | Keywords |
+|---|---|---|
+| `Required` | an `Option` | `null` is removed from `type`, and from `oneOf` or `anyOf`. An alternative left alone there is written in their place |
+| | a string, an array, an object | `minLength: 1`, `minItems: 1`, `minProperties: 1` |
+| | a field without a default | Its name is added to the object's `required` |
+| `Length` in chars | a string | `minLength`, `maxLength` |
+| `Length` in elements | an array, an object | `minItems` and `maxItems`, `minProperties` and `maxProperties` |
+| `Length` in bytes | a string | `maxLength`, since a string has no more chars than bytes. `minLength` of a quarter of the shortest, rounded up, since a char takes up to four bytes |
+| `Length` in graphemes | a string | `minLength`, since a grapheme has one char or more. No `maxLength` |
+| `Range` | an integer, a number | `minimum`, `maximum`, when the bounds are numbers |
+| `Email` | a string | `format: email` |
+| `Url` | a string | `format: iri`, since the rule accepts international characters |
+| `Ipv4`, `Ipv6` | a string | `format: ipv4`, `format: ipv6` |
+| `Pattern` | a string | `pattern`, as written |
+| `Contains`, `Prefix`, `Suffix` | a string | `pattern`, with the text escaped, and anchored for a prefix or a suffix |
+
+- **"Written on" goes by the schema's own `type`.** A keyword is written only where the schema says the value is of the type that keyword constrains. So a `length` on a `Vec<u8>` that is documented as a base64 string writes nothing.
+- **Elements.** What `each(...)` requires is written the same way into `items` for an array, and into `additionalProperties` for an object, when that is a schema.
+- **A keyword already in the schema is never loosened.** A maximum keeps the smaller of the two values, and a minimum the larger. A `format` already there is kept. A schema has room for one `pattern`, so a second one goes into `allOf`.
+- **Nothing is written** for `Ip`, which no single format covers, for a problem of your own, for a field the schema has no property for, or for a property that is a `$ref`: the schema it refers to isn't followed, for now.
+- **Writing the same rules again changes nothing.**
+- **The keywords** are those of JSON Schema 2020-12, which OpenAPI 3.1 uses. OpenAPI 3.0's `nullable` isn't understood.
+
+Where a schema says something a little different from the rule:
+
+- **`pattern`** is copied as written. The rule reads it as the `regex` crate does, and a schema's reader as ECMA-262 says. The two differ at the edges: `\d` is any Unicode digit for the rule, and `0` to `9` in a schema.
+- **`format`** names a kind of string and leaves its details to the reader. annotated's email address is HTML's, not RFC 5321's, and its URL is narrower than an IRI: it has an authority and one of the accepted schemes.
+- **`required` on a type of your own** that implements `Required` writes the keyword above when the type's schema is a string, an array or an object, whatever the type counts as present.
+
+### Using it from a schema library
+
+There is no crate for any schema library. [`examples/utoipa`](examples/utoipa) shows a short function instead:
+
+- It finds the schema utoipa generated for a type, among the document's components.
+- It turns that schema into JSON, writes the type's rules into it, and reads it back.
+- Each type is named once, where the document is built. With utoipa-axum, that is after the routes have added their schemas.
+
 ## Crates and features
 
 | Crate | What it holds | Depends on |
 |---|---|---|
 | `annotated` | The `Validate` trait, issues, problems and paths, the built-in rules, and collecting deserialization | `annotated-derive`, which it re-exports, and the optional dependencies its features add |
-| `annotated-derive` | The `Validate` and `Deserialize` derive macros. Derive macros have to live in a crate of their own | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex-syntax`, to check patterns at compile time |
+| `annotated-derive` | The `Validate` and `Deserialize` derive macros. Derive macros have to live in a crate of their own | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex-syntax`, to check patterns at compile time. Its `json-schema` feature makes the derives implement `rules()` |
 
 | Feature of `annotated` | Dependency it adds | What it enables |
 |---|---|---|
@@ -447,6 +533,7 @@ There is no crate for any framework. [`examples/axum`](examples/axum) shows a sh
 | `json` | `serde_json` | `annotated::json`. It turns on `serde` too |
 | `regex` | `regex` | The `pattern` rule |
 | `unicode` | `unicode-segmentation` | `length` counted in graphemes |
+| `json-schema` | `serde_json` | `rules()` on both traits and in both derives, `Rules`, and `annotated::json_schema` |
 
 ## Tests
 
