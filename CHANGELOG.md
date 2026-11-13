@@ -4,6 +4,8 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Added
 
 - `Rule::problem`: a rule says what it requires, as the problem that every value breaking it has.
@@ -166,6 +168,7 @@ This file lists every change that users of the crates can notice. The format fol
 - The `json` feature, which adds `serde_json` and turns on `serde`. `annotated::json::from_str` and `from_slice` read a JSON document and collect every issue in it. Like `serde_json`, they reject characters after the value, and that error comes before any issue. `from_str_fail_fast` and `from_slice_fail_fast` return only the first issue.
 - `examples/axum`, an axum extractor to copy into your app. It reads a JSON body with `annotated::json::from_slice`, and rejects a request it can't read the way axum's `Json` does. It responds to issues with 422 and RFC 9457 problem details, which list each issue's JSON Pointer, code, params and message.
 
-[Unreleased]: https://github.com/pablocom/annotated/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/pablocom/annotated/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/pablocom/annotated/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/pablocom/annotated/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/pablocom/annotated/releases/tag/v0.1.0
