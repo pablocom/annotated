@@ -40,6 +40,12 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for Pattern {
             pattern: self.regex.as_str(),
         })
     }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(Problem::Pattern {
+            pattern: self.regex.as_str(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -50,6 +56,14 @@ mod tests {
 
     static POSTAL_CODE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{5}$").unwrap());
     static DIGIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d").unwrap());
+
+    #[test]
+    fn pattern_says_the_expression_a_string_must_match() {
+        assert_eq!(
+            Rule::<str>::problem(&pattern(&POSTAL_CODE)),
+            Some(Problem::Pattern { pattern: r"^\d{5}$" })
+        );
+    }
 
     #[test]
     fn a_string_matching_the_expression_follows_the_rule() {

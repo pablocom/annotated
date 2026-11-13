@@ -37,6 +37,10 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for Email {
         }
         Err(Problem::Email)
     }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(Problem::Email)
+    }
 }
 
 fn is_email_address(address: &str) -> bool {
@@ -66,6 +70,11 @@ fn is_label(label: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn email_says_that_a_string_must_be_an_email_address() {
+        assert_eq!(Rule::<str>::problem(&email()), Some(Problem::Email));
+    }
 
     #[test]
     fn an_email_address_follows_the_rule() {

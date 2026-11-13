@@ -66,6 +66,10 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for Url {
         }
         Err(Problem::Url { schemes: self.schemes })
     }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(Problem::Url { schemes: self.schemes })
+    }
 }
 
 /// The scheme of `text` when the whole of it is `scheme "://" authority path-abempty [ "?" iquery ] [ "#"
@@ -284,6 +288,14 @@ fn is_iprivate(character: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn url_says_the_schemes_it_accepts() {
+        assert_eq!(
+            Rule::<str>::problem(&url().schemes(&["https"])),
+            Some(Problem::Url { schemes: &["https"] })
+        );
+    }
 
     fn not_a_url() -> Result<(), Problem> {
         Err(Problem::Url {

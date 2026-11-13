@@ -63,11 +63,37 @@ impl<T: PartialOrd + Display + 'static> Rule<T> for Range<T> {
         .expect("a value out of range has bounds");
         Err(Problem::Range { bounds })
     }
+
+    fn problem(&self) -> Option<Problem> {
+        let bounds = Bounds::of(
+            self.min.as_ref().map(ParamValue::number_or_text),
+            self.max.as_ref().map(ParamValue::number_or_text),
+        )?;
+        Some(Problem::Range { bounds })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn range_says_its_bounds() {
+        assert_eq!(
+            range().min(18).max(120).problem(),
+            Some(Problem::Range {
+                bounds: Bounds::Between {
+                    min: ParamValue::Integer(18),
+                    max: ParamValue::Integer(120)
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn range_without_bounds_says_nothing() {
+        assert_eq!(range::<u8>().problem(), None);
+    }
 
     fn out_of_range(bounds: Bounds<ParamValue>) -> Result<(), Problem> {
         Err(Problem::Range { bounds })

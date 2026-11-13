@@ -134,6 +134,11 @@ impl LengthBounds {
     fn is_too_long(self, length: usize) -> bool {
         self.max.is_some_and(|max| length > max)
     }
+
+    fn problem(self, unit: LengthUnit) -> Option<Problem> {
+        let bounds = Bounds::of(self.min, self.max)?;
+        Some(Problem::Length { bounds, unit })
+    }
 }
 
 impl Length {
@@ -217,6 +222,10 @@ impl<T: HasLength + ?Sized> Rule<T> for Length {
     fn check(&self, value: &T) -> Result<(), Problem> {
         self.bounds.check(value.possible_lengths(), || value.length(), T::UNIT)
     }
+
+    fn problem(&self) -> Option<Problem> {
+        self.bounds.problem(T::UNIT)
+    }
 }
 
 #[diagnostic::do_not_recommend]
@@ -231,6 +240,10 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for StringLength {
             || self.unit.count(text),
             self.unit.length_unit(),
         )
+    }
+
+    fn problem(&self) -> Option<Problem> {
+        self.bounds.problem(self.unit.length_unit())
     }
 }
 
@@ -348,6 +361,50 @@ impl<T: HasLength + ToOwned + ?Sized> HasLength for Cow<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn length_says_its_bounds_and_that_a_string_is_counted_in_chars() {
+        assert_eq!(
+            Rule::<str>::problem(&length().min(1).max(50)),
+            Some(Problem::Length {
+                bounds: Bounds::Between { min: 1, max: 50 },
+                unit: LengthUnit::Chars
+            })
+        );
+    }
+
+    #[test]
+    fn length_says_that_a_collection_is_counted_in_elements() {
+        assert_eq!(
+            Rule::<Vec<u8>>::problem(&length().max(3)),
+            Some(Problem::Length {
+                bounds: Bounds::AtMost(3),
+                unit: LengthUnit::Elements
+            })
+        );
+    }
+
+    #[test]
+    fn length_in_a_chosen_unit_says_that_unit() {
+        assert_eq!(
+            Rule::<str>::problem(&length().min(2).in_bytes()),
+            Some(Problem::Length {
+                bounds: Bounds::AtLeast(2),
+                unit: LengthUnit::Bytes
+            })
+        );
+    }
+
+    #[test]
+    fn length_without_bounds_says_nothing() {
+        assert_eq!(
+            (
+                Rule::<str>::problem(&length()),
+                Rule::<str>::problem(&length().in_bytes())
+            ),
+            (None, None)
+        );
+    }
 
     #[test]
     fn a_string_is_counted_in_chars() {

@@ -89,11 +89,27 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for Ip {
         }
         Err(self.version.problem())
     }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(self.version.problem())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_ip_rule_says_the_version_a_string_must_be_an_address_of() {
+        assert_eq!(
+            (
+                Rule::<str>::problem(&ip()),
+                Rule::<str>::problem(&ipv4()),
+                Rule::<str>::problem(&ipv6())
+            ),
+            (Some(Problem::Ip), Some(Problem::Ipv4), Some(Problem::Ipv6))
+        );
+    }
 
     #[test]
     fn an_ipv4_address_follows_the_rule() {

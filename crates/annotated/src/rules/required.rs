@@ -26,6 +26,10 @@ impl<T: Required + ?Sized> Rule<T> for Presence {
         }
         Err(Problem::Required)
     }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(Problem::Required)
+    }
 }
 
 /// A value that can be present or absent, which lets [`required`] check it.
@@ -140,6 +144,11 @@ impl<T: Required + ToOwned + ?Sized> Required for Cow<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn required_says_that_a_value_must_be_present() {
+        assert_eq!(Rule::<str>::problem(&required()), Some(Problem::Required));
+    }
 
     #[test]
     fn a_string_with_text_is_present() {

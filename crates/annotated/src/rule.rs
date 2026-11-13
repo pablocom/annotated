@@ -22,4 +22,42 @@ pub trait Rule<T: ?Sized> {
     ///
     /// Returns the [`Problem`] with `value`, when it breaks this rule.
     fn check(&self, value: &T) -> Result<(), Problem>;
+
+    /// The problem that every value breaking this rule has. It says what the rule requires, as data.
+    ///
+    /// `length().max(50)` answers, for a string, a [`Problem::Length`] of at most 50 `char`s. The problems of the
+    /// built-in rules hold the rule's parameters and never the value checked, so each describes its rule.
+    ///
+    /// It answers `None` by default. That suits a rule that can't say what it requires, like `custom(...)`, and a
+    /// rule whose problem depends on the value it checked.
+    ///
+    /// ```
+    /// use annotated::{Problem, Rule, rules};
+    ///
+    /// assert_eq!(Rule::<str>::problem(&rules::email()), Some(Problem::Email));
+    /// ```
+    fn problem(&self) -> Option<Problem> {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Even;
+
+    impl Rule<u32> for Even {
+        fn check(&self, value: &u32) -> Result<(), Problem> {
+            if value.is_multiple_of(2) {
+                return Ok(());
+            }
+            Err(Problem::custom("even", "must be even"))
+        }
+    }
+
+    #[test]
+    fn a_rule_that_does_not_say_what_it_requires_has_no_problem_of_its_own() {
+        assert_eq!(Even.problem(), None);
+    }
 }

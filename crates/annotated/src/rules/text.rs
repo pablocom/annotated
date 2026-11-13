@@ -62,6 +62,10 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for Contains {
         }
         Err(Problem::Contains { text: self.text })
     }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(Problem::Contains { text: self.text })
+    }
 }
 
 #[diagnostic::do_not_recommend]
@@ -71,6 +75,10 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for Prefix {
             return Ok(());
         }
         Err(Problem::Prefix { prefix: self.prefix })
+    }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(Problem::Prefix { prefix: self.prefix })
     }
 }
 
@@ -82,11 +90,39 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for Suffix {
         }
         Err(Problem::Suffix { suffix: self.suffix })
     }
+
+    fn problem(&self) -> Option<Problem> {
+        Some(Problem::Suffix { suffix: self.suffix })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contains_says_the_text_a_string_must_contain() {
+        assert_eq!(
+            Rule::<str>::problem(&contains("@")),
+            Some(Problem::Contains { text: "@" })
+        );
+    }
+
+    #[test]
+    fn prefix_says_the_text_a_string_must_start_with() {
+        assert_eq!(
+            Rule::<str>::problem(&prefix("https://")),
+            Some(Problem::Prefix { prefix: "https://" })
+        );
+    }
+
+    #[test]
+    fn suffix_says_the_text_a_string_must_end_with() {
+        assert_eq!(
+            Rule::<str>::problem(&suffix(".png")),
+            Some(Problem::Suffix { suffix: ".png" })
+        );
+    }
 
     #[test]
     fn a_string_containing_the_text_follows_the_rule() {
