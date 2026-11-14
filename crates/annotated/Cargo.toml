@@ -1,14 +1,14 @@
 [package]
 name = "annotated"
-description = "Validation for structs that works with serde: every broken rule and missing field in one error"
+description = "Declarative validation for structs and enums, like data annotations, that works with serde: every broken rule and missing field in one error"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "../../README.md"
-keywords = ["validation", "validate", "serde", "derive", "annotations"]
-categories = ["data-structures", "encoding", "rust-patterns"]
+keywords = ["validation", "validator", "data-annotations", "serde", "derive"]
+categories = ["encoding", "web-programming", "rust-patterns"]
 
 [features]
 default = ["serde"]

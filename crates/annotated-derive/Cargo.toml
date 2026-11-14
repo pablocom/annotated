@@ -7,8 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "../../README.md"
-keywords = ["validation", "validate", "serde", "derive", "annotations"]
-categories = ["data-structures", "encoding", "rust-patterns"]
+keywords = ["validation", "serde", "derive"]
+categories = ["encoding", "web-programming", "rust-patterns"]
 
 [lib]
 proc-macro = true
