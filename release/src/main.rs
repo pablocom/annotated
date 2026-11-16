@@ -1,4 +1,4 @@
-//! Writes the next release of annotated into the repository it runs in, and prints its version.
+//! Writes the next release of annotated, and of each crate released on its own, into the repository it runs in.
 //!
 //! CI runs it at the root of the repository once a push to `main` passes its checks, with the day of the release:
 //!
@@ -6,45 +6,34 @@
 //! cargo run --package annotated-release -- 2026-11-13
 //! ```
 //!
-//! The commits since the last release that change the crates' code decide the version, as Semantic Versioning
-//! asks. When there are none, it writes nothing and prints nothing.
+//! annotated's two crates share the version in the workspace manifest, and their releases are tagged `v1.2.3`. Every
+//! other crate in `crates/` has a version of its own in its manifest, and its releases are tagged with its name:
+//! `annotated-utoipa-v1.2.3`. For each of them, the commits since its last release that change its code decide the
+//! next version, as Semantic Versioning asks.
+//!
+//! It prints a line for each release to publish: its tag, the changelog holding its notes, and its crates. When it
+//! writes no release and none is left unpublished, it prints nothing.
 
 mod change;
 mod changelog;
-mod commits;
 mod day;
+mod git;
+mod releasable;
 mod version;
 
+use std::env;
 use std::process::ExitCode;
-use std::{env, fs};
 
-use change::Change;
-use changelog::Changelog;
 use day::Day;
-use version::Version;
-
-const WORKSPACE_MANIFEST: &str = "Cargo.toml";
-const CHANGELOG: &str = "CHANGELOG.md";
-
-const TEXTS_NAMING_THE_VERSION: [(&str, &str); 6] = [
-    (WORKSPACE_MANIFEST, "version = \"{version}\""),
-    (
-        "crates/annotated/Cargo.toml",
-        "annotated-derive = { version = \"={version}\"",
-    ),
-    ("Cargo.lock", "name = \"annotated\"\nversion = \"{version}\""),
-    ("Cargo.lock", "name = \"annotated-derive\"\nversion = \"{version}\""),
-    ("benchmarks/Cargo.lock", "name = \"annotated\"\nversion = \"{version}\""),
-    (
-        "benchmarks/Cargo.lock",
-        "name = \"annotated-derive\"\nversion = \"{version}\"",
-    ),
-];
+use releasable::{Annotated, Releasable, Release};
 
 fn main() -> ExitCode {
-    match write_next_release() {
-        Ok(Some(version)) => println!("{version}"),
-        Ok(None) => {}
+    match write_next_releases() {
+        Ok(releases) => {
+            for release in releases {
+                println!("{release}");
+            }
+        }
         Err(reason) => {
             eprintln!("error: {reason}");
             return ExitCode::FAILURE;
@@ -53,17 +42,20 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn write_next_release() -> Result<Option<Version>, String> {
+fn write_next_releases() -> Result<Vec<Release>, String> {
     let day = day_of_the_release()?;
-    let released = released_version()?;
-    let Some(largest_change) = commits::changes_to_the_crates_since(released)?.into_iter().max() else {
-        return Ok(None);
+    let annotated = Releasable::annotated();
+    let annotated_release = annotated.next_release(&day, None)?;
+    let annotated_as_released = Annotated {
+        version: annotated.version()?,
+        has_a_breaking_release: annotated_release.as_ref().is_some_and(Release::is_breaking),
     };
-    let next = released.after(largest_change);
 
-    release_the_unreleased_changes(next, &day, released, largest_change)?;
-    write_the_version(next, released)?;
-    Ok(Some(next))
+    let mut releases = Vec::from_iter(annotated_release);
+    for releasable in Releasable::released_on_their_own()? {
+        releases.extend(releasable.next_release(&day, Some(&annotated_as_released))?);
+    }
+    Ok(releases)
 }
 
 fn day_of_the_release() -> Result<Day, String> {
@@ -71,59 +63,4 @@ fn day_of_the_release() -> Result<Day, String> {
         .nth(1)
         .ok_or("expected the day of the release, such as `annotated-release 2026-11-13`")?;
     day.parse()
-}
-
-fn released_version() -> Result<Version, String> {
-    let manifest = read(WORKSPACE_MANIFEST)?;
-    let version = manifest
-        .lines()
-        .find_map(|line| line.strip_prefix("version = \"")?.strip_suffix('"'))
-        .ok_or_else(|| format!("{WORKSPACE_MANIFEST}: expected a line `version = \"…\"`"))?;
-    version
-        .parse()
-        .map_err(|reason| format!("{WORKSPACE_MANIFEST}: {reason}"))
-}
-
-fn release_the_unreleased_changes(
-    version: Version,
-    day: &Day,
-    released: Version,
-    largest_change: Change,
-) -> Result<(), String> {
-    let text = read(CHANGELOG)?;
-    let changelog = Changelog::parse(&text, released).map_err(|reason| format!("{CHANGELOG}: {reason}"))?;
-    if largest_change.is_noticed_by_users() && !changelog.lists_unreleased_changes() {
-        return Err(format!(
-            "{CHANGELOG} lists nothing under Unreleased, and users can notice a commit since v{released}"
-        ));
-    }
-    let released_changes = changelog
-        .with_unreleased_changes_released(version, day)
-        .map_err(|reason| format!("{CHANGELOG}: {reason}"))?;
-    write(CHANGELOG, &released_changes)
-}
-
-fn write_the_version(version: Version, released: Version) -> Result<(), String> {
-    for (path, text) in TEXTS_NAMING_THE_VERSION {
-        let naming = |version: Version| text.replace("{version}", &version.to_string());
-        let contents = replacing_the_only(&read(path)?, &naming(released), &naming(version))
-            .map_err(|reason| format!("{path}: {reason}"))?;
-        write(path, &contents)?;
-    }
-    Ok(())
-}
-
-fn replacing_the_only(contents: &str, text: &str, replacement: &str) -> Result<String, String> {
-    if contents.matches(text).count() != 1 {
-        return Err(format!("expected `{text}` once"));
-    }
-    Ok(contents.replacen(text, replacement, 1))
-}
-
-fn read(path: &str) -> Result<String, String> {
-    fs::read_to_string(path).map_err(|error| format!("{path} can't be read: {error}"))
-}
-
-fn write(path: &str, contents: &str) -> Result<(), String> {
-    fs::write(path, contents).map_err(|error| format!("{path} can't be written: {error}"))
 }

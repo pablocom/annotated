@@ -9,7 +9,7 @@ fn before_1_0_a_fix_releases_the_next_patch_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("0.2.1".to_owned()));
+    assert_eq!(release, Ok("v0.2.1 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -19,7 +19,7 @@ fn before_1_0_a_feature_releases_the_next_patch_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("0.2.1".to_owned()));
+    assert_eq!(release, Ok("v0.2.1 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn before_1_0_a_breaking_change_releases_the_next_minor_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("0.3.0".to_owned()));
+    assert_eq!(release, Ok("v0.3.0 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn from_1_0_a_fix_releases_the_next_patch_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("1.4.3".to_owned()));
+    assert_eq!(release, Ok("v1.4.3 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn from_1_0_a_feature_releases_the_next_minor_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("1.5.0".to_owned()));
+    assert_eq!(release, Ok("v1.5.0 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn from_1_0_a_breaking_change_releases_the_next_major_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("2.0.0".to_owned()));
+    assert_eq!(release, Ok("v2.0.0 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn a_breaking_change_footer_makes_its_commit_a_breaking_change() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("2.0.0".to_owned()));
+    assert_eq!(release, Ok("v2.0.0 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn the_largest_change_since_the_last_release_decides_the_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("1.5.0".to_owned()));
+    assert_eq!(release, Ok("v1.5.0 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -93,5 +93,5 @@ fn a_commit_of_any_other_type_releases_the_next_patch_version() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("1.4.3".to_owned()));
+    assert_eq!(release, Ok("v1.4.3 CHANGELOG.md annotated annotated-derive".to_owned()));
 }

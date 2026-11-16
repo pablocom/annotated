@@ -1,5 +1,5 @@
-//! A commit is released when it changes the crates' code: `crates/` or the workspace manifest, unless it is
-//! documentation.
+//! A commit releases annotated when it changes annotated's code: its two crates or the workspace manifest, unless it
+//! is documentation.
 
 use crate::support::Repository;
 
@@ -36,7 +36,7 @@ fn a_commit_that_changes_the_workspace_manifest_is_released() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("0.2.1".to_owned()));
+    assert_eq!(release, Ok("v0.2.1 CHANGELOG.md annotated annotated-derive".to_owned()));
 }
 
 #[test]
@@ -53,5 +53,5 @@ fn documentation_is_released_with_the_next_change_to_the_code() {
 
     let release = repository.write_next_release();
 
-    assert_eq!(release, Ok("0.2.1".to_owned()));
+    assert_eq!(release, Ok("v0.2.1 CHANGELOG.md annotated annotated-derive".to_owned()));
 }

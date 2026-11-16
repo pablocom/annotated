@@ -9,10 +9,17 @@ pub struct Changelog<'a> {
     unreleased_changes: &'a str,
     released_versions: &'a str,
     released: Version,
+    tag_prefix: &'a str,
+}
+
+/// Whether `text`, a changelog, has the section of `version`.
+pub fn has_section_for(text: &str, version: Version) -> bool {
+    text.contains(&format!("\n## [{version}]"))
 }
 
 impl<'a> Changelog<'a> {
-    pub fn parse(text: &'a str, released: Version) -> Result<Self, String> {
+    /// The changelog in `text`, of crates whose last release is `released`, tagged `{tag_prefix}{released}`.
+    pub fn parse(text: &'a str, released: Version, tag_prefix: &'a str) -> Result<Self, String> {
         let (introduction, sections) = text
             .split_once(UNRELEASED_HEADING)
             .ok_or("expected a `## [Unreleased]` section")?;
@@ -27,6 +34,7 @@ impl<'a> Changelog<'a> {
             unreleased_changes,
             released_versions,
             released,
+            tag_prefix,
         })
     }
 
@@ -48,8 +56,9 @@ impl<'a> Changelog<'a> {
     }
 
     fn released_versions_linking(&self, version: Version) -> Result<String, String> {
-        let released = self.released;
-        let compared_with_head = format!("/compare/v{released}...HEAD");
+        let released_tag = format!("{}{}", self.tag_prefix, self.released);
+        let next_tag = format!("{}{version}", self.tag_prefix);
+        let compared_with_head = format!("/compare/{released_tag}...HEAD");
         let repository = self
             .released_versions
             .lines()
@@ -57,7 +66,7 @@ impl<'a> Changelog<'a> {
             .ok_or_else(|| format!("expected a link `[Unreleased]: …{compared_with_head}`"))?;
         let unreleased_link = format!("[Unreleased]: {repository}{compared_with_head}");
         let links = format!(
-            "[Unreleased]: {repository}/compare/v{version}...HEAD\n[{version}]: {repository}/compare/v{released}...v{version}"
+            "[Unreleased]: {repository}/compare/{next_tag}...HEAD\n[{version}]: {repository}/compare/{released_tag}...{next_tag}"
         );
         Ok(self.released_versions.replacen(&unreleased_link, &links, 1))
     }

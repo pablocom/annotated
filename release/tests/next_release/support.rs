@@ -8,12 +8,14 @@ const DAY_OF_THE_RELEASE: &str = "2026-11-13";
 
 pub struct Repository {
     directory: TempDir,
+    annotated_version: String,
 }
 
 impl Repository {
     pub fn released(version: &str) -> Self {
         let repository = Self {
             directory: TempDir::new().expect("a temporary directory is created"),
+            annotated_version: version.to_owned(),
         };
         repository.git(&["init", "--quiet", "--initial-branch=main"]);
         repository.write("Cargo.toml", &format!("[workspace.package]\nversion = \"{version}\"\n"));
@@ -32,20 +34,65 @@ impl Repository {
         repository
     }
 
+    /// A crate in `crates/` with a version of its own, released at `version` and tagged `{name}-v{version}`.
+    pub fn release_on_its_own(&self, name: &str, version: &str) {
+        self.add_on_its_own(name, version);
+        self.commit(&format!("chore(repo): release {name}-v{version}"));
+        self.git(&["tag", &format!("{name}-v{version}")]);
+    }
+
+    /// A crate in `crates/` with a version of its own, that has never been released.
+    pub fn add_on_its_own(&self, name: &str, version: &str) {
+        let annotated_version = &self.annotated_version;
+        self.write(
+            &format!("crates/{name}/Cargo.toml"),
+            &format!(
+                "[package]\nname = \"{name}\"\nversion = \"{version}\"\n\n[dependencies]\nannotated = {{ version = \"{annotated_version}\", path = \"../annotated\" }}\n"
+            ),
+        );
+        self.write(&format!("crates/{name}/src/lib.rs"), "");
+        self.write(
+            &format!("crates/{name}/CHANGELOG.md"),
+            &changelog_tagged(version, &format!("{name}-v")),
+        );
+        let lock_file = self.read("Cargo.lock");
+        self.write(
+            "Cargo.lock",
+            &format!("{lock_file}\n[[package]]\nname = \"{name}\"\nversion = \"{version}\"\n"),
+        );
+    }
+
     /// A commit to the crates' code that says what users can notice under Unreleased, as every such commit has to.
     pub fn commit_to_the_crates(&self, message: &str) {
         self.commit_noting("### Changed\n\n- A change that users can notice.", message);
     }
 
     pub fn commit_noting(&self, unreleased_changes: &str, message: &str) {
-        let changelog = self.read("CHANGELOG.md");
-        let noted = changelog.replacen(
+        self.note_unreleased_changes("CHANGELOG.md", unreleased_changes);
+        self.commit_changing(CODE_OF_THE_CRATES, message);
+    }
+
+    /// A commit to the code of the crate `name`, released on its own, that says what users can notice in its changelog.
+    pub fn commit_to_the_crate(&self, name: &str, message: &str) {
+        self.note_unreleased_changes(
+            &format!("crates/{name}/CHANGELOG.md"),
+            "### Changed\n\n- A change that users can notice.",
+        );
+        self.commit_changing(&format!("crates/{name}/src/lib.rs"), message);
+    }
+
+    pub fn note_unreleased_changes(&self, changelog: &str, unreleased_changes: &str) {
+        let noted = self.read(changelog).replacen(
             "## [Unreleased]\n",
             &format!("## [Unreleased]\n\n{unreleased_changes}\n"),
             1,
         );
-        self.write("CHANGELOG.md", &noted);
-        self.commit_changing(CODE_OF_THE_CRATES, message);
+        self.write(changelog, &noted);
+    }
+
+    /// Commits what a release wrote, as CI does, without the tag that publishing it would add.
+    pub fn commit_the_release_without_publishing_it(&self) {
+        self.commit("chore(repo): release");
     }
 
     pub fn commit_changing(&self, path: &str, message: &str) {
@@ -134,6 +181,10 @@ version = \"{version}\"
 }
 
 fn changelog(version: &str) -> String {
+    changelog_tagged(version, "v")
+}
+
+fn changelog_tagged(version: &str, tag_prefix: &str) -> String {
     format!(
         "\
 # Changelog
@@ -142,8 +193,8 @@ fn changelog(version: &str) -> String {
 
 ## [{version}] - 2026-11-12
 
-[Unreleased]: https://github.com/pablocom/annotated/compare/v{version}...HEAD
-[{version}]: https://github.com/pablocom/annotated/releases/tag/v{version}
+[Unreleased]: https://github.com/pablocom/annotated/compare/{tag_prefix}{version}...HEAD
+[{version}]: https://github.com/pablocom/annotated/releases/tag/{tag_prefix}{version}
 "
     )
 }

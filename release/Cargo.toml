@@ -1,6 +1,6 @@
 [package]
 name = "annotated-release"
-description = "Writes the next release of annotated into the repository, from the commits since the last one"
+description = "Writes the next release of annotated, and of each crate released on its own, from the commits since the last one"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

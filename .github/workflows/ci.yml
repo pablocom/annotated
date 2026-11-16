@@ -77,50 +77,68 @@ jobs:
           # The commits since the tag of the last release decide the next version.
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - name: Write the release commit, unless this commit is one
+      - name: Write the next releases
         run: |
-          version=$(cargo metadata --no-deps --format-version 1 | jq --raw-output '.packages[] | select(.name == "annotated") | .version')
-          if ! git ls-remote --exit-code --tags origin "refs/tags/v$version"; then
-            echo "TAG=v$version" >> "$GITHUB_ENV"
-            exit
-          fi
           if [ "$(git ls-remote origin refs/heads/main | cut --fields=1)" != "$GITHUB_SHA" ]; then
             echo "::notice::main has moved on from this commit, so the run of its newest commit releases"
             exit
           fi
-          next_version=$(cargo run --quiet --package annotated-release -- "$(date --utc +%F)")
-          if [ -z "$next_version" ]; then
-            echo "::notice::No commit since v$version changes the crates' code, so there is nothing to release"
+          releases="$RUNNER_TEMP/releases"
+          cargo run --quiet --package annotated-release -- "$(date --utc +%F)" > "$releases"
+          if [ ! -s "$releases" ]; then
+            echo "::notice::No commit since the last releases changes the crates' code, so there is nothing to release"
             exit
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --all --message "chore(repo): release $next_version"
-          git push origin HEAD:main
-          echo "TAG=v$next_version" >> "$GITHUB_ENV"
-      # Read before publishing, so a version without its changelog section never reaches crates.io.
-      - name: Read the version's changelog section
-        if: env.TAG
-        run: |
-          version="${TAG#v}"
-          awk -v heading="## [$version]" '
-            index($0, heading) == 1 { is_in_section = 1; next }
-            is_in_section && (/^## \[/ || /^\[[^]]+\]: /) { exit }
-            is_in_section { print }
-          ' CHANGELOG.md > release-notes.md
-          if ! grep -q '[^[:space:]]' release-notes.md; then
-            echo "::error::CHANGELOG.md has no section for $version"
-            exit 1
+          # A release that an earlier run wrote and left unpublished is named again, and writes nothing.
+          if ! git diff --quiet; then
+            tags=$(cut --delimiter=' ' --fields=1 "$releases")
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --all --message "chore(repo): release ${tags//$'\n'/, }"
+            git push origin HEAD:main
           fi
+          echo "RELEASES=$releases" >> "$GITHUB_ENV"
+      # Read before publishing, so a version without its changelog section never reaches crates.io.
+      - name: Read the changelog section of each release
+        if: env.RELEASES
+        run: |
+          while read -r tag changelog _ <&3; do
+            version="${tag##*v}"
+            awk -v heading="## [$version]" '
+              index($0, heading) == 1 { is_in_section = 1; next }
+              is_in_section && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+              is_in_section { print }
+            ' "$changelog" > "$RUNNER_TEMP/$tag.md"
+            if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/$tag.md"; then
+              echo "::error::$changelog has no section for $version"
+              exit 1
+            fi
+          done 3< "$RELEASES"
       - uses: rust-lang/crates-io-auth-action@v1
-        if: env.TAG
+        if: env.RELEASES
         id: auth
-      - run: cargo publish --workspace
-        if: env.TAG
+      - name: Publish the crates of each release
+        if: env.RELEASES
+        run: |
+          packages=()
+          while read -r _ _ crates <&3; do
+            for crate in $crates; do
+              packages+=(--package "$crate")
+            done
+          done 3< "$RELEASES"
+          cargo publish "${packages[@]}"
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - name: Create the GitHub release and its tag
-        if: env.TAG
-        run: gh release create "$TAG" --target "$(git rev-parse HEAD)" --title "$TAG" --notes-file release-notes.md
+      - name: Create the GitHub release and tag of each release
+        if: env.RELEASES
+        run: |
+          while read -r tag _ <&3; do
+            # annotated's releases, tagged v1.2.3, are the repository's latest. A crate released on its own never is.
+            is_annotated=false
+            if [[ "$tag" == v* ]]; then
+              is_annotated=true
+            fi
+            gh release create "$tag" --target "$(git rev-parse HEAD)" --title "$tag" --notes-file "$RUNNER_TEMP/$tag.md" --latest="$is_annotated"
+          done 3< "$RELEASES"
         env:
           GH_TOKEN: ${{ github.token }}
