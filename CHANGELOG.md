@@ -4,6 +4,10 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+### Changed
+
+- `json_schema::write_rules` returns each rule it couldn't write, as a `json_schema::UnwrittenRule`, where it returned nothing. Each has the JSON Pointer where its keyword belongs, its problem, and a `json_schema::Reason`: no subschema there, a `$ref`, a subschema of another type, or no keyword that says what the rule requires. Before, those rules were left out without a word. The function is `#[must_use]`, so a call that ignores the rules returned now warns.
+
 ### Fixed
 
 - `json_schema::write_rules` finds a field's property among the `properties` of the schema's `allOf` members too, at any depth. utoipa documents a struct with a flattened field as `allOf`, so none of its fields got their rules before.

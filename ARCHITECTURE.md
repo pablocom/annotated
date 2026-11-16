@@ -503,6 +503,7 @@ A type that implements `Validate` or `Deserialize` by hand answers no fields, un
 - **Elements.** What `each(...)` requires is written the same way into `items` for an array, and into `additionalProperties` for an object, when that is a schema.
 - **A keyword already in the schema is never loosened.** A maximum keeps the smaller of the two values, and a minimum the larger. A `format` already there is kept. A schema has room for one `pattern`, so a second one goes into `allOf`.
 - **Nothing is written** for `Ip`, which no single format covers, for a problem of your own, for a field the schema has no property for, or for a property that is a `$ref`: the schema it refers to isn't followed, for now.
+- **What isn't written is returned.** `write_rules` returns an `UnwrittenRule` for each problem it couldn't write: the JSON Pointer where its keyword belongs, the problem, and a `Reason`. `NoSchema` when there is no subschema there, `Reference` for a `$ref`, `OtherType` when the subschema isn't of a type the rule constrains, `NoKeyword` when no keyword says what the rule requires, as for `Ip` or a `length` in graphemes with only a maximum. Which of them a document can do without is the caller's choice: annotated never panics or logs for it.
 - **Writing the same rules again changes nothing.**
 - **The keywords** are those of JSON Schema 2020-12, which OpenAPI 3.1 uses. OpenAPI 3.0's `nullable` isn't understood.
 
@@ -517,7 +518,7 @@ Where a schema says something a little different from the rule:
 There is no crate for any schema library. [`examples/utoipa`](examples/utoipa) shows a short function instead:
 
 - It finds the schema utoipa generated for a type, among the document's components.
-- It turns that schema into JSON, writes the type's rules into it, and reads it back.
+- It turns that schema into JSON, writes the type's rules into it, and reads it back. It returns the rules it couldn't write, and the example's app panics on any.
 - Each type is named once, where the document is built. With utoipa-axum, that is after the routes have added their schemas.
 
 ## Crates and features

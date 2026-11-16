@@ -36,8 +36,12 @@ struct RulesInTheSchemas;
 
 impl Modify for RulesInTheSchemas {
     fn modify(&self, document: &mut Document) {
-        write_rules_of::<NewMember>(document);
-        write_rules_of::<Address>(document);
+        let mut unwritten = write_rules_of::<NewMember>(document);
+        unwritten.extend(write_rules_of::<Address>(document));
+        // An app decides which rules its document can do without. This one does without none.
+        if let Some(rule) = unwritten.first() {
+            panic!("the document misses a rule: {rule}");
+        }
     }
 }
 

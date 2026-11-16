@@ -140,11 +140,12 @@ There is no crate for any framework. [`examples/axum`](examples/axum) is an axum
 A schema library documents a type's fields, and knows nothing of its rules. With the `json-schema` feature, annotated writes them into the schema that library generated:
 
 ```rust
-annotated::json_schema::write_rules(&<NewMember as Validate>::rules(), schema);
+let unwritten = annotated::json_schema::write_rules(&<NewMember as Validate>::rules(), schema);
 ```
 
 - `length(max = 50)` becomes `maxLength: 50`, `range(min = 18)` becomes `minimum: 18`, and `required` on an `Option` makes the field required and never `null`. The [module's documentation](https://docs.rs/annotated/latest/annotated/json_schema/) lists what each rule writes.
 - The schema never rejects a value the rules accept. Where no keyword says exactly what a rule requires, a looser one is written, or none.
+- Each rule it couldn't write is returned, with where its keyword belongs and why: `ip`, which no keyword says, or a property that is a `$ref`. Your app decides which of them its document can do without.
 - The schema is JSON, so this works with any library that generates JSON Schema or OpenAPI 3.1, and annotated depends on none of them.
 - It covers the rules on a struct's fields. Enums, flattened fields and rules across fields are not written yet.
 - `Validate` and `Deserialize` both have `rules()`, since a type can derive either. `NewMember` derives both, so the call says which one it means.

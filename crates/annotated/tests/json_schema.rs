@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Display};
 
+use annotated::json_schema::Reason;
 use annotated::{Problem, Validate, json_schema};
 use serde_json::{Map, Value, json};
 
@@ -15,8 +16,22 @@ fn with_the_rules_of<T: Validate>(mut schema: Value) -> Value {
     let schema_object = schema
         .as_object_mut()
         .expect("a schema to write rules into is an object");
-    json_schema::write_rules(&T::rules(), schema_object);
+    let _ = json_schema::write_rules(&T::rules(), schema_object);
     schema
+}
+
+fn unwritten_rules_of<T: Validate>(mut schema: Value) -> Vec<(String, String, Reason)> {
+    let schema_object = schema
+        .as_object_mut()
+        .expect("a schema to write rules into is an object");
+    json_schema::write_rules(&T::rules(), schema_object)
+        .iter()
+        .map(|rule| left_unwritten(rule.pointer(), rule.problem().code(), rule.reason()))
+        .collect()
+}
+
+fn left_unwritten(pointer: &str, code: &str, reason: Reason) -> (String, String, Reason) {
+    (pointer.to_owned(), code.to_owned(), reason)
 }
 
 fn object_with(properties: Value) -> Value {
@@ -776,5 +791,283 @@ fn a_required_field_declared_in_a_member_of_all_of_is_listed_as_required_there()
                 }
             ]
         })
+    );
+}
+
+#[test]
+fn rules_written_in_full_leave_none_unwritten() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(required, length(max = 50))]
+        name: Option<String>,
+        #[validate(each(length(max = 20)))]
+        tags: Vec<String>,
+    }
+
+    let unwritten = unwritten_rules_of::<Member>(object_with(json!({
+        "name": { "type": ["string", "null"] },
+        "tags": { "type": "array", "items": { "type": "string" } }
+    })));
+
+    assert_eq!(unwritten, vec![]);
+}
+
+#[test]
+fn a_rule_on_a_field_the_schema_has_no_property_for_is_unwritten() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(required, length(max = 50))]
+        nickname: String,
+    }
+
+    let unwritten = unwritten_rules_of::<Member>(object_with(json!({})));
+
+    assert_eq!(
+        unwritten,
+        vec![
+            left_unwritten("/properties/nickname", "required", Reason::NoSchema),
+            left_unwritten("/properties/nickname", "length", Reason::NoSchema)
+        ]
+    );
+}
+
+#[test]
+fn a_rule_on_each_element_of_a_list_without_items_is_unwritten() {
+    #[derive(Validate)]
+    struct Post {
+        #[validate(each(length(max = 20)))]
+        tags: Vec<String>,
+    }
+
+    let unwritten = unwritten_rules_of::<Post>(object_with(json!({ "tags": { "type": "array" } })));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten("/properties/tags/items", "length", Reason::NoSchema)]
+    );
+}
+
+#[test]
+fn a_rule_on_a_property_that_refers_to_another_schema_is_unwritten() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(length(max = 50))]
+        name: String,
+    }
+
+    let unwritten =
+        unwritten_rules_of::<Member>(object_with(json!({ "name": { "$ref": "#/components/schemas/Name" } })));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten("/properties/name", "length", Reason::Reference)]
+    );
+}
+
+#[test]
+fn a_format_and_a_pattern_on_a_property_that_refers_to_another_schema_are_unwritten() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(email)]
+        email: String,
+        #[validate(prefix = "@")]
+        handle: String,
+    }
+
+    let unwritten = unwritten_rules_of::<Member>(object_with(json!({
+        "email": { "$ref": "#/components/schemas/Email" },
+        "handle": { "$ref": "#/components/schemas/Handle" }
+    })));
+
+    assert_eq!(
+        unwritten,
+        vec![
+            left_unwritten("/properties/email", "email", Reason::Reference),
+            left_unwritten("/properties/handle", "prefix", Reason::Reference)
+        ]
+    );
+}
+
+#[test]
+fn a_rule_on_each_element_of_a_field_the_schema_has_no_property_for_is_unwritten() {
+    #[derive(Validate)]
+    struct Post {
+        #[validate(each(length(max = 20)))]
+        tags: Vec<String>,
+    }
+
+    let unwritten = unwritten_rules_of::<Post>(object_with(json!({})));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten("/properties/tags", "length", Reason::NoSchema)]
+    );
+}
+
+#[test]
+fn a_rule_on_each_element_of_a_property_that_refers_to_another_schema_is_unwritten() {
+    #[derive(Validate)]
+    struct Post {
+        #[validate(each(length(max = 20)))]
+        tags: Vec<String>,
+    }
+
+    let unwritten = unwritten_rules_of::<Post>(object_with(json!({ "tags": { "$ref": "#/components/schemas/Tags" } })));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten("/properties/tags", "length", Reason::Reference)]
+    );
+}
+
+#[test]
+fn a_rule_on_a_schema_of_another_type_is_unwritten() {
+    #[derive(Validate)]
+    struct Upload {
+        #[validate(length(max = 1024))]
+        content: Vec<u8>,
+        #[validate(range(max = 10))]
+        priority: u8,
+    }
+
+    let unwritten = unwritten_rules_of::<Upload>(object_with(json!({
+        "content": { "type": "string", "contentEncoding": "base64" },
+        "priority": { "type": "string" }
+    })));
+
+    assert_eq!(
+        unwritten,
+        vec![
+            left_unwritten("/properties/content", "length", Reason::OtherType),
+            left_unwritten("/properties/priority", "range", Reason::OtherType)
+        ]
+    );
+}
+
+#[test]
+fn a_rule_that_no_keyword_says_is_unwritten() {
+    #[derive(PartialEq, PartialOrd)]
+    struct Euros(f64);
+
+    impl Display for Euros {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(formatter, "{} €", self.0)
+        }
+    }
+
+    #[derive(Validate)]
+    struct Donation {
+        #[validate(ip)]
+        donor_address: String,
+        #[validate(range(min = Euros(0.5)))]
+        amount: Euros,
+    }
+
+    let unwritten = unwritten_rules_of::<Donation>(object_with(json!({
+        "donor_address": { "type": "string" },
+        "amount": { "type": "number" }
+    })));
+
+    assert_eq!(
+        unwritten,
+        vec![
+            left_unwritten("/properties/donor_address", "ip", Reason::NoKeyword),
+            left_unwritten("/properties/amount", "range", Reason::NoKeyword)
+        ]
+    );
+}
+
+#[cfg(feature = "unicode")]
+#[test]
+fn a_length_in_graphemes_with_only_a_maximum_is_unwritten() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(length(max = 10, unit = "graphemes"))]
+        name: String,
+    }
+
+    let unwritten = unwritten_rules_of::<Member>(object_with(json!({ "name": { "type": "string" } })));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten("/properties/name", "length", Reason::NoKeyword)]
+    );
+}
+
+#[test]
+fn a_rule_unwritten_in_a_member_of_all_of_is_located_there() {
+    #[derive(Validate)]
+    struct Task {
+        #[validate(range(max = 10))]
+        priority: u8,
+    }
+
+    let unwritten = unwritten_rules_of::<Task>(json!({
+        "allOf": [
+            { "$ref": "#/components/schemas/Audited" },
+            { "type": "object", "properties": { "priority": { "type": "string" } } }
+        ]
+    }));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten(
+            "/allOf/1/properties/priority",
+            "range",
+            Reason::OtherType
+        )]
+    );
+}
+
+#[test]
+fn the_pointer_to_an_unwritten_rule_escapes_the_field_name() {
+    #[derive(Validate)]
+    struct Measure {
+        #[serde(rename = "size/unit~name")]
+        #[validate(length(max = 5))]
+        unit: String,
+    }
+
+    let unwritten = unwritten_rules_of::<Measure>(object_with(json!({})));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten(
+            "/properties/size~1unit~0name",
+            "length",
+            Reason::NoSchema
+        )]
+    );
+}
+
+#[test]
+fn an_unwritten_rule_says_which_rule_where_and_why() {
+    #[derive(Validate)]
+    struct Host {
+        #[validate(length(max = 50))]
+        nickname: String,
+        #[validate(length(max = 50))]
+        name: String,
+        #[validate(range(max = 10))]
+        priority: u8,
+        #[validate(ip)]
+        address: String,
+    }
+    let mut schema = object_with(json!({
+        "name": { "$ref": "#/components/schemas/Name" },
+        "priority": { "type": "string" },
+        "address": { "type": "string" }
+    }));
+
+    let unwritten = json_schema::write_rules(&Host::rules(), schema.as_object_mut().expect("the schema is an object"));
+
+    assert_eq!(
+        unwritten.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        vec![
+            "`length` can't be written at `/properties/nickname`: the schema has no subschema there",
+            "`length` can't be written at `/properties/name`: the subschema there is a `$ref`, which isn't followed",
+            "`range` can't be written at `/properties/priority`: the subschema there isn't of a type the rule constrains",
+            "`ip` can't be written at `/properties/address`: no keyword says what the rule requires"
+        ]
     );
 }

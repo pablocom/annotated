@@ -5,6 +5,7 @@
 - It asks `T` for its rules as data, which annotated's derives provide with the `json-schema` feature.
 - It turns utoipa's schema into JSON, lets `annotated::json_schema::write_rules` add the keywords, and reads the schema back.
 - It panics when the document has no schema for `T`, so a type missing from the document is noticed when the app starts.
+- It returns each rule it couldn't write, with where its keyword belongs and why. [`src/main.rs`](src/main.rs) panics on any, so a rule missing from the document is noticed when the app starts too. An app that can do without some, such as `ip`, which no keyword says, lets those through.
 
 [`src/main.rs`](src/main.rs) documents an API that takes new members. Run it with `cargo run -p annotated-example-utoipa`. A field written like this:
 

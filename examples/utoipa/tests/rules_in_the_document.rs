@@ -56,6 +56,16 @@ struct AuditedInvitation {
 #[openapi(components(schemas(AuditedInvitation, Audited)))]
 struct AuditedInvitationsApi;
 
+#[derive(Deserialize, ToSchema)]
+struct Server {
+    #[validate(ip)]
+    address: String,
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(Server)))]
+struct ServersApi;
+
 #[derive(OpenApi)]
 #[openapi(components(schemas(NewMember, Address)))]
 struct MembersApi;
@@ -64,8 +74,8 @@ struct RulesInTheSchemas;
 
 impl Modify for RulesInTheSchemas {
     fn modify(&self, document: &mut Document) {
-        write_rules_of::<NewMember>(document);
-        write_rules_of::<Address>(document);
+        let _ = write_rules_of::<NewMember>(document);
+        let _ = write_rules_of::<Address>(document);
     }
 }
 
@@ -82,7 +92,7 @@ fn schema_named(name: &str, document: &Document) -> Value {
 fn the_rules_of_a_type_are_written_into_its_schema() {
     let mut document = MembersApi::openapi();
 
-    write_rules_of::<NewMember>(&mut document);
+    let _ = write_rules_of::<NewMember>(&mut document);
 
     assert_eq!(
         schema_named("NewMember", &document),
@@ -125,7 +135,7 @@ fn a_modifier_writes_the_rules_while_the_document_is_built() {
 fn the_rules_of_a_struct_with_a_flattened_field_are_written_beside_its_other_fields() {
     let mut document = AuditedInvitationsApi::openapi();
 
-    write_rules_of::<AuditedInvitation>(&mut document);
+    let _ = write_rules_of::<AuditedInvitation>(&mut document);
 
     assert_eq!(
         schema_named("AuditedInvitation", &document),
@@ -143,9 +153,21 @@ fn the_rules_of_a_struct_with_a_flattened_field_are_written_beside_its_other_fie
 }
 
 #[test]
+fn each_rule_that_could_not_be_written_is_returned() {
+    let mut document = ServersApi::openapi();
+
+    let unwritten = write_rules_of::<Server>(&mut document);
+
+    assert_eq!(
+        unwritten.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        vec!["`ip` can't be written at `/properties/address`: no keyword says what the rule requires"]
+    );
+}
+
+#[test]
 #[should_panic(expected = "the document has no schema named `Invitation`")]
 fn a_type_the_document_has_no_schema_for_is_reported() {
     let mut document = MembersApi::openapi();
 
-    write_rules_of::<Invitation>(&mut document);
+    let _ = write_rules_of::<Invitation>(&mut document);
 }
