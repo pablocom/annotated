@@ -4,6 +4,10 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+### Fixed
+
+- `json_schema::write_rules` finds a field's property among the `properties` of the schema's `allOf` members too, at any depth. utoipa documents a struct with a flattened field as `allOf`, so none of its fields got their rules before.
+
 ## [0.3.1] - 2026-11-16
 
 No change that users can notice.

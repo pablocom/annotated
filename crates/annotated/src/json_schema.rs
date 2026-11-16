@@ -66,6 +66,8 @@
 //! | `contains`, `prefix`, `suffix` | a string | `pattern`, with the text escaped |
 //! | `each(...)` | an array, an object | the same, in `items` or in `additionalProperties` |
 //!
+//! - A field's property is looked for among the schema's `properties`, then among those of its `allOf` members, at any
+//!   depth: utoipa documents a struct with a flattened field as `allOf`.
 //! - A keyword already in the schema is never loosened: a maximum keeps the smaller value and a minimum the larger.
 //!   A `format` already there is kept, and a second `pattern` goes into `allOf`.
 //! - Nothing is written for `ip`, which no single format covers, for `custom(...)`, for a rule across fields, or for
@@ -80,23 +82,34 @@ use crate::{Bounds, FieldRules, LengthUnit, ParamValue, Problem, Rules, ValueRul
 
 /// Adds what `rules` require to `schema`, the JSON Schema of the type they are the rules of.
 ///
-/// Each field's keywords go into the property of its name, among the schema's `properties`. A field the schema has
-/// no property for is skipped. Writing the same rules a second time changes nothing.
+/// Each field's keywords go into the property of its name, among the `properties` of the schema or of one of its
+/// `allOf` members. A field the schema has no property for is skipped. Writing the same rules a second time changes
+/// nothing.
 pub fn write_rules(rules: &Rules, schema: &mut Map<String, Value>) {
     for field in rules.fields() {
-        write_field_rules(field, schema);
+        write_where_declared(field, schema);
     }
 }
 
-fn write_field_rules(field: &FieldRules, schema: &mut Map<String, Value>) {
-    let Some(property) = property_named(field.name(), schema) else {
-        return;
-    };
-    write_value_rules(field.rules(), property);
-    let is_broken_by_its_absence = field.rules().problems().contains(&Problem::Required) && !field.has_default();
-    if is_broken_by_its_absence {
-        list_as_required(field.name(), schema);
+/// Writes the field's rules into whichever of `schema` and its `allOf` members, at any depth, declares its property,
+/// and answers whether one does.
+fn write_where_declared(field: &FieldRules, schema: &mut Map<String, Value>) -> bool {
+    if let Some(property) = property_named(field.name(), schema) {
+        write_value_rules(field.rules(), property);
+        let is_broken_by_its_absence = field.rules().problems().contains(&Problem::Required) && !field.has_default();
+        if is_broken_by_its_absence {
+            list_as_required(field.name(), schema);
+        }
+        return true;
     }
+    let Some(Value::Array(members)) = schema.get_mut("allOf") else {
+        return false;
+    };
+    members.iter_mut().any(|member| {
+        member
+            .as_object_mut()
+            .is_some_and(|member| write_where_declared(field, member))
+    })
 }
 
 fn property_named<'a>(name: &str, schema: &'a mut Map<String, Value>) -> Option<&'a mut Map<String, Value>> {

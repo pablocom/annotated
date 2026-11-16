@@ -38,6 +38,24 @@ struct Invitation {
     email: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct Audited {
+    created_by: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+struct AuditedInvitation {
+    #[validate(email)]
+    email: String,
+    #[serde(flatten)]
+    audited: Audited,
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(AuditedInvitation, Audited)))]
+struct AuditedInvitationsApi;
+
 #[derive(OpenApi)]
 #[openapi(components(schemas(NewMember, Address)))]
 struct MembersApi;
@@ -99,6 +117,27 @@ fn a_modifier_writes_the_rules_while_the_document_is_built() {
                 "street": { "type": "string", "minLength": 1, "maxLength": 80 },
                 "postalCode": { "type": ["string", "null"] }
             }
+        })
+    );
+}
+
+#[test]
+fn the_rules_of_a_struct_with_a_flattened_field_are_written_beside_its_other_fields() {
+    let mut document = AuditedInvitationsApi::openapi();
+
+    write_rules_of::<AuditedInvitation>(&mut document);
+
+    assert_eq!(
+        schema_named("AuditedInvitation", &document),
+        json!({
+            "allOf": [
+                { "$ref": "#/components/schemas/Audited" },
+                {
+                    "type": "object",
+                    "required": ["email"],
+                    "properties": { "email": { "type": "string", "format": "email" } }
+                }
+            ]
         })
     );
 }

@@ -479,7 +479,7 @@ A type that implements `Validate` or `Deserialize` by hand answers no fields, un
 
 ### Writing the rules into a schema
 
-`annotated::json_schema::write_rules(&rules, schema)` takes the JSON Schema of the type the rules belong to. For each field, it adds to the property of that name what the field's rules require.
+`annotated::json_schema::write_rules(&rules, schema)` takes the JSON Schema of the type the rules belong to. For each field, it adds to the property of that name what the field's rules require. The property is looked for among the schema's `properties`, then among those of its `allOf` members, at any depth, since a schema library may document a struct as `allOf`: utoipa does for one with a flattened field.
 
 **The schema never rejects a value the rules accept.** Where no keyword says exactly what a rule requires, a looser one is written, or none.
 

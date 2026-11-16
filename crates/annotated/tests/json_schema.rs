@@ -700,3 +700,81 @@ fn writing_the_rules_a_second_time_changes_nothing() {
         )
     );
 }
+
+#[test]
+fn a_field_declared_in_a_member_of_all_of_is_written_there() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(length(max = 50))]
+        name: String,
+    }
+
+    let schema = with_the_rules_of::<Member>(json!({
+        "allOf": [
+            { "$ref": "#/components/schemas/Audited" },
+            { "type": "object", "properties": { "name": { "type": "string" } } }
+        ]
+    }));
+
+    assert_eq!(
+        schema,
+        json!({
+            "allOf": [
+                { "$ref": "#/components/schemas/Audited" },
+                { "type": "object", "properties": { "name": { "type": "string", "maxLength": 50 } } }
+            ]
+        })
+    );
+}
+
+#[test]
+fn a_field_declared_in_a_member_of_a_member_of_all_of_is_written_there() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(length(max = 50))]
+        name: String,
+    }
+
+    let schema = with_the_rules_of::<Member>(json!({
+        "allOf": [{ "allOf": [{ "type": "object", "properties": { "name": { "type": "string" } } }] }]
+    }));
+
+    assert_eq!(
+        schema,
+        json!({
+            "allOf": [{
+                "allOf": [{ "type": "object", "properties": { "name": { "type": "string", "maxLength": 50 } } }]
+            }]
+        })
+    );
+}
+
+#[test]
+fn a_required_field_declared_in_a_member_of_all_of_is_listed_as_required_there() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(required)]
+        nickname: Option<String>,
+    }
+
+    let schema = with_the_rules_of::<Member>(json!({
+        "allOf": [
+            { "$ref": "#/components/schemas/Audited" },
+            { "type": "object", "properties": { "nickname": { "type": ["string", "null"] } } }
+        ]
+    }));
+
+    assert_eq!(
+        schema,
+        json!({
+            "allOf": [
+                { "$ref": "#/components/schemas/Audited" },
+                {
+                    "type": "object",
+                    "properties": { "nickname": { "type": "string" } },
+                    "required": ["nickname"]
+                }
+            ]
+        })
+    );
+}
