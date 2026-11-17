@@ -4,24 +4,48 @@ use std::slice;
 
 use crate::Issue;
 
-/// Every issue found in one validation. This is the error type, and it is never empty.
+/// The issues found in one validation, at most the limit of the [`Report`](crate::Report) they were found in. This
+/// is the error type, and it is never empty.
 ///
 /// Iterating over it yields the issues in the order they were found, and its [`Display`] prints one issue per
-/// line.
+/// line. [`Issues::is_complete`] says whether the value may have more.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Issues {
     issues: Vec<Issue>,
+    is_complete: bool,
 }
 
 impl Issues {
-    /// The issues of `found`, or `None` when there are none.
+    /// The issues of `found`, every issue in the value, or `None` when there are none.
     pub(crate) fn of(found: Vec<Issue>) -> Option<Self> {
-        (!found.is_empty()).then_some(Self { issues: found })
+        (!found.is_empty()).then_some(Self {
+            issues: found,
+            is_complete: true,
+        })
+    }
+
+    /// These issues, cut off at the limit of their report: the value may have more.
+    pub(crate) fn cut_off(self) -> Self {
+        Self {
+            is_complete: false,
+            ..self
+        }
     }
 
     /// The issues, in the order they were found.
     pub fn iter(&self) -> slice::Iter<'_, Issue> {
         self.issues.iter()
+    }
+
+    /// Whether these are every issue in the value.
+    ///
+    /// It is `false` when the report they were found in reached its limit, so the value may have more issues than
+    /// are listed, even if it has none. So it is always `false` for the issue returned when failing fast. It is
+    /// `false` too when the report stopped below its limit because issues may be missing among those it holds, as
+    /// [`Report`](crate::Report) describes.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.is_complete
     }
 
     /// The issues as a slice, in the order they were found.

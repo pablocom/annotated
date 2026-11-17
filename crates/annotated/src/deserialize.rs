@@ -18,8 +18,8 @@ use crate::{DeserializeError, Location, Report};
 ///   issue that says why.
 /// - `Err` with the format's own error, such as a syntax error. It ends deserialization, as it would end serde's.
 ///
-/// A value that could be built is returned even when `found` is already finished from
-/// [failing fast](Report::failing_fast), because the value around it may still have to check it.
+/// A value that could be built is returned even when `found` is already [finished](Report::is_finished), at its
+/// limit or from failing fast, because the value around it may still have to check it.
 ///
 /// The crate implements the trait for the containers that hold a nested value, whenever what they hold implements it:
 ///
@@ -29,8 +29,10 @@ use crate::{DeserializeError, Location, Report};
 ///
 /// A container is built only when everything in it could be built. A map reports its values' issues in the order it
 /// iterates over them. When a key appears twice, the later value replaces the earlier one, along with its issues.
+/// A map holds its values' issues until it has read them all, and holds no more than `found` has room for, plus one
+/// issue for each value read once they reach that.
 ///
-/// [`from_deserializer`] reads a value from the root, and returns it or every issue found.
+/// [`from_deserializer`] reads a value from the root, and returns it or the issues found.
 ///
 /// ```
 /// use annotated::{Report, Location, Problem};
@@ -116,11 +118,15 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for DeserializeAt<'_, '_, T>
     }
 }
 
-/// Reads a `T` from `deserializer`, collecting every issue in it.
+/// Reads a `T` from `deserializer`, collecting its issues: every one, up to [`Report::DEFAULT_LIMIT`].
+///
+/// For a value with more issues than that, it returns as many, in the order found, the first ones unless a map holds
+/// them, and [`Issues::is_complete`](crate::Issues::is_complete) is `false`. [`from_deserializer_limited_to`] takes
+/// another limit.
 ///
 /// # Errors
 ///
-/// Returns [`DeserializeError::Issues`] with every issue found, in the order found, or
+/// Returns [`DeserializeError::Issues`] with the issues found, in the order found, or
 /// [`DeserializeError::Format`] with the format's own error, which ends deserialization at once.
 pub fn from_deserializer<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
@@ -142,6 +148,24 @@ pub fn from_deserializer_fail_fast<'de, T: Deserialize<'de>, D: Deserializer<'de
     deserializer: D,
 ) -> Result<T, DeserializeError<D::Error>> {
     deserialize_reporting_to(deserializer, Report::failing_fast())
+}
+
+/// Reads a `T` from `deserializer`, collecting at most `most_issues` of its issues, as a
+/// [report limited to them](Report::limited_to) keeps them.
+///
+/// The value is read and checked as by [`from_deserializer`], so the issues returned are listed in the order
+/// `from_deserializer` would list them, and are its first ones unless a map holds them. The input is still read to
+/// its end, and once the limit is reached, nothing more is kept.
+///
+/// # Errors
+///
+/// Returns [`DeserializeError::Issues`] with the issues found, at most `most_issues` and at least one, or
+/// [`DeserializeError::Format`] with the format's own error.
+pub fn from_deserializer_limited_to<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+    deserializer: D,
+    most_issues: usize,
+) -> Result<T, DeserializeError<D::Error>> {
+    deserialize_reporting_to(deserializer, Report::limited_to(most_issues))
 }
 
 fn deserialize_reporting_to<'de, T: Deserialize<'de>, D: Deserializer<'de>>(

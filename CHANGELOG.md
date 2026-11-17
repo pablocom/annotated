@@ -4,6 +4,12 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- Functions that take the most issues to keep: `annotated::from_deserializer_limited_to`, `annotated::json::from_str_limited_to`, `annotated::json::from_slice_limited_to` and `Validate::validate_limited_to`. A limit of 0 is taken as 1, so that a value with issues never passes.
+- `Report::limited_to(most_issues)`, `Report::unlimited()` and `Report::DEFAULT_LIMIT`, 1,000, for code that starts a report itself.
+- `Issues::is_complete()`: `false` when the report the issues were found in reached its limit, so the value may have more issues than are listed. It is always `false` for the issue returned when failing fast.
+
 ### Changed
 
 - `required` on an `Option` field asks for the field's key, and accepts `null`, where it asked for a `Some`. **Nothing tells you at compile time: a `required` `Option` that refused `null` now accepts it, as `None`.**
@@ -12,6 +18,12 @@ This file lists every change that users of the crates can notice. The format fol
   - A skipped or flattened `Option`, and one in a tuple variant, has no key of its own, and `required` on it checks nothing.
   - With the `json-schema` feature, `json_schema::write_rules` lists a `required` `Option` in the object's `required`, even when it has a serde default, and leaves `null` allowed, where it removed `null` from the field's schema. `rules()` describes such a field as taking no default.
   - To keep refusing `null`, declare the field as `T` instead of `Option<T>`. An absent key is then `missing`, and `null` is a value of the wrong type: the format's error, or a `Problem::InvalidType` under `#[annotated(collect_type_errors)]`. Keep `required` on it only to check the value too: on a `String`, it refuses blank text.
+- A report keeps at most 1,000 issues by default, where it kept every issue. A 2 MiB body that was a list of `{}` against a struct with four required fields gave 2.8 million issues and held 704 MiB. Now `json::from_str`, `json::from_slice`, `from_deserializer`, `Validate::validate` and serde's own `Deserialize` return at most 1,000, and `Report::new()` and `Report::default()` keep at most 1,000.
+  - The input is still read to its end, and nothing more is kept. The issues kept are listed in the order the full report lists them, and for a struct, an enum or a list they are its first ones. Past the limit, which of a map's issues are kept is unspecified, except that failing fast still keeps exactly the first.
+  - A report may stop below its limit, when issues may be missing among those it holds: when a list's elements are checked by a rule before `nested`, and the elements' issues reached the limit. `Issues::is_complete()` is then `false`.
+  - To keep every issue, as before, pass `Report::unlimited()` to `validate_into` or `deserialize_at`, or call a `_limited_to` function with `usize::MAX`.
+- `Report::is_finished()` returns whether the report holds as many issues as its limit, so a report that doesn't fail fast is finished at its limit. `Report::new_alike()` starts a report with the same limit. `Report::append` takes only as many issues as the report has room for, and once it takes every issue of a finished report and still has room, the report keeps no more.
+- Two `Issues` are equal only when `is_complete()` is equal too.
 
 ### Fixed
 

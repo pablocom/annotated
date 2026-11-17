@@ -59,14 +59,20 @@ where
 
 /// The issues that a collection's elements reported while they were read. They wait here for each element's
 /// `nested` rule, in the order `HasElements` goes through the elements.
+///
+/// When the elements' report was finished, issues after the last one waiting may have been left out. Those of an
+/// element whose `nested` rule doesn't run are dropped, so the report the others join may not reach its limit. Once
+/// none is waiting, it keeps no more, so that no issue found later is listed before one left out.
 pub struct ElementIssues {
     waiting: std::vec::IntoIter<Issue>,
+    may_some_be_left_out: bool,
 }
 
 impl ElementIssues {
     #[must_use]
     pub fn new(found_in_elements: Report) -> Self {
         Self {
+            may_some_be_left_out: found_in_elements.is_finished(),
             waiting: found_in_elements.into_issues().into_iter(),
         }
     }
@@ -77,6 +83,9 @@ impl ElementIssues {
         while let Some(issue) = self.next_at(at) {
             found.push_issue(issue);
             has_joined_any = true;
+        }
+        if self.may_some_be_left_out && self.waiting.as_slice().is_empty() {
+            found.keep_no_more();
         }
         has_joined_any
     }

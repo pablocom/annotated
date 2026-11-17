@@ -6,9 +6,10 @@ use crate::{Issues, Location, Report};
 ///
 /// - [`Validate::validate_into`] pushes every issue it finds into the report, each at the location of the value it
 ///   was found in.
-/// - [`Validate::validate`] returns all of them, and [`Validate::validate_fail_fast`] only the first.
-/// - When failing fast, the report is [finished](Report::is_finished) after its first issue and keeps
-///   nothing more. So once a push leaves the report finished, `validate_into` should return.
+/// - [`Validate::validate`] returns them, up to [`Report::DEFAULT_LIMIT`]. [`Validate::validate_limited_to`] returns
+///   as many as it is given, and [`Validate::validate_fail_fast`] only the first.
+/// - A report is [finished](Report::is_finished) once it holds as many issues as its limit, after its first when
+///   failing fast, and keeps nothing more. So once a push leaves the report finished, `validate_into` should return.
 ///
 /// ```
 /// use annotated::{Report, Location, Problem, Validate};
@@ -50,15 +51,15 @@ pub trait Validate {
     /// soon as `found` is finished.
     fn validate_into(&self, at: &Location<'_>, found: &mut Report);
 
-    /// Checks this value, starting at the root.
+    /// Checks this value, starting at the root, and returns its issues: every one, up to [`Report::DEFAULT_LIMIT`].
+    ///
+    /// For a value with more issues than that, it returns as many, as [`Validate::validate_limited_to`] does.
     ///
     /// # Errors
     ///
-    /// Returns every issue found, in the order they were found.
+    /// Returns the issues found, in the order they were found.
     fn validate(&self) -> Result<(), Issues> {
-        let mut found = Report::new();
-        self.validate_into(&Location::root(), &mut found);
-        found.into_result()
+        validated_reporting_to(self, Report::new())
     }
 
     /// Checks this value, starting at the root, and returns only its first issue.
@@ -71,9 +72,21 @@ pub trait Validate {
     ///
     /// Returns the first issue found, alone.
     fn validate_fail_fast(&self) -> Result<(), Issues> {
-        let mut found = Report::failing_fast();
-        self.validate_into(&Location::root(), &mut found);
-        found.into_result()
+        validated_reporting_to(self, Report::failing_fast())
+    }
+
+    /// Checks this value, starting at the root, and returns at most `most_issues` of its issues: the first ones
+    /// [`Validate::validate`] would list, in its order.
+    ///
+    /// A limit of 0 is taken as 1. Checking stops once the limit is reached, with the exception that
+    /// [`Validate::validate_fail_fast`] describes. When the value has as many issues as the limit or more,
+    /// [`Issues::is_complete`] is `false`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the issues found, at most `most_issues`.
+    fn validate_limited_to(&self, most_issues: usize) -> Result<(), Issues> {
+        validated_reporting_to(self, Report::limited_to(most_issues))
     }
 
     /// This type's rules, as data: what `#[validate(...)]` requires of each of its fields.
@@ -88,4 +101,9 @@ pub trait Validate {
     {
         crate::Rules::default()
     }
+}
+
+fn validated_reporting_to<V: Validate + ?Sized>(value: &V, mut found: Report) -> Result<(), Issues> {
+    value.validate_into(&Location::root(), &mut found);
+    found.into_result()
 }

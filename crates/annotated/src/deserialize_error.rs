@@ -16,8 +16,9 @@ pub enum DeserializeError<E> {
     /// wrong type. A struct with `#[annotated(collect_type_errors)]` reports values of the wrong type as issues
     /// instead.
     Format(E),
-    /// Every issue found in the value, in the order found: missing fields, broken rules, and values of the wrong
-    /// type when the struct collects them.
+    /// The issues found in the value, in the order found: missing fields, broken rules, and values of the wrong
+    /// type when the struct collects them. They are at most the limit of the report they were found in, and
+    /// [`Issues::is_complete`] says whether the value may have more.
     Issues(Issues),
 }
 

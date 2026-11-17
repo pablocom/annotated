@@ -12,6 +12,23 @@
 //!
 //! The `json` feature adds [`json::from_str`] and [`json::from_slice`], which read JSON this way.
 //!
+//! # How many issues are kept
+//!
+//! A value read from input can have as many issues as the input makes it: a list of a million `{}` has a million
+//! missing fields for each field its elements require. So "every issue" means at most [`Report::DEFAULT_LIMIT`],
+//! 1,000, and a report never keeps more than its limit:
+//!
+//! - The issues kept are listed in the order the full report lists them. For a struct, an enum or a list, they are
+//!   its first ones.
+//! - A map reports its values' issues in its own order, which may not be the order it reads them in. Once its values'
+//!   issues reach the limit, which ones it keeps is unspecified, except that failing fast keeps exactly the first.
+//! - [`Issues::is_complete`] is `false` when the report reached its limit, so the value may have more issues. A
+//!   report can also stop below its limit, when issues may be missing among those it holds, as [`Report`] describes.
+//! - The `_limited_to` functions, such as [`json::from_str_limited_to`] and [`Validate::validate_limited_to`], take
+//!   another limit. [`Report::unlimited`] keeps every issue, for values you trust.
+//! - The input is still read to its end, as when failing fast, and nothing more is kept.
+//! - serde's own `Deserialize` keeps the default limit, so its error's message has at most 1,000 lines.
+//!
 //! The `json-schema` feature adds [`json_schema::write_rules`], which writes a struct's rules into the JSON Schema
 //! that a schema library generated for it, so an API's document says what the rules require.
 
@@ -63,7 +80,7 @@ mod validate;
 #[cfg(feature = "json-schema")]
 pub use described_rules::{FieldRules, Rules, ValueRules};
 #[cfg(feature = "serde")]
-pub use deserialize::{Deserialize, from_deserializer, from_deserializer_fail_fast};
+pub use deserialize::{Deserialize, from_deserializer, from_deserializer_fail_fast, from_deserializer_limited_to};
 #[cfg(feature = "serde")]
 pub use deserialize_error::DeserializeError;
 pub use location::Location;

@@ -191,28 +191,30 @@ where
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut values = BTreeMap::new();
         let mut values_with_issues = BTreeMap::new();
+        let mut held = HeldIssues::reported_into(self.found);
         while let Some(key) = map.next_key::<K>()? {
-            let issues_before = self.found.len();
-            let value = map.next_value_seed(DeserializeAt::<V>::new(&self.at.key(&key), self.found))?;
-            let has_issues = self.found.len() > issues_before;
+            let mut found_in_value = held.report_for_the_next_value();
+            let value = map.next_value_seed(DeserializeAt::<V>::new(&self.at.key(&key), &mut found_in_value))?;
             match value {
-                Some(value) if !has_issues => {
+                Some(value) if found_in_value.is_empty() => {
+                    if let Some((_, replaced)) = values_with_issues.remove(&key) {
+                        held.release(&replaced);
+                    }
                     values.insert(key, value);
                 }
                 value => {
-                    let found_in_value = self.found.take_those_after(issues_before);
                     values.remove(&key);
-                    values_with_issues.insert(key, (value, found_in_value));
+                    held.hold(&found_in_value);
+                    if let Some((_, replaced)) = values_with_issues.insert(key, (value, found_in_value)) {
+                        held.release(&replaced);
+                    }
                 }
             }
         }
         let mut is_every_value_built = true;
+        let mut joined = JoinedIssues::into(self.found);
         for (key, (value, mut found_in_value)) in values_with_issues {
-            let is_given_again_without_issues = values.contains_key(&key);
-            if is_given_again_without_issues {
-                continue;
-            }
-            self.found.append(&mut found_in_value);
+            joined.join(&mut found_in_value);
             match value {
                 Some(value) => {
                     values.insert(key, value);
@@ -220,6 +222,7 @@ where
                 None => is_every_value_built = false,
             }
         }
+        joined.end();
         Ok(is_every_value_built.then_some(values))
     }
 }
@@ -238,9 +241,9 @@ where
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut values = HashMap::with_capacity_and_hasher(room_for::<(K, V)>(map.size_hint()), S::default());
-        let mut issues_by_key = IssuesByKey::<K, S>::none();
+        let mut issues_by_key = IssuesByKey::<K, S>::reported_into(self.found);
         while let Some(key) = map.next_key::<K>()? {
-            let mut found_in_value = self.found.new_alike();
+            let mut found_in_value = issues_by_key.report_for_the_next_value();
             let value = map.next_value_seed(DeserializeAt::<V>::new(&self.at.key(&key), &mut found_in_value))?;
             match value {
                 Some(value) if found_in_value.is_empty() => {
@@ -263,24 +266,81 @@ where
     }
 }
 
+// A map reports its values' issues in its own order, and the value it reads last may be the one it reports first.
+// So it holds each value's issues apart until it has read every entry. A value keeps its issues until those held
+// reach what the map's report has room for, and only its first after that. The map then holds at most that room
+// plus one issue for each value read later, and every value keeps its first issue, so failing fast stays exact.
+// A map whose report is already finished keeps none.
+struct HeldIssues {
+    room: usize,
+    held: usize,
+    most_issues_of_the_next_value: usize,
+}
+
+impl HeldIssues {
+    fn reported_into(found: &Report) -> Self {
+        let room = found.room();
+        Self {
+            room,
+            held: 0,
+            most_issues_of_the_next_value: room,
+        }
+    }
+
+    fn report_for_the_next_value(&self) -> Report {
+        Report::keeping_at_most(self.most_issues_of_the_next_value)
+    }
+
+    fn hold(&mut self, found_in_value: &Report) {
+        self.held += found_in_value.len();
+        self.make_room_for_the_next_value();
+    }
+
+    fn release(&mut self, found_in_value: &Report) {
+        self.held -= found_in_value.len();
+        self.make_room_for_the_next_value();
+    }
+
+    fn make_room_for_the_next_value(&mut self) {
+        let room_left = self.room.saturating_sub(self.held);
+        let least_issues_kept = self.room.min(1);
+        self.most_issues_of_the_next_value = room_left.max(least_issues_kept);
+    }
+}
+
 struct IssuesByKey<K, S> {
     issues_by_key: Option<HashMap<K, Report, S>>,
+    held: HeldIssues,
 }
 
 impl<K: Eq + Hash, S: BuildHasher + Default> IssuesByKey<K, S> {
-    const fn none() -> Self {
-        Self { issues_by_key: None }
+    fn reported_into(found: &Report) -> Self {
+        Self {
+            issues_by_key: None,
+            held: HeldIssues::reported_into(found),
+        }
+    }
+
+    fn report_for_the_next_value(&self) -> Report {
+        self.held.report_for_the_next_value()
     }
 
     fn keep(&mut self, key: K, found_in_value: Report) {
-        self.issues_by_key
+        self.held.hold(&found_in_value);
+        let replaced = self
+            .issues_by_key
             .get_or_insert_with(|| HashMap::with_hasher(S::default()))
             .insert(key, found_in_value);
+        if let Some(replaced) = replaced {
+            self.held.release(&replaced);
+        }
     }
 
     fn forget(&mut self, key: &K) {
-        if let Some(issues_by_key) = &mut self.issues_by_key {
-            issues_by_key.remove(key);
+        if let Some(issues_by_key) = &mut self.issues_by_key
+            && let Some(forgotten) = issues_by_key.remove(key)
+        {
+            self.held.release(&forgotten);
         }
     }
 
@@ -295,13 +355,44 @@ impl<K: Eq + Hash, S: BuildHasher + Default> IssuesByKey<K, S> {
         let Some(mut issues_by_key) = self.issues_by_key else {
             return;
         };
+        let mut joined = JoinedIssues::into(found);
         for key in values.keys() {
             if let Some(mut found_in_value) = issues_by_key.remove(key) {
-                found.append(&mut found_in_value);
+                joined.join(&mut found_in_value);
             }
         }
         for mut found_in_value in issues_by_key.into_values() {
-            found.append(&mut found_in_value);
+            joined.join(&mut found_in_value);
+        }
+        joined.end();
+    }
+}
+
+// Joins the issues a map held for its values into its report, in the map's order. A value whose report is finished
+// may have more issues than it kept, but the values after it join theirs all the same, to fill the report up to its
+// limit. Once they have, a report that still has room keeps no more, since issues may be missing among those it
+// holds.
+struct JoinedIssues<'a> {
+    found: &'a mut Report,
+    may_some_be_missing: bool,
+}
+
+impl<'a> JoinedIssues<'a> {
+    const fn into(found: &'a mut Report) -> Self {
+        Self {
+            found,
+            may_some_be_missing: false,
+        }
+    }
+
+    fn join(&mut self, found_in_value: &mut Report) {
+        self.may_some_be_missing |= found_in_value.is_finished();
+        self.found.take_issues_of(found_in_value);
+    }
+
+    fn end(self) {
+        if self.may_some_be_missing {
+            self.found.keep_no_more();
         }
     }
 }

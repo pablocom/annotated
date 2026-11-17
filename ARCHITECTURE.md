@@ -20,14 +20,14 @@ Use these words, with these meanings, in code, docs and conversation.
 - **Issue:** one thing wrong with a value, and the path where it was found. It is a broken rule, a missing field or a value of the wrong type.
 - **Problem:** the kind of issue: a stable code, its parameters and an English message.
 - **Path:** where in the value an issue was found: a field, an element's index, a map's key, or the value itself.
-- **Issues:** all the issues found in one validation. This is the error type, and it is never empty.
-- **Report:** the issues found so far, while a value is being checked. It can be empty, and when it fails fast it keeps only its first issue. At the end it becomes `Issues`, or `Ok(())` when it is empty.
+- **Issues:** the issues found in one validation, at most the limit of its report. This is the error type, and it is never empty.
+- **Report:** the issues found so far, while a value is being checked. It can be empty, and it keeps at most its limit: 1,000 by default, and only its first issue when it fails fast. At the end it becomes `Issues`, or `Ok(())` when it is empty.
 - **Validation:** checking a value that already exists against its rules, with `Validate::validate`.
 - **Collecting deserialization:** deserializing through `annotated::Deserialize`. It reports missing fields and broken rules together, and values of the wrong type too when the struct opts in.
 
 ## The two ways in
 
-1. **Validation** checks a value that already exists. `#[derive(Validate)]` implements `Validate`, and `value.validate()` returns `Ok(())` or every issue found. It works on any struct or enum, whether or not serde built it.
+1. **Validation** checks a value that already exists. `#[derive(Validate)]` implements `Validate`, and `value.validate()` returns `Ok(())` or the issues found, up to 1,000. It works on any struct or enum, whether or not serde built it.
 2. **Collecting deserialization** builds a value and validates it in one go. `#[derive(Deserialize)]` generates a serde visitor for the struct or enum. The visitor passes its location down into nested values, so a missing field at any depth becomes an issue instead of stopping serde. It runs the same rules as validation and reports every problem together. The derive also implements `serde::Deserialize`, so the type still works anywhere serde does.
 
 Both report a field under the name serde reads it by. To find that name, the derives read `#[serde(...)]` attributes with `serde_derive_internals`, which publishes the code serde's own derive reads them with.
@@ -154,10 +154,36 @@ They run after every field, in the order written.
 
 - It is always the issue the full report would list first, so the two modes agree on it.
 - The same struct is checked either way, and nested values follow the mode of the call.
-- `Report::failing_fast()` starts a fail-fast report, and `is_finished()` returns whether it already has its one issue. Generated code calls `is_finished()` only right after recording an issue, so the success path pays nothing for it. When the report is finished, the generated code stops. If it was checking an element, it also tells `HasElements` to skip the remaining elements.
+- `Report::failing_fast()` starts a fail-fast report, one [limited](#a-report-keeps-at-most-its-limit) to a single issue, and `is_finished()` returns whether it already has that issue. Generated code calls `is_finished()` only right after recording an issue, so the success path pays nothing for it. When the report is finished, the generated code stops. If it was checking an element, it also tells `HasElements` to skip the remaining elements.
 - During validation, when a nested value finishes the report, its parent doesn't stop at once, because checking for that after every nested value would slow down the valid path. The parent records nothing more, and stops at its own next issue or at its end. Under `each(nested)`, the remaining elements are still checked, and the parent stops when that `each` ends.
 - During deserialization, the parent does stop at once. It appends the nested value's buffered issues itself, and calls `is_finished()` right after.
 - Deserializing still reads the input to its end, because a field is known to be missing only then. Nested values are checked while they are read, into a buffer that fails fast too, so their rules run whatever was found before them. The checking pass that follows is what stops at the first issue.
+
+### A report keeps at most its limit
+
+A value read from input can have as many issues as the input makes it. A list of `{}` against a struct with four required fields is four issues for every three bytes: a 2 MiB body was 2.8 million issues and 704 MiB held, where serde stops at the first error. So a report keeps at most its limit, and holds no more however long the input is.
+
+- `Report::new()` keeps `Report::DEFAULT_LIMIT`, 1,000. `failing_fast()` is a limit of 1, `limited_to(n)` a limit of `n`, and `unlimited()` of `usize::MAX`. A limit of 0 is taken as 1, so that no limit lets a value with issues pass.
+- Every entry point that starts a report has a `_limited_to` twin that takes the limit. serde's own `Deserialize`, which the derive implements through `from_deserializer`, keeps the default.
+- `is_finished()` returns whether the report holds as many issues as its limit. What failing fast skips once the report is finished, any limit skips too. The input is still read to its end, and nothing more is kept.
+- `new_alike()` keeps the limit, so the buffer of a part of a value holds at most as many as the report it joins. `append` takes only as many as the limit has room for, the first ones.
+- `Issues::is_complete()` is `false` when the report reached its limit, so the value may have more issues than are listed. That includes every fail-fast report with its issue.
+
+The promise: a report never keeps more than its limit, and the issues it keeps are listed in the order the full report, one without a limit, lists them. For structs, enums and lists, they are its first ones, since their issues are found in that order. Maps are the exception.
+
+**Maps.** A map reports its values' issues in its own order, so it holds each value's issues apart until it has read every entry, as [the `Deserialize` trait](#the-deserialize-trait) says. Each value is read into a report of its own, whose limit is what the map's report has room for, less the issues the map already holds, and 1 once that is none.
+
+- So a map holds at most that room, plus one issue for each value read after the room ran out. Its values' issues can't multiply the limit.
+- Every value keeps at least its first issue, so failing fast stays exact: the value the map lists first still has the issue the full report lists first.
+- A value given again for its key replaces the earlier one, and the issues of the earlier one no longer count.
+- A map whose report is already finished keeps none of its values' issues.
+- Past the limit, which issues are kept is unspecified: the map joins its values' issues in its order, and a value it lists early may have kept only its first, because the map read it after the room ran out. The values after it still join theirs, so the report fills up to its limit.
+
+**Keeping no more.** A part of a value whose report reached its limit may have more issues than it kept. When a report takes every issue of such a part and still has room, an issue found later would be listed before those left out. So the report lowers its limit to what it holds: it is finished, and its issues aren't complete.
+
+- `append` does this after taking the issues of a finished report. A map does it once it has joined every value's issues, if one of their reports was finished.
+- So does a list checked element by element under `each(...)`. When an element's `nested` rule doesn't run, because a rule before it broke, its buffered issues are dropped. If the elements' buffer had reached its limit, those of the elements after it may have been left out. So once none of the buffer's issues is waiting, the report keeps no more.
+- A report can then stop below its limit, and what it keeps is still the first issues of the full report.
 
 ### Strings are never trimmed
 
@@ -223,7 +249,7 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 - An element of a sequence is read at its index, and a value of a map at its key (`K: serde::Deserialize + Display`). Both are read through a `DeserializeSeed` that carries the location.
 - The implementations compose, so `Option<Vec<Address>>` works with no code of its own.
 - A container is built only when everything in it could be built.
-- A map keeps each value's issues apart until it has read every entry. It then reports them in the order it iterates over its values, which is the order `Validate` checks them in.
+- A map keeps each value's issues apart until it has read every entry. It then reports them in the order it iterates over its values, which is the order `Validate` checks them in. It holds no more than [its limit](#a-report-keeps-at-most-its-limit) allows.
 - When a key appears twice, the later value replaces the earlier one, and its issues replace the earlier ones too. serde keeps the last value in the same way.
 - A `HashMap`'s iteration order is known only once the map is built. To report in that order, it clones the key of a value that was built but has issues, which is why it needs `K: Clone`.
 
@@ -245,15 +271,15 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 **Elements under `each(...)`.** The issues of a collection's elements wait in the field's buffer, in the order `HasElements` goes through the elements. The crate's containers report them in that same order.
 
 - When the `each` holds nothing but `nested`, the whole buffer is appended to `found` at the `each` rule, as `nested` on the field would do. The buffer holds exactly the elements' issues, already in order.
-- Otherwise the pass goes through the elements as `Validate` does, running every rule inside `each(...)` on each one. At an element's `nested` rule, it moves the issues at the front of the buffer that belong to that element's location into `found`. When an element's `nested` rule didn't run, because an earlier rule on that element failed, the element's buffered issues are dropped.
+- Otherwise the pass goes through the elements as `Validate` does, running every rule inside `each(...)` on each one. At an element's `nested` rule, it moves the issues at the front of the buffer that belong to that element's location into `found`. When an element's `nested` rule didn't run, because an earlier rule on that element failed, the element's buffered issues are dropped. If the buffer had reached its limit, `found` then [keeps no more](#a-report-keeps-at-most-its-limit) once the buffer is empty.
 - If a collection reported issues in any other order, they are appended after its elements, so none is lost.
 - A field's rules can name `nested` only once, because the field's value is read only once.
 
-**Failing fast.** A nested field's buffer fails fast too, so it holds only the first issue of that value's full report. The pass checks `found.is_finished()` after recording an issue or appending a buffer, and stops as soon as it is true. If all the fields were present, the struct is still built, but its struct-level rules don't run.
+**Failing fast, and the limit.** A nested field's buffer has the limit of `found`, so when failing fast it holds only the first issue of that value's full report. The pass checks `found.is_finished()` after recording an issue or appending a buffer, and stops as soon as it is true, whatever the limit. If all the fields were present, the struct is still built, but its struct-level rules don't run.
 
 **The same report as serde followed by `validate()`.** For input that has every field with the right type, collecting deserialization reports exactly what deserializing with serde and then calling `validate()` would report, in the same order. Tests pin that equivalence.
 
-**An implementation of `serde::Deserialize`.** It calls `annotated::from_deserializer` and turns `Issues` into `D::Error::custom`, with every issue in the message. So plain `serde_json::from_str::<T>` still validates, and so does a struct that holds this one as an ordinary serde field.
+**An implementation of `serde::Deserialize`.** It calls `annotated::from_deserializer` and turns `Issues` into `D::Error::custom`, with the issues in the message, up to the default limit of 1,000. So plain `serde_json::from_str::<T>` still validates, and so does a struct that holds this one as an ordinary serde field.
 
 **Attributes.** The derive reads:
 
@@ -401,7 +427,7 @@ A variant with `deserialize_with` is read, as in serde's derive, through a type 
 
 ### Entry points and the error
 
-- `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with an empty `Report`.
+- `annotated::from_deserializer(deserializer) -> Result<T, DeserializeError<D::Error>>` starts at the root with `Report::new()`. `from_deserializer_limited_to` starts with `Report::limited_to`, and `from_deserializer_fail_fast` with `Report::failing_fast()`.
 - `DeserializeError<E>` is a `#[non_exhaustive]` enum: `Format(E)` or `Issues(Issues)`. `issues()` returns the issues as a slice, which is empty for the format's own error, so a caller can read them without matching. The type implements `Display`, `Debug` and `std::error::Error`.
 - The `json` feature adds `annotated::json::from_str` and `from_slice`. Like `serde_json::from_str`, they also reject characters after the JSON value.
 

@@ -319,6 +319,27 @@ fn deserializing_a_valid_nested_value_allocates_only_its_three_strings_and_its_l
     assert_eq!(allocations.count_total, 4);
 }
 
+#[cfg(feature = "serde")]
+#[test]
+fn a_map_read_into_a_finished_report_allocates_only_its_keys_and_room_for_the_values_it_could_not_build() {
+    let body = r#"{ "first": {}, "second": {} }"#;
+    let mut found = Report::failing_fast();
+    found.push(&Location::root(), Problem::custom("taken", "is taken"));
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(
+            <std::collections::BTreeMap<String, CrewMember> as annotated::Deserialize>::deserialize_at(
+                &mut deserializer,
+                &Location::root(),
+                &mut found,
+            ),
+        );
+    });
+
+    assert_eq!(allocations.count_total, 3);
+}
+
 #[test]
 fn issues_appended_to_an_empty_report_are_moved_without_allocating() {
     let root = Location::root();

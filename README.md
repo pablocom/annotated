@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/annotated)](https://crates.io/crates/annotated)
 [![docs.rs](https://img.shields.io/docsrs/annotated)](https://docs.rs/annotated)
 
-Validation for structs and enums that works with serde. You write rules on a struct's fields. When the struct is deserialized, you get every problem back in one error: broken rules and missing fields together, each with the path of the field it belongs to. If you would rather stop at the first problem, the `_fail_fast` functions do that.
+Validation for structs and enums that works with serde. You write rules on a struct's fields. When the struct is deserialized, you get every problem back in one error, up to 1,000: broken rules and missing fields together, each with the path of the field it belongs to. If you would rather stop at the first problem, the `_fail_fast` functions do that.
 
 ```rust
 use annotated::{Deserialize, ParamValue, Path, Problem, Validate};
@@ -114,10 +114,17 @@ Printed, the error is one issue per line: `age: must be between 18 and 120`. A m
 |---|---|
 | `annotated::json::from_str` or `from_slice`, with the `json` feature | A `DeserializeError` holding the issues as data, as in the example |
 | `annotated::from_deserializer`, with any serde `Deserializer` | The same |
-| `serde_json::from_str`, or anything else that goes through `serde::Deserialize` | A serde error with every issue in its message. A serde error can only carry a message, not data |
+| `serde_json::from_str`, or anything else that goes through `serde::Deserialize` | A serde error with the issues in its message. A serde error can only carry a message, not data |
 | `value.validate()`, on a struct that derives `Validate` | `Issues`, for a value that already exists, whether or not serde built it |
 
-To stop at the first issue, call `from_str_fail_fast`, `from_slice_fail_fast`, `from_deserializer_fail_fast` or `validate_fail_fast` instead. Each returns only the issue the full report would list first. Going through `serde::Deserialize` always collects every issue.
+To stop at the first issue, call `from_str_fail_fast`, `from_slice_fail_fast`, `from_deserializer_fail_fast` or `validate_fail_fast` instead. Each returns only the issue the full report would list first.
+
+Each way keeps at most 1,000 issues, `Report::DEFAULT_LIMIT`, since a body can have as many issues as it is long: a list of a million `{}` is a million missing fields for each field its elements require.
+
+- The issues kept are listed in the order the full report lists them. For a struct, an enum or a list, they are its first ones. Past the limit, which of a map's issues are kept is unspecified, except that failing fast keeps the first.
+- `Issues::is_complete()` is `false` when the limit was reached, so the value may have more issues than are listed.
+- To keep another number, call `from_str_limited_to`, `from_slice_limited_to`, `from_deserializer_limited_to` or `validate_limited_to`. A limit of 0 is taken as 1. `Report::unlimited()` keeps every issue, for values you trust.
+- Going through `serde::Deserialize` always keeps at most 1,000.
 
 ## Values of the wrong type
 
