@@ -1,10 +1,10 @@
-error: with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting`, `bound` and those that only change serializing
+error: with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting`, `bound`, `crate` and those that only change serializing
  --> tests/ui/deserialize/unsupported_enum_serde_attribute.rs:4:9
   |
 4 | #[serde(from = "String")]
   |         ^^^^
 
-error: with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting`, `bound` and those that only change serializing
+error: with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting`, `bound`, `crate` and those that only change serializing
   --> tests/ui/deserialize/unsupported_enum_serde_attribute.rs:11:19
    |
 11 | #[serde(untagged, try_from = "u64")]

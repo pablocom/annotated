@@ -32,7 +32,7 @@ impl Pattern {
 
     pub fn rule(&self, span: Span) -> TokenStream {
         let compiled = &self.compiled;
-        quote_at!(span=> ::annotated::rules::pattern(&#compiled))
+        quote_at!(span=> _annotated::rules::pattern(&#compiled))
     }
 
     pub fn is_the_same_as(&self, other: &Self) -> bool {
@@ -46,9 +46,9 @@ impl Pattern {
             span,
         } = self;
         quote_at! {*span=>
-            static #compiled: ::std::sync::LazyLock<::annotated::__private::Regex> =
+            static #compiled: ::std::sync::LazyLock<_annotated::__private::Regex> =
                 ::std::sync::LazyLock::new(|| {
-                    ::annotated::__private::Regex::new(#expression)
+                    _annotated::__private::Regex::new(#expression)
                         .expect("`#[derive(Validate)]` built this regular expression")
                 });
         }

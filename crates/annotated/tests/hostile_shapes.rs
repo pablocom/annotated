@@ -608,6 +608,55 @@ fn items_and_types_passed_through_macros_derive_both() {
     derives_both::<through_macros::Note>();
 }
 
+// A crate that re-exports annotated, and serde, offers the derives under paths of its own.
+mod through_a_re_export {
+    mod facade {
+        pub use annotated as checks;
+        pub use serde as wire;
+    }
+
+    #[derive(Debug, facade::checks::Validate, facade::checks::Deserialize)]
+    #[annotated(crate = "facade::checks", collect_type_errors)]
+    #[serde(crate = "facade::wire")]
+    pub struct Member {
+        #[validate(required, length(max = 5))]
+        pub name: String,
+        #[validate(each(nested))]
+        pub friends: Vec<Friend>,
+        #[serde(flatten)]
+        #[validate(nested)]
+        pub friend: Friend,
+    }
+
+    #[derive(Debug, facade::checks::Validate, facade::checks::Deserialize)]
+    #[annotated(crate = "self::facade::checks")]
+    pub struct Friend {
+        #[validate(required)]
+        pub nickname: String,
+    }
+
+    #[derive(Debug, facade::checks::Validate, facade::checks::Deserialize)]
+    #[annotated(crate = "facade::checks")]
+    #[serde(tag = "kind", content = "data")]
+    pub enum Payment {
+        Card {
+            #[validate(length(min = 12))]
+            number: String,
+        },
+        Transfer(#[validate(nested)] Friend),
+        Cash,
+        #[serde(untagged)]
+        Other(#[validate(required)] String),
+    }
+}
+
+#[test]
+fn a_crate_re_exporting_annotated_offers_the_derives_under_its_own_path() {
+    derives_both::<through_a_re_export::Member>();
+    derives_both::<through_a_re_export::Friend>();
+    derives_both::<through_a_re_export::Payment>();
+}
+
 // Every struct and enum shape the derives accept, in every serde tagging, with the serde attributes they read.
 mod every_shape {
     use annotated::{Deserialize, Validate};

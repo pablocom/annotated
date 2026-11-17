@@ -19,12 +19,12 @@ pub fn rules_function(validated_struct: &ValidatedStruct) -> TokenStream {
         return TokenStream::new();
     }
     quote! {
-        fn rules() -> ::annotated::Rules {
+        fn rules() -> _annotated::Rules {
             #[allow(unused_imports)]
-            use ::annotated::__private::{
+            use _annotated::__private::{
                 ElementOfACollection as _, ElementOfAnotherValue as _, SaidByARule as _, SaidByNoRule as _,
             };
-            ::annotated::Rules::of_fields([#(#fields),*])
+            _annotated::Rules::of_fields([#(#fields),*])
         }
     }
 }
@@ -63,21 +63,21 @@ impl Description {
         let value_rules = self.value_rules(
             &rules,
             field.is_optional,
-            &quote!(::annotated::__private::Checked::<#field_type>::new()),
+            &quote!(_annotated::__private::Checked::<#field_type>::new()),
         );
         let takes_a_default = (has_default || has_its_struct_a_default) && !field.requires_its_key;
         if takes_a_default {
-            return Some(quote!(::annotated::FieldRules::new(#name, #value_rules).with_default()));
+            return Some(quote!(_annotated::FieldRules::new(#name, #value_rules).with_default()));
         }
-        Some(quote!(::annotated::FieldRules::new(#name, #value_rules)))
+        Some(quote!(_annotated::FieldRules::new(#name, #value_rules)))
     }
 
     fn value_rules(&self, rules: &[&FieldRule], is_value_optional: bool, checked_type: &TokenStream) -> TokenStream {
         let Self { checked, value_rules } = self;
         let (no_rules, checked_inside) = if is_value_optional {
-            (quote!(::annotated::ValueRules::optional()), quote!(#checked.inside()))
+            (quote!(_annotated::ValueRules::optional()), quote!(#checked.inside()))
         } else {
-            (quote!(::annotated::ValueRules::new()), quote!(#checked))
+            (quote!(_annotated::ValueRules::new()), quote!(#checked))
         };
         let problems = rules.iter().filter_map(|rule| match rule {
             FieldRule::Check(required) if required.is_required => Some(self.problem_of(required, &quote!(#checked))),
@@ -101,7 +101,7 @@ impl Description {
         let value_rules = &self.value_rules;
         let RuleCheck { rule, span, .. } = check;
         quote_at! {*span=>
-            let #value_rules = (&::annotated::__private::Said(&#rule, #checked_by_the_rule)).added_to(#value_rules);
+            let #value_rules = (&_annotated::__private::Said(&#rule, #checked_by_the_rule)).added_to(#value_rules);
         }
     }
 

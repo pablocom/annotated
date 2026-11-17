@@ -1,9 +1,10 @@
 use syn::{DataEnum, DeriveInput, ExprPath, Fields, Ident};
 
 use crate::deserialized_struct::{
-    AcceptedSerdeAttributes, DeserializedStruct, Form, collects_type_errors, refuse_flatten, refuse_options_on,
-    refuse_serde_attributes_other_than, refuse_what_fields_can_t_take,
+    AcceptedSerdeAttributes, DeserializedStruct, Form, refuse_flatten, refuse_serde_attributes_other_than,
+    refuse_what_fields_can_t_take,
 };
+use crate::options::Options;
 use crate::serde_names::{SerdeEnum, SerdeStruct, Tag, UnreadableAttribute};
 use crate::validated_enum::ValidatedEnum;
 use crate::validated_struct::{Place, StructCheck};
@@ -17,6 +18,7 @@ pub struct DeserializedEnum<'a> {
     pub expecting: Option<String>,
     pub borrowed_lifetimes: Vec<syn::Lifetime>,
     pub bound: Option<Vec<syn::WherePredicate>>,
+    pub serde_path: Option<syn::Path>,
     pub enum_checks: Vec<StructCheck>,
     pub is_reporting_all: bool,
     pub collects_type_errors: bool,
@@ -41,26 +43,24 @@ const ON_AN_ENUM: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "deny_unknown_fields",
         "expecting",
         "bound",
+        "crate",
         "into",
         "tag",
         "content",
         "untagged",
     ],
     refusal: "with `#[derive(Deserialize)]`, an enum's `#[serde(...)]` takes `tag`, `content`, `untagged`, \
-              `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting`, `bound` and those that \
-              only change serializing",
+              `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting`, `bound`, `crate` and \
+              those that only change serializing",
 };
 
 impl<'a> DeserializedEnum<'a> {
-    pub fn from_input(input: &'a DeriveInput, data: &'a DataEnum) -> syn::Result<Self> {
+    pub fn from_input(input: &'a DeriveInput, data: &'a DataEnum, options: &Options) -> syn::Result<Self> {
         let validated = ValidatedEnum::from_input(input, data, UnreadableAttribute::IsAnError)?;
-        let collects_type_errors = collects_type_errors(&input.attrs)?;
+        let collects_type_errors = options.collects_type_errors;
         refuse_serde_attributes_other_than(&ON_AN_ENUM, &input.attrs)?;
-        for variant in &data.variants {
-            refuse_options_on("a variant", "enum", &variant.attrs)?;
-        }
         for variant in &validated.variants {
-            refuse_what_fields_can_t_take(&variant.content.fields, "enum")?;
+            refuse_what_fields_can_t_take(&variant.content.fields)?;
         }
         let serde = SerdeEnum::from_input(input, UnreadableAttribute::IsAnError)?;
         if serde.is_denying_unknown_fields {
@@ -82,6 +82,7 @@ impl<'a> DeserializedEnum<'a> {
             expecting,
             borrowed_lifetimes,
             bound,
+            serde_path,
         } = serde;
         let is_untagged = matches!(tag, Tag::Untagged);
         let variants = data
@@ -110,6 +111,7 @@ impl<'a> DeserializedEnum<'a> {
                             borrowed_lifetimes: borrowed_lifetimes.clone(),
                             bound: bound.clone(),
                             variant_bound: serde_variant.bound.clone(),
+                            serde_path: None,
                         },
                         collects_type_errors,
                         variant: Some(&variant.ident),
@@ -138,6 +140,7 @@ impl<'a> DeserializedEnum<'a> {
             expecting,
             borrowed_lifetimes,
             bound,
+            serde_path,
             enum_checks,
             is_reporting_all,
             collects_type_errors,

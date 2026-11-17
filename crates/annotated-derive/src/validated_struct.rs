@@ -415,7 +415,7 @@ impl RuleCheck {
             });
         }
         let constructor = match call.path.get_ident() {
-            Some(built_in) => quote_at!(span=> ::annotated::rules::#built_in),
+            Some(built_in) => quote_at!(span=> _annotated::rules::#built_in),
             None => call.path.to_token_stream(),
         };
         let constructor_value = &call.value;

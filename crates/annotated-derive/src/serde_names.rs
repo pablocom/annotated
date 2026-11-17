@@ -2,7 +2,7 @@ use proc_macro2::Span;
 use serde_derive_internals::ast::{self, Container, Data};
 use serde_derive_internals::{Ctxt, Derive, attr};
 use syn::punctuated::Punctuated;
-use syn::{Attribute, DeriveInput, ExprPath, Ident, Lifetime, Meta, Token, WherePredicate, parse_quote};
+use syn::{Attribute, DeriveInput, ExprPath, Ident, Lifetime, Meta, Path, Token, WherePredicate, parse_quote};
 
 pub struct SerdeStruct {
     pub name: String,
@@ -14,6 +14,7 @@ pub struct SerdeStruct {
     pub borrowed_lifetimes: Vec<Lifetime>,
     pub bound: Option<Vec<WherePredicate>>,
     pub variant_bound: Option<Vec<WherePredicate>>,
+    pub serde_path: Option<Path>,
 }
 
 pub struct SerdeField {
@@ -34,6 +35,7 @@ pub struct SerdeEnum {
     pub expecting: Option<String>,
     pub borrowed_lifetimes: Vec<Lifetime>,
     pub bound: Option<Vec<WherePredicate>>,
+    pub serde_path: Option<Path>,
 }
 
 pub enum Tag {
@@ -152,6 +154,7 @@ impl SerdeStruct {
             borrowed_lifetimes: borrowed_lifetimes(container),
             bound: container.attrs.de_bound().map(<[WherePredicate]>::to_vec),
             variant_bound: None,
+            serde_path: container.attrs.custom_serde_path().cloned(),
         }
     }
 }
@@ -195,6 +198,7 @@ impl SerdeEnum {
             expecting: container.attrs.expecting().map(ToOwned::to_owned),
             borrowed_lifetimes: borrowed_lifetimes(container),
             bound: container.attrs.de_bound().map(<[WherePredicate]>::to_vec),
+            serde_path: container.attrs.custom_serde_path().cloned(),
         }
     }
 }
@@ -245,5 +249,5 @@ fn reachable_function(function: &ExprPath) -> ExprPath {
         return function.clone();
     }
     let name = &segments.last().expect("a path has a segment").ident;
-    parse_quote!(::annotated::__private::#name)
+    parse_quote!(_annotated::__private::#name)
 }

@@ -1,6 +1,7 @@
 use syn::punctuated::Punctuated;
 use syn::{Attribute, DeriveInput, Error, ExprPath, Ident, Meta, Token};
 
+use crate::options::Options;
 use crate::serde_names::{SerdeStruct, UnreadableAttribute};
 use crate::validated_struct::{FieldRule, ValidatedField, ValidatedStruct, nested_rules_in};
 
@@ -33,22 +34,22 @@ const ON_A_STRUCT: AcceptedSerdeAttributes = AcceptedSerdeAttributes {
         "expecting",
         "default",
         "bound",
+        "crate",
         "into",
     ],
     refusal: "with `#[derive(Deserialize)]`, a struct's `#[serde(...)]` takes `rename_all`, `rename`, \
-              `deny_unknown_fields`, `expecting`, `default`, `bound` and those that only change serializing",
+              `deny_unknown_fields`, `expecting`, `default`, `bound`, `crate` and those that only change serializing",
 };
 
 impl<'a> DeserializedStruct<'a> {
-    pub fn from_input(input: &'a DeriveInput) -> syn::Result<Self> {
+    pub fn from_input(input: &'a DeriveInput, options: &Options) -> syn::Result<Self> {
         let validated = ValidatedStruct::from_input(
             input,
             "`Deserialize` can only be derived for a struct with named fields or an enum",
             UnreadableAttribute::IsAnError,
         )?;
-        let collects_type_errors = collects_type_errors(&input.attrs)?;
         refuse_serde_attributes_other_than(&ON_A_STRUCT, &input.attrs)?;
-        refuse_what_fields_can_t_take(&validated.fields, "struct")?;
+        refuse_what_fields_can_t_take(&validated.fields)?;
         let serde = SerdeStruct::from_input(input, UnreadableAttribute::IsAnError)?;
         if serde.is_denying_unknown_fields {
             refuse_flatten(&validated.fields, "a struct")?;
@@ -56,7 +57,7 @@ impl<'a> DeserializedStruct<'a> {
         Ok(Self {
             validated,
             serde,
-            collects_type_errors,
+            collects_type_errors: options.collects_type_errors,
             variant: None,
             form: Form::Struct,
             read_whole_by: None,
@@ -64,49 +65,11 @@ impl<'a> DeserializedStruct<'a> {
     }
 }
 
-pub fn refuse_what_fields_can_t_take(fields: &[ValidatedField], container: &str) -> syn::Result<()> {
+pub fn refuse_what_fields_can_t_take(fields: &[ValidatedField]) -> syn::Result<()> {
     for field in fields {
-        refuse_options_on("a field", container, field.attributes)?;
         refuse_nested_more_than_once(&field.rules)?;
     }
     Ok(())
-}
-
-pub fn collects_type_errors(attributes: &[Attribute]) -> syn::Result<bool> {
-    let mut collects_type_errors = false;
-    for option in options_in(attributes)? {
-        match option {
-            Meta::Path(path) if path.is_ident("collect_type_errors") => collects_type_errors = true,
-            with_a_value if with_a_value.path().is_ident("collect_type_errors") => {
-                return Err(Error::new_spanned(with_a_value, "`collect_type_errors` takes no value"));
-            }
-            unknown => {
-                return Err(Error::new_spanned(
-                    unknown.path(),
-                    "`#[annotated(...)]` takes one option, `collect_type_errors`",
-                ));
-            }
-        }
-    }
-    Ok(collects_type_errors)
-}
-
-pub fn refuse_options_on(item: &str, container: &str, attributes: &[Attribute]) -> syn::Result<()> {
-    let Some(option) = options_in(attributes)?.into_iter().next() else {
-        return Ok(());
-    };
-    Err(Error::new_spanned(
-        option.path(),
-        format!("`#[annotated(...)]` takes no options on {item}: `collect_type_errors` goes on the {container}"),
-    ))
-}
-
-fn options_in(attributes: &[Attribute]) -> syn::Result<Vec<Meta>> {
-    let mut options = Vec::new();
-    for attribute in attributes_named("annotated", attributes) {
-        options.extend(attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?);
-    }
-    Ok(options)
 }
 
 pub fn refuse_serde_attributes_other_than(

@@ -8,14 +8,14 @@ use crate::bounds::{Bounds, Used};
 use crate::described_rules::rules_function;
 use crate::deserialized_struct::{DeserializedStruct, Form};
 use crate::expansion::{Expansion, message_override, validity_of};
-use crate::generated::in_a_scope_of_its_own;
+use crate::generated::{CratePaths, in_a_scope_of_its_own};
 use crate::serde_names::{DefaultValue, SerdeField};
 use crate::validated_struct::{
     FieldRule, Place, ValidatedField, nested_rules_in, option_content, patterns_compiled_once,
 };
 
-pub fn deserialize_impl(deserialized_struct: &DeserializedStruct) -> TokenStream {
-    DeserializeExpansion::new(deserialized_struct).deserialize_impl()
+pub fn deserialize_impl(deserialized_struct: &DeserializedStruct, paths: &CratePaths) -> TokenStream {
+    DeserializeExpansion::new(deserialized_struct).deserialize_impl(paths)
 }
 
 pub struct DeserializeExpansion<'a> {
@@ -49,7 +49,7 @@ impl<'a> DeserializeExpansion<'a> {
                 deserialized_struct.validated.is_reporting_all,
                 finishing_the_field_checks,
             ),
-            serde: quote!(::annotated::__private::serde),
+            serde: quote!(_serde),
             deserializer: local("deserializer"),
             formatter: local("formatter"),
             map: local("map"),
@@ -87,7 +87,7 @@ impl<'a> DeserializeExpansion<'a> {
             .filter(|serde_field| !serde_field.is_skipped)
     }
 
-    fn deserialize_impl(&self) -> TokenStream {
+    fn deserialize_impl(&self, paths: &CratePaths) -> TokenStream {
         let Self {
             serde, deserializer, ..
         } = self;
@@ -114,11 +114,11 @@ impl<'a> DeserializeExpansion<'a> {
             )
         };
         let impls = quote! {
-            impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
+            impl #impl_generics _annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
-                    #at: &::annotated::Location<'_>,
-                    #found: &mut ::annotated::Report,
+                    #at: &_annotated::Location<'_>,
+                    #found: &mut _annotated::Report,
                 ) -> ::core::result::Result<::core::option::Option<Self>, __D::Error> {
                     #field_identifier
                     #(#functions_reading_fields)*
@@ -133,11 +133,11 @@ impl<'a> DeserializeExpansion<'a> {
                 fn deserialize<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
                 ) -> ::core::result::Result<Self, __D::Error> {
-                    ::annotated::__private::deserialize_for_serde(#deserializer)
+                    _annotated::__private::deserialize_for_serde(#deserializer)
                 }
             }
         };
-        in_a_scope_of_its_own(&patterns_compiled_once(self.fields()), &impls)
+        in_a_scope_of_its_own(paths, &patterns_compiled_once(self.fields()), &impls)
     }
 
     pub fn new_visitor(&self) -> TokenStream {
@@ -284,7 +284,7 @@ impl<'a> DeserializeExpansion<'a> {
         let nested_values = field.nested_value_type().unwrap_or(field_type);
         let are_nested_values_validated = takes_a_default || !self.reads_nested_values(field);
         if field.has_nested_values() && are_nested_values_validated {
-            checking.add(&Used::whole(nested_values), &quote!(::annotated::Validate));
+            checking.add(&Used::whole(nested_values), &quote!(_annotated::Validate));
         }
         if !self.is_read_by_serde(field) {
             return;
@@ -293,7 +293,7 @@ impl<'a> DeserializeExpansion<'a> {
             reading.add(&Used::whole(field_type), &quote!(#serde::Deserialize<'de>));
             return;
         }
-        reading.add(&Used::whole(nested_values), &quote!(::annotated::Deserialize<'de>));
+        reading.add(&Used::whole(nested_values), &quote!(_annotated::Deserialize<'de>));
         let around_the_nested_values = Used {
             value_type: field_type,
             apart: Some(nested_values),
@@ -457,8 +457,8 @@ impl<'a> DeserializeExpansion<'a> {
             #field_names
 
             struct __Visitor #visitor_definition_generics #visitor_where_clause {
-                #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
-                #found: &#visitor_lifetime mut ::annotated::Report,
+                #at: &#visitor_lifetime _annotated::Location<#visitor_lifetime>,
+                #found: &#visitor_lifetime mut _annotated::Report,
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
@@ -568,7 +568,7 @@ impl<'a> DeserializeExpansion<'a> {
         }
         let reading_with_its_issues = self.reading_with_its_issues(field);
         let value = quote_at! {field_type.span()=>
-            ::annotated::__private::serde::de::DeserializeSeed::deserialize(#reading_with_its_issues, #deserializer)?
+            _serde::de::DeserializeSeed::deserialize(#reading_with_its_issues, #deserializer)?
         };
         if !is_read_by_a_function {
             return value;
@@ -601,7 +601,7 @@ impl<'a> DeserializeExpansion<'a> {
             let read_issues = read_issues_of(field);
             let reading_with_its_issues = self.reading_with_its_issues(field);
             let mut element = quote_at! {field_type.span()=>
-                ::annotated::__private::serde::de::SeqAccess::next_element_seed(
+                _serde::de::SeqAccess::next_element_seed(
                     &mut #seq,
                     #reading_with_its_issues,
                 )?
@@ -642,14 +642,14 @@ impl<'a> DeserializeExpansion<'a> {
         };
         if !self.deserialized_struct.collects_type_errors {
             return quote_at! {field_type.span()=>
-                ::annotated::__private::DeserializeAt::<#field_type>::new(#at_the_field, &mut #read_issues)
+                _annotated::__private::DeserializeAt::<#field_type>::new(#at_the_field, &mut #read_issues)
             };
         }
         let type_name = type_name_of(field_type);
         if self.is_read_by_a_function(field) {
             let wrapper_type = self.wrapper_type_of(field);
             return quote_at! {field_type.span()=>
-                ::annotated::__private::CollectingTypeErrorsOfAFunctionAt::<#wrapper_type>::new(
+                _annotated::__private::CollectingTypeErrorsOfAFunctionAt::<#wrapper_type>::new(
                     #type_name,
                     #at_the_field,
                     &mut #read_issues,
@@ -662,7 +662,7 @@ impl<'a> DeserializeExpansion<'a> {
             quote!(CollectingTypeErrorsAt)
         };
         quote_at! {field_type.span()=>
-            ::annotated::__private::#seed::<#field_type>::new(#type_name, #at_the_field, &mut #read_issues)
+            _annotated::__private::#seed::<#field_type>::new(#type_name, #at_the_field, &mut #read_issues)
         }
     }
 
@@ -789,13 +789,13 @@ impl<'a> DeserializeExpansion<'a> {
             ) -> ::core::result::Result<Self::Value, __A::Error> {
                 #(let mut #slots: #slot_types = ::core::option::Option::None;)*
                 #(let mut #read_issues = self.#found.new_alike();)*
-                let mut #leftovers = ::annotated::__private::Leftovers::new();
+                let mut #leftovers = _annotated::__private::Leftovers::new();
                 while let ::core::option::Option::Some(#key) =
-                    #serde::de::MapAccess::next_key::<::annotated::__private::Key<'de>>(&mut #map)?
+                    #serde::de::MapAccess::next_key::<_annotated::__private::Key<'de>>(&mut #map)?
                 {
-                    match ::annotated::__private::Key::as_field_name(&#key) {
+                    match _annotated::__private::Key::as_field_name(&#key) {
                         #(#field_arms)*
-                        _ => ::annotated::__private::Leftovers::keep(&mut #leftovers, #key, &mut #map)?,
+                        _ => _annotated::__private::Leftovers::keep(&mut #leftovers, #key, &mut #map)?,
                     }
                 }
                 #(#flattened_values)*
@@ -816,7 +816,7 @@ impl<'a> DeserializeExpansion<'a> {
         let slot_type = self.slot_type_of(field);
         let field_type = field.field_type;
         let read_issues = read_issues_of(field);
-        let flattened = quote!(::annotated::__private::Leftovers::flattened::<__A::Error>(&mut #leftovers));
+        let flattened = quote!(_annotated::__private::Leftovers::flattened::<__A::Error>(&mut #leftovers));
         let is_read_by_a_function = self.is_read_by_a_function(field);
         let content_type = option_content(field_type).filter(|_| !is_read_by_a_function);
         let read_type = if is_read_by_a_function {
@@ -827,11 +827,11 @@ impl<'a> DeserializeExpansion<'a> {
         let read_value = match (self.reads_nested_values(field), content_type) {
             (true, Some(content_type)) => quote_at! {field_type.span()=>
                 ::core::option::Option::Some(::core::option::Option::flatten(::core::result::Result::ok(
-                    <#content_type as ::annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues),
+                    <#content_type as _annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues),
                 )))
             },
             (true, None) => quote_at! {field_type.span()=>
-                <#field_type as ::annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues)?
+                <#field_type as _annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues)?
             },
             (false, Some(content_type)) => {
                 let value_or_none = quote_at! {field_type.span()=>
@@ -842,7 +842,7 @@ impl<'a> DeserializeExpansion<'a> {
             (false, None) if self.deserialized_struct.collects_type_errors => {
                 let type_name = type_name_of(field_type);
                 let read = quote_at! {field_type.span()=>
-                    ::annotated::__private::Leftovers::flattened_collecting_type_errors::<#read_type>(
+                    _annotated::__private::Leftovers::flattened_collecting_type_errors::<#read_type>(
                         &mut #leftovers,
                         #type_name,
                         self.#at,
@@ -884,7 +884,7 @@ impl<'a> DeserializeExpansion<'a> {
         }
         let reading_with_its_issues = self.reading_with_its_issues(field);
         let value = quote_at! {field_type.span()=>
-            ::annotated::__private::serde::de::MapAccess::next_value_seed(
+            _serde::de::MapAccess::next_value_seed(
                 &mut #map,
                 #reading_with_its_issues,
             )?
@@ -913,7 +913,7 @@ impl<'a> DeserializeExpansion<'a> {
         let slots = self.read_fields().map(slot_of);
         let slot_types = self.read_fields().map(|field| self.slot_type_of(field));
         let read_issues = self.fields_read_with_issues().map(read_issues_of);
-        let read_issues_types = self.fields_read_with_issues().map(|_| quote!(::annotated::Report));
+        let read_issues_types = self.fields_read_with_issues().map(|_| quote!(_annotated::Report));
         let buffers_of_nested_values_not_read = self
             .fields()
             .iter()
@@ -1145,10 +1145,10 @@ impl<'a> DeserializeExpansion<'a> {
         let message = message_override(field.message_when_missing());
         let stop_if_finished = self.rules.stop_if_finished();
         quote! {
-            ::annotated::__private::record_issue(
+            _annotated::__private::record_issue(
                 #found,
                 #missing_at,
-                ::annotated::Problem::Missing,
+                _annotated::Problem::Missing,
                 #message,
             );
             #stop_if_finished
@@ -1403,7 +1403,7 @@ impl<'a> DeserializeExpansion<'a> {
             .iter()
             .find_map(|rule| match rule {
                 FieldRule::Nested { .. } => Some(quote_at! {*field_type_span=>
-                    ::annotated::Validate::validate_into(#present_value, #value_at, &mut #read_issues);
+                    _annotated::Validate::validate_into(#present_value, #value_at, &mut #read_issues);
                 }),
                 FieldRule::Each {
                     element_rules,
@@ -1418,7 +1418,7 @@ impl<'a> DeserializeExpansion<'a> {
                         buffer,
                     );
                     Some(quote! {
-                        ::annotated::rules::HasElements::for_each_element(
+                        _annotated::rules::HasElements::for_each_element(
                             #present_value,
                             #value_at,
                             |#present, #element_at| {
@@ -1497,7 +1497,7 @@ fn waiting_for_the_elements(field: &ValidatedField) -> TokenStream {
     }
     let read_issues = read_issues_of(field);
     quote! {
-        let mut #read_issues = ::annotated::__private::ElementIssues::new(#read_issues);
+        let mut #read_issues = _annotated::__private::ElementIssues::new(#read_issues);
     }
 }
 

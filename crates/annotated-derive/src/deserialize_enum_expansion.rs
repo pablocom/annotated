@@ -8,12 +8,12 @@ use crate::deserialize_expansion::{DeserializeExpansion, with_lifetime, without_
 use crate::deserialized_enum::{DeserializedEnum, DeserializedVariant};
 use crate::deserialized_struct::Form;
 use crate::expansion::Expansion;
-use crate::generated::in_a_scope_of_its_own;
+use crate::generated::{CratePaths, in_a_scope_of_its_own};
 use crate::serde_names::Tag;
 use crate::validated_struct::{Place, patterns_compiled_once};
 
-pub fn deserialize_enum_impl(deserialized_enum: &DeserializedEnum) -> TokenStream {
-    EnumExpansion::new(deserialized_enum).deserialize_impl()
+pub fn deserialize_enum_impl(deserialized_enum: &DeserializedEnum, paths: &CratePaths) -> TokenStream {
+    EnumExpansion::new(deserialized_enum).deserialize_impl(paths)
 }
 
 struct EnumExpansion<'a> {
@@ -45,7 +45,7 @@ impl<'a> EnumExpansion<'a> {
             deserialized_enum,
             contents,
             rules: Expansion::new(deserialized_enum.is_reporting_all, quote!(break #enum_checks_label)),
-            serde: quote!(::annotated::__private::serde),
+            serde: quote!(_serde),
             deserializer: local("deserializer"),
             formatter: local("formatter"),
             data: local("data"),
@@ -58,7 +58,7 @@ impl<'a> EnumExpansion<'a> {
         }
     }
 
-    fn deserialize_impl(&self) -> TokenStream {
+    fn deserialize_impl(&self, paths: &CratePaths) -> TokenStream {
         let Self {
             serde, deserializer, ..
         } = self;
@@ -85,11 +85,11 @@ impl<'a> EnumExpansion<'a> {
         };
         let reading = self.reading();
         let impls = quote! {
-            impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
+            impl #impl_generics _annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
-                    #at: &::annotated::Location<'_>,
-                    #found: &mut ::annotated::Report,
+                    #at: &_annotated::Location<'_>,
+                    #found: &mut _annotated::Report,
                 ) -> ::core::result::Result<::core::option::Option<Self>, __D::Error> {
                     #variant_identifier
                     #variant_reader
@@ -101,7 +101,7 @@ impl<'a> EnumExpansion<'a> {
                 fn deserialize<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
                 ) -> ::core::result::Result<Self, __D::Error> {
-                    ::annotated::__private::deserialize_for_serde(#deserializer)
+                    _annotated::__private::deserialize_for_serde(#deserializer)
                 }
             }
         };
@@ -111,7 +111,7 @@ impl<'a> EnumExpansion<'a> {
             .iter()
             .flat_map(|variant| &variant.content)
             .flat_map(|content| &content.validated.fields);
-        in_a_scope_of_its_own(&patterns_compiled_once(fields), &impls)
+        in_a_scope_of_its_own(paths, &patterns_compiled_once(fields), &impls)
     }
 
     // The bounds of the fields of every variant read, as each variant's own reading needs them, and those the enum's
@@ -283,8 +283,8 @@ impl<'a> EnumExpansion<'a> {
             .map(|(index, variant)| self.variant_arm(index, variant));
         quote! {
             struct __EnumVisitor #visitor_definition_generics #visitor_where_clause {
-                #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
-                #found: &#visitor_lifetime mut ::annotated::Report,
+                #at: &#visitor_lifetime _annotated::Location<#visitor_lifetime>,
+                #found: &#visitor_lifetime mut _annotated::Report,
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
@@ -435,8 +435,8 @@ impl<'a> EnumExpansion<'a> {
         quote! {
             struct __VariantSeed #visitor_definition_generics #visitor_where_clause {
                 #variant: __Variant,
-                #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
-                #found: &#visitor_lifetime mut ::annotated::Report,
+                #at: &#visitor_lifetime _annotated::Location<#visitor_lifetime>,
+                #found: &#visitor_lifetime mut _annotated::Report,
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
@@ -482,7 +482,7 @@ impl<'a> EnumExpansion<'a> {
             quote! {
                 #serde::Deserializer::deserialize_any(
                     #deserializer,
-                    ::annotated::__private::UnitVariantVisitor::new(#enum_name, #variant_name),
+                    _annotated::__private::UnitVariantVisitor::new(#enum_name, #variant_name),
                 )?;
             }
         };
@@ -616,7 +616,7 @@ impl<'a> EnumExpansion<'a> {
         };
         quote! {
             let mut #read_issues = #found.new_alike();
-            let #read = match ::annotated::__private::#reading_collecting_type_errors(
+            let #read = match _annotated::__private::#reading_collecting_type_errors(
                 #deserializer,
                 #enum_name,
                 #names,
@@ -628,7 +628,7 @@ impl<'a> EnumExpansion<'a> {
                     #read
                 }
                 ::core::result::Result::Err(problem) => {
-                    ::annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
+                    _annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
                     ::core::option::Option::None
                 }
             };
@@ -648,28 +648,28 @@ impl<'a> EnumExpansion<'a> {
         let collects_type_errors = self.deserialized_enum.collects_type_errors;
         let turbofish = self.turbofish();
         quote! {
-            let #read = match ::annotated::__private::read_internally_tagged::<_, __Variant>(
+            let #read = match _annotated::__private::read_internally_tagged::<_, __Variant>(
                 #deserializer,
                 #tag,
                 __VARIANTS,
                 #expecting,
                 #collects_type_errors,
             )? {
-                ::annotated::__private::Tagged::Variant(#variant, content) => #serde::de::DeserializeSeed::deserialize(
+                _annotated::__private::Tagged::Variant(#variant, content) => #serde::de::DeserializeSeed::deserialize(
                     __VariantSeed #turbofish {
                         #variant,
                         #at,
                         #found: &mut *#found,
                         marker: ::core::marker::PhantomData,
                     },
-                    ::annotated::__private::Buffered::deserializer::<__D::Error>(content),
+                    _annotated::__private::Buffered::deserializer::<__D::Error>(content),
                 )?,
-                ::annotated::__private::Tagged::IssueAtTheTag(problem) => {
-                    ::annotated::__private::record_issue(#found, &#at.field(#tag), problem, ::core::option::Option::None);
+                _annotated::__private::Tagged::IssueAtTheTag(problem) => {
+                    _annotated::__private::record_issue(#found, &#at.field(#tag), problem, ::core::option::Option::None);
                     ::core::option::Option::None
                 }
-                ::annotated::__private::Tagged::IssueAtTheEnum(problem) => {
-                    ::annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
+                _annotated::__private::Tagged::IssueAtTheEnum(problem) => {
+                    _annotated::__private::record_issue(#found, #at, problem, ::core::option::Option::None);
                     ::core::option::Option::None
                 }
             };
@@ -778,7 +778,7 @@ impl EnumExpansion<'_> {
         let local = |name| Ident::new(name, Span::mixed_site());
         let (content, tried) = (local("content"), local("tried"));
         let variants_label = Lifetime::new("'variants", Span::mixed_site());
-        let by_reference = quote!(::annotated::__private::Buffered::by_reference::<__D::Error>(&#content));
+        let by_reference = quote!(_annotated::__private::Buffered::by_reference::<__D::Error>(&#content));
         let turbofish = self.turbofish();
         let reporting_into_what_was_tried = quote!(#at, #found: &mut #tried, marker: ::core::marker::PhantomData);
         let attempt = |reading: TokenStream| {
@@ -806,17 +806,17 @@ impl EnumExpansion<'_> {
             Tag::Internal { tag } => {
                 let expecting = self.expecting();
                 Some(attempt(quote! {
-                    match ::annotated::__private::read_internally_tagged::<_, __Variant>(
+                    match _annotated::__private::read_internally_tagged::<_, __Variant>(
                         #by_reference,
                         #tag,
                         __VARIANTS,
                         #expecting,
                         false,
                     ) {
-                        ::core::result::Result::Ok(::annotated::__private::Tagged::Variant(#variant, buffered)) => {
+                        ::core::result::Result::Ok(_annotated::__private::Tagged::Variant(#variant, buffered)) => {
                             #serde::de::DeserializeSeed::deserialize(
                                 __VariantSeed #turbofish { #variant, #reporting_into_what_was_tried },
-                                ::annotated::__private::Buffered::deserializer::<__D::Error>(buffered),
+                                _annotated::__private::Buffered::deserializer::<__D::Error>(buffered),
                             )
                         }
                         _ => ::core::result::Result::Ok(::core::option::Option::None),
@@ -852,14 +852,14 @@ impl EnumExpansion<'_> {
             .unwrap_or_else(|| format!("untagged enum {name}"));
         quote! {
             let #content =
-                <::annotated::__private::Buffered<'de> as #serde::Deserialize<'de>>::deserialize(#deserializer)?;
+                <_annotated::__private::Buffered<'de> as #serde::Deserialize<'de>>::deserialize(#deserializer)?;
             let #read = #variants_label: {
                 #tagged_attempt
                 #(#untagged_attempts)*
-                ::annotated::__private::record_issue(
+                _annotated::__private::record_issue(
                     #found,
                     #at,
-                    ::annotated::__private::Buffered::fitting_no_variant(&#content, #expecting),
+                    _annotated::__private::Buffered::fitting_no_variant(&#content, #expecting),
                     ::core::option::Option::None,
                 );
                 ::core::option::Option::None
@@ -897,8 +897,8 @@ impl EnumExpansion<'_> {
             const __ADJACENT_FIELDS: &[&str] = &[#tag, #content];
 
             struct __AdjacentVisitor #visitor_definition_generics #visitor_where_clause {
-                #at: &#visitor_lifetime ::annotated::Location<#visitor_lifetime>,
-                #found: &#visitor_lifetime mut ::annotated::Report,
+                #at: &#visitor_lifetime _annotated::Location<#visitor_lifetime>,
+                #found: &#visitor_lifetime mut _annotated::Report,
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
@@ -970,7 +970,7 @@ impl EnumExpansion<'_> {
                 let mut #variant_read = ::core::option::Option::None;
                 while let ::core::option::Option::Some(#key) = #serde::de::MapAccess::next_key_seed(
                     &mut #map,
-                    ::annotated::__private::TagOrContentKey::new(
+                    _annotated::__private::TagOrContentKey::new(
                         #tag,
                         #content,
                         __ADJACENT_FIELDS,
@@ -978,7 +978,7 @@ impl EnumExpansion<'_> {
                     ),
                 )? {
                     match #key {
-                        ::annotated::__private::TagOrContent::Tag => {
+                        _annotated::__private::TagOrContent::Tag => {
                             if ::core::option::Option::is_some(&#tag_read) {
                                 return ::core::result::Result::Err(
                                     <__A::Error as #serde::de::Error>::duplicate_field(#tag),
@@ -986,10 +986,10 @@ impl EnumExpansion<'_> {
                             }
                             #tag_read = ::core::option::Option::Some(#serde::de::MapAccess::next_value_seed(
                                 &mut #map,
-                                ::annotated::__private::TagValue::<__Variant>::new(),
+                                _annotated::__private::TagValue::<__Variant>::new(),
                             )?);
                         }
-                        ::annotated::__private::TagOrContent::Content => {
+                        _annotated::__private::TagOrContent::Content => {
                             if ::core::option::Option::is_some(&#content_buffered)
                                 || ::core::option::Option::is_some(&#variant_read)
                             {
@@ -1005,14 +1005,14 @@ impl EnumExpansion<'_> {
                                 }
                                 _ => {
                                     #content_buffered = ::core::option::Option::Some(
-                                        #serde::de::MapAccess::next_value::<::annotated::__private::Buffered<'de>>(
+                                        #serde::de::MapAccess::next_value::<_annotated::__private::Buffered<'de>>(
                                             &mut #map,
                                         )?,
                                     );
                                 }
                             }
                         }
-                        ::annotated::__private::TagOrContent::Other => {
+                        _annotated::__private::TagOrContent::Other => {
                             #serde::de::MapAccess::next_value::<#serde::de::IgnoredAny>(&mut #map)?;
                         }
                     }
@@ -1028,7 +1028,7 @@ impl EnumExpansion<'_> {
         let seq = Ident::new("seq", Span::mixed_site());
         let content_read = if self.deserialized_enum.collects_type_errors {
             quote! {
-                match #serde::de::SeqAccess::next_element::<::annotated::__private::Buffered<'de>>(&mut #seq)? {
+                match #serde::de::SeqAccess::next_element::<_annotated::__private::Buffered<'de>>(&mut #seq)? {
                     ::core::option::Option::Some(content) => self.buffered_content_read(#variant, content),
                     ::core::option::Option::None => self.missing_content(#variant),
                 }
@@ -1049,7 +1049,7 @@ impl EnumExpansion<'_> {
             ) -> ::core::result::Result<Self::Value, __A::Error> {
                 match #serde::de::SeqAccess::next_element_seed(
                     &mut #seq,
-                    ::annotated::__private::TagValue::<__Variant>::new(),
+                    _annotated::__private::TagValue::<__Variant>::new(),
                 )? {
                     ::core::option::Option::Some(::core::option::Option::Some(#variant)) => #content_read,
                     ::core::option::Option::Some(::core::option::Option::None) => {
@@ -1078,7 +1078,7 @@ impl EnumExpansion<'_> {
         let (_, type_generics, _) = input.generics.split_for_impl();
         let reported_at_the_tag = |problem: TokenStream| {
             quote! {
-                ::annotated::__private::record_issue(
+                _annotated::__private::record_issue(
                     self.#found,
                     &self.#at.field(#tag),
                     #problem,
@@ -1087,13 +1087,13 @@ impl EnumExpansion<'_> {
                 return ::core::result::Result::Ok(::core::option::Option::None);
             }
         };
-        let missing_tag = reported_at_the_tag(quote!(::annotated::Problem::Missing));
-        let unknown_tag = reported_at_the_tag(quote!(::annotated::__private::unknown_variant(__VARIANTS)));
+        let missing_tag = reported_at_the_tag(quote!(_annotated::Problem::Missing));
+        let unknown_tag = reported_at_the_tag(quote!(_annotated::__private::unknown_variant(__VARIANTS)));
         quote! {
-            fn finished<__E: ::annotated::__private::serde::de::Error>(
+            fn finished<__E: _serde::de::Error>(
                 self,
                 tag_read: ::core::option::Option<::core::option::Option<__Variant>>,
-                content_buffered: ::core::option::Option<::annotated::__private::Buffered<'de>>,
+                content_buffered: ::core::option::Option<_annotated::__private::Buffered<'de>>,
                 variant_read: ::core::option::Option<::core::option::Option<#name #type_generics>>,
             ) -> ::core::result::Result<::core::option::Option<#name #type_generics>, __E> {
                 let ::core::option::Option::Some(tag_read) = tag_read else {
@@ -1129,13 +1129,13 @@ impl EnumExpansion<'_> {
             let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(&mut #read_issues));
             quote! {
                 let mut #read_issues = self.#found.new_alike();
-                match ::annotated::__private::Buffered::read_collecting_type_errors(content, #variant_seed, #type_name) {
+                match _annotated::__private::Buffered::read_collecting_type_errors(content, #variant_seed, #type_name) {
                     ::core::result::Result::Ok(read) => {
                         self.#found.append(&mut #read_issues);
                         ::core::result::Result::Ok(read)
                     }
                     ::core::result::Result::Err(problem) => {
-                        ::annotated::__private::record_issue(
+                        _annotated::__private::record_issue(
                             self.#found,
                             &self.#at.field(#content),
                             problem,
@@ -1150,15 +1150,15 @@ impl EnumExpansion<'_> {
             quote! {
                 #serde::de::DeserializeSeed::deserialize(
                     #variant_seed,
-                    ::annotated::__private::Buffered::deserializer::<__E>(content),
+                    _annotated::__private::Buffered::deserializer::<__E>(content),
                 )
             }
         };
         quote! {
-            fn buffered_content_read<__E: ::annotated::__private::serde::de::Error>(
+            fn buffered_content_read<__E: _serde::de::Error>(
                 self,
                 #variant: __Variant,
-                content: ::annotated::__private::Buffered<'de>,
+                content: _annotated::__private::Buffered<'de>,
             ) -> ::core::result::Result<::core::option::Option<#name #type_generics>, __E> {
                 #reading
             }
@@ -1192,10 +1192,10 @@ impl EnumExpansion<'_> {
         let missing = (!variants_needing_content.is_empty()).then(|| {
             quote! {
                 _ => {
-                    ::annotated::__private::record_issue(
+                    _annotated::__private::record_issue(
                         self.#found,
                         &self.#at.field(#content),
-                        ::annotated::Problem::Missing,
+                        _annotated::Problem::Missing,
                         ::core::option::Option::None,
                     );
                     ::core::result::Result::Ok(::core::option::Option::None)
@@ -1203,7 +1203,7 @@ impl EnumExpansion<'_> {
             }
         });
         quote! {
-            fn missing_content<__E: ::annotated::__private::serde::de::Error>(
+            fn missing_content<__E: _serde::de::Error>(
                 self,
                 #variant: __Variant,
             ) -> ::core::result::Result<::core::option::Option<#name #type_generics>, __E> {

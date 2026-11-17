@@ -4,7 +4,7 @@ use syn::{DeriveInput, Expr, Generics, Ident};
 
 use crate::bounds::{Bounds, Used};
 use crate::described_rules::rules_function;
-use crate::generated::in_a_scope_of_its_own;
+use crate::generated::{CratePaths, in_a_scope_of_its_own};
 use crate::validated_enum::{ValidatedEnum, ValidatedVariant};
 use crate::validated_struct::{
     FieldRule, Place, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in, patterns_compiled_once,
@@ -30,7 +30,7 @@ enum NestedValues {
     ReadWithIssuesIn(Ident),
 }
 
-pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
+pub fn validate_impl(validated_struct: &ValidatedStruct, paths: &CratePaths) -> TokenStream {
     let expansion = Expansion::new(validated_struct.is_reporting_all, quote!(return));
     let Expansion { at, found, .. } = &expansion;
     let field_checks = validated_struct.fields.iter().enumerate().map(|(index, field)| {
@@ -49,8 +49,8 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let (_, type_generics, _) = input.generics.split_for_impl();
     let validate_impl = quote! {
-        impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
-            fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
+        impl #impl_generics _annotated::Validate for #name #type_generics #where_clause {
+            fn validate_into(&self, #at: &_annotated::Location<'_>, #found: &mut _annotated::Report) {
                 #(#field_checks)*
                 #(#struct_checks)*
             }
@@ -58,10 +58,10 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
             #rules_function
         }
     };
-    in_a_scope_of_its_own(&patterns_compiled_once(&validated_struct.fields), &validate_impl)
+    in_a_scope_of_its_own(paths, &patterns_compiled_once(&validated_struct.fields), &validate_impl)
 }
 
-pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
+pub fn validate_enum_impl(validated_enum: &ValidatedEnum, paths: &CratePaths) -> TokenStream {
     let expansion = Expansion::new(validated_enum.is_reporting_all, quote!(return));
     let Expansion { at, found, .. } = &expansion;
     let variant_checks = validated_enum
@@ -80,8 +80,8 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let (_, type_generics, _) = input.generics.split_for_impl();
     let validate_impl = quote! {
-        impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
-            fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
+        impl #impl_generics _annotated::Validate for #name #type_generics #where_clause {
+            fn validate_into(&self, #at: &_annotated::Location<'_>, #found: &mut _annotated::Report) {
                 match *self {
                     #(#variant_checks)*
                 }
@@ -89,7 +89,7 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
             }
         }
     };
-    in_a_scope_of_its_own(&patterns_compiled_once(fields), &validate_impl)
+    in_a_scope_of_its_own(paths, &patterns_compiled_once(fields), &validate_impl)
 }
 
 // As serde's derive bounds the type parameters a field reads, the type parameters of each nested value are bounded by
@@ -98,7 +98,7 @@ fn generics_validating<'a>(input: &DeriveInput, fields: impl IntoIterator<Item =
     let mut bounds = Bounds::implemented_here(&input.generics, &input.ident);
     for field in fields.into_iter().filter(|field| field.has_nested_values()) {
         let nested_values = field.nested_value_type().unwrap_or(field.field_type);
-        bounds.add(&Used::whole(nested_values), &quote!(::annotated::Validate));
+        bounds.add(&Used::whole(nested_values), &quote!(_annotated::Validate));
     }
     let bounds = bounds.into_predicates();
     let mut generics = input.generics.clone();
@@ -288,7 +288,7 @@ impl Expansion {
             return quote_at! {span=>
                 {
                     let #found_before = #found.len();
-                    ::annotated::Validate::validate_into(#value, #value_at, #found);
+                    _annotated::Validate::validate_into(#value, #value_at, #found);
                     #found.len() == #found_before
                 }
             };
@@ -340,7 +340,7 @@ impl Expansion {
         quote_at! {span=>
             {
                 let #found_before = #found.len();
-                ::annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
+                _annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
                     #element_checks
                     #skipping_the_element_s_read_issues
                     true
@@ -360,7 +360,7 @@ impl Expansion {
             rule, message, span, ..
         } = check;
         let value = &self.value;
-        let outcome = quote_at!(*span=> ::annotated::Rule::check(&#rule, #value));
+        let outcome = quote_at!(*span=> _annotated::Rule::check(&#rule, #value));
         self.passes_or_records(&outcome, value_at, message.as_ref(), *span)
     }
 
@@ -378,7 +378,7 @@ impl Expansion {
             match #outcome {
                 ::core::result::Result::Ok(()) => true,
                 ::core::result::Result::Err(#problem) => {
-                    ::annotated::__private::record_issue(#found, #reported_at, #problem, #message);
+                    _annotated::__private::record_issue(#found, #reported_at, #problem, #message);
                     #after_an_issue
                 }
             }
@@ -476,7 +476,7 @@ impl Expansion {
         let CheckedStruct { value, value_type } = checked;
         let value_type = spanned(value_type, Span::call_site().located_at(*span));
         let outcome = quote_at!(*span=>
-            ::annotated::Rule::check(&::annotated::rules::custom::<#value_type, _>(#check), #value)
+            _annotated::Rule::check(&_annotated::rules::custom::<#value_type, _>(#check), #value)
         );
         self.passes_or_records(&outcome, reported_at, message.as_ref(), *span)
     }

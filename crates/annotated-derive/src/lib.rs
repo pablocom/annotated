@@ -22,6 +22,7 @@ mod deserialized_enum;
 mod deserialized_struct;
 mod expansion;
 mod generated;
+mod options;
 mod pattern;
 mod receiver;
 mod serde_names;
@@ -34,12 +35,14 @@ use syn::{Data, DeriveInput, Error, parse_macro_input};
 
 use deserialized_enum::DeserializedEnum;
 use deserialized_struct::DeserializedStruct;
+use generated::CratePaths;
+use options::Options;
 use serde_names::UnreadableAttribute;
 use validated_enum::ValidatedEnum;
 use validated_struct::ValidatedStruct;
 
 /// Derives `annotated::Validate` from the `#[validate(...)]` rules on a struct's fields.
-#[proc_macro_derive(Validate, attributes(validate, serde))]
+#[proc_macro_derive(Validate, attributes(validate, serde, annotated))]
 pub fn derive_validate(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     validate_impl(input).unwrap_or_else(Error::into_compile_error).into()
@@ -47,15 +50,16 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
 
 fn validate_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let input = receiver::without_self(input)?;
+    let paths = CratePaths::of_validate(&Options::of(&input)?);
     match &input.data {
         Data::Enum(data) => ValidatedEnum::from_input(&input, data, UnreadableAttribute::IsLeftOut)
-            .map(|validated_enum| expansion::validate_enum_impl(&validated_enum)),
+            .map(|validated_enum| expansion::validate_enum_impl(&validated_enum, &paths)),
         Data::Struct(_) | Data::Union(_) => ValidatedStruct::from_input(
             &input,
             "`Validate` can only be derived for a struct with named fields or an enum",
             UnreadableAttribute::IsLeftOut,
         )
-        .map(|validated_struct| expansion::validate_impl(&validated_struct)),
+        .map(|validated_struct| expansion::validate_impl(&validated_struct, &paths)),
     }
 }
 
@@ -69,10 +73,17 @@ pub fn derive_deserialize(input: TokenStream) -> TokenStream {
 
 fn deserialize_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let input = receiver::without_self(input)?;
+    let options = Options::of(&input)?;
     match &input.data {
-        Data::Enum(data) => DeserializedEnum::from_input(&input, data)
-            .map(|deserialized_enum| deserialize_enum_expansion::deserialize_enum_impl(&deserialized_enum)),
-        Data::Struct(_) | Data::Union(_) => DeserializedStruct::from_input(&input)
-            .map(|deserialized_struct| deserialize_expansion::deserialize_impl(&deserialized_struct)),
+        Data::Enum(data) => DeserializedEnum::from_input(&input, data, &options).map(|deserialized_enum| {
+            let paths = CratePaths::of_deserialize(&options, deserialized_enum.serde_path.as_ref());
+            deserialize_enum_expansion::deserialize_enum_impl(&deserialized_enum, &paths)
+        }),
+        Data::Struct(_) | Data::Union(_) => {
+            DeserializedStruct::from_input(&input, &options).map(|deserialized_struct| {
+                let paths = CratePaths::of_deserialize(&options, deserialized_struct.serde.serde_path.as_ref());
+                deserialize_expansion::deserialize_impl(&deserialized_struct, &paths)
+            })
+        }
     }
 }

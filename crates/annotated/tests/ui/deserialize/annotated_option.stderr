@@ -1,4 +1,4 @@
-error: `#[annotated(...)]` takes one option, `collect_type_errors`
+error: `#[annotated(...)]` takes `collect_type_errors` and `crate = "..."`
  --> tests/ui/deserialize/annotated_option.rs:4:13
   |
 4 | #[annotated(collect_everything)]
@@ -10,7 +10,7 @@ error: `collect_type_errors` takes no value
 11 | #[annotated(collect_type_errors = true)]
    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: `#[annotated(...)]` takes no options on a field: `collect_type_errors` goes on the struct
+error: `#[annotated(...)]` takes no options on a field: they go on the struct
   --> tests/ui/deserialize/annotated_option.rs:19:17
    |
 19 |     #[annotated(collect_type_errors)]

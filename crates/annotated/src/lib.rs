@@ -268,6 +268,24 @@ pub use validate::Validate;
 ///
 /// With the `json-schema` feature, the derive also implements `Validate::rules` for a struct. It returns the rules of
 /// each field as data, which `annotated::json_schema::write_rules` writes into the struct's JSON Schema.
+///
+/// # Through a crate that re-exports annotated
+///
+/// The generated code names this crate `::annotated`. A crate that re-exports it, so that its users don't depend on
+/// annotated themselves, says where the code finds it with `#[annotated(crate = "path")]`:
+///
+/// ```
+/// mod my_api {
+///     pub use annotated as checks;
+/// }
+///
+/// #[derive(my_api::checks::Validate)]
+/// #[annotated(crate = "my_api::checks")]
+/// struct NewMember {
+///     #[validate(required)]
+///     full_name: String,
+/// }
+/// ```
 pub use annotated_derive::Validate;
 
 /// Implements [`Deserialize`](trait@Deserialize), and serde's own `Deserialize` through it, for a struct with named
@@ -295,7 +313,8 @@ pub use annotated_derive::Validate;
 ///
 /// The struct is read as serde's derive would read it, by the names serde gives the struct and its fields.
 ///
-/// - **Supported:** `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` and `bound` on the struct,
+/// - **Supported:** `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default`, `bound` and `crate` on the
+///   struct,
 ///   and `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow`, `flatten`
 ///   and `bound` on a field.
 /// - **Accepted and ignored:** attributes that only change serializing, so that the struct can derive serde's
@@ -443,9 +462,10 @@ pub use annotated_derive::Validate;
 /// are at their index.
 ///
 /// - The enum takes `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`,
-///   `deny_unknown_fields`, `expecting` and `bound`, and a variant takes `rename`, `alias`, `rename_all`, `untagged`,
-///   `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with`, `borrow` and `bound`, as with serde. A
-///   variant's fields take what a struct's fields take. Any other serde attribute on the enum is a compile error.
+///   `deny_unknown_fields`, `expecting`, `bound` and `crate`, and a variant takes `rename`, `alias`, `rename_all`,
+///   `untagged`, `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with`, `borrow` and `bound`, as with
+///   serde. A variant's fields take what a struct's fields take. Any other serde attribute on the enum is a compile
+///   error.
 /// - A skipped variant is never read: its name is unknown, and its fields need no `Deserialize`. A unit variant with
 ///   `other` is read for any tag that names no other variant. A variant with `deserialize_with` or `with` is read by
 ///   the function, and its fields' rules check what the function returns. A `nested` rule checks it with [`Validate`],
@@ -495,6 +515,30 @@ pub use annotated_derive::Validate;
 ///
 /// With the `json-schema` feature, the derive also implements `Deserialize::rules` for a struct. It returns the rules
 /// of each field as data, which `annotated::json_schema::write_rules` writes into the struct's JSON Schema.
+///
+/// # Through a crate that re-exports annotated
+///
+/// The generated code names this crate `::annotated`, and serde through this crate's own re-export, so a crate using
+/// the derive depends on annotated alone. A crate that re-exports annotated says where the code finds it with
+/// `#[annotated(crate = "path")]`, as with [`Validate`](macro@Validate). As with serde's derive,
+/// `#[serde(crate = "path")]` names another path to serde.
+///
+/// ```
+/// mod my_api {
+///     pub use annotated as checks;
+/// }
+///
+/// #[derive(my_api::checks::Deserialize, Debug)]
+/// #[annotated(crate = "my_api::checks")]
+/// struct NewMember {
+///     #[validate(required)]
+///     full_name: String,
+/// }
+///
+/// let error = my_api::checks::json::from_str::<NewMember>(r#"{ "full_name": "" }"#).unwrap_err();
+///
+/// assert_eq!(error.to_string(), "full_name: is required");
+/// ```
 #[cfg(feature = "serde")]
 pub use annotated_derive::Deserialize;
 pub use issue::Issue;

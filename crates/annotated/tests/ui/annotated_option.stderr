@@ -1,0 +1,43 @@
+error: `#[annotated(...)]` takes `collect_type_errors` and `crate = "..."`
+ --> tests/ui/annotated_option.rs:4:13
+  |
+4 | #[annotated(collect_everything)]
+  |             ^^^^^^^^^^^^^^^^^^
+
+error: `#[annotated(...)]` takes no options on a field: they go on the struct
+  --> tests/ui/annotated_option.rs:12:17
+   |
+12 |     #[annotated(crate = "annotated")]
+   |                 ^^^^^
+
+error: `crate` takes the path annotated is reached by, as a string: `crate = "my_api::annotated"`
+  --> tests/ui/annotated_option.rs:18:13
+   |
+18 | #[annotated(crate)]
+   |             ^^^^^
+
+error: `crate` takes the path annotated is reached by, as a string: `crate = "my_api::annotated"`
+  --> tests/ui/annotated_option.rs:25:21
+   |
+25 | #[annotated(crate = annotated)]
+   |                     ^^^^^^^^^
+
+error: `crate` takes the path annotated is reached by, as a string: `crate = "my_api::annotated"`
+  --> tests/ui/annotated_option.rs:32:21
+   |
+32 | #[annotated(crate = "two words")]
+   |                     ^^^^^^^^^^^
+
+error: `crate` is given twice: `#[annotated(...)]` takes each option once
+  --> tests/ui/annotated_option.rs:39:34
+   |
+39 | #[annotated(crate = "annotated", crate = "annotated")]
+   |                                  ^^^^^
+
+error[E0432]: unresolved import `elsewhere`
+  --> tests/ui/annotated_option.rs:46:21
+   |
+46 | #[annotated(crate = "elsewhere::annotated")]
+   |                     ^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `elsewhere`
+   |
+   = help: if you wanted to use a crate named `elsewhere`, use `cargo add elsewhere` to add it to your `Cargo.toml`
