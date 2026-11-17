@@ -265,9 +265,9 @@ impl<'a> DeserializeExpansion<'a> {
         bounds
     }
 
-    // A field is bounded by `Default` when it takes its type's, as serde's own bounds it even with a bound given. It is
-    // bounded by `Validate` when its nested values are validated, and by the `Deserialize` it is read through, serde's
-    // or, for its nested values, annotated's.
+    // A field that takes its type's default bounds the type parameters it uses by `Default`, as serde's derive does even
+    // when the field's bounds are given. Its nested values bound theirs by `Validate` when they are validated, and the
+    // field bounds them by the `Deserialize` it is read through: annotated's for its nested values, serde's for the rest.
     fn add_bounds_of(&self, field: &ValidatedField, checking: &mut Bounds, reading: &mut Bounds) {
         let serde = &self.serde;
         let field_type = field.field_type;

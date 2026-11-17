@@ -483,6 +483,44 @@ mod generics {
 
         borrows::<Borrowed<'_, '_, u8>>();
     }
+
+    // Read by annotated alone, since its `Deserialize` is written by hand.
+    pub struct ReadByHand;
+
+    impl<'de> Deserialize<'de> for ReadByHand {
+        fn deserialize_at<D: serde::Deserializer<'de>>(
+            deserializer: D,
+            _: &annotated::Location<'_>,
+            _: &mut annotated::Report,
+        ) -> Result<Option<Self>, D::Error> {
+            let _ = <serde::de::IgnoredAny as serde::Deserialize>::deserialize(deserializer)?;
+            Ok(Some(Self))
+        }
+    }
+
+    pub trait Kind {
+        type Value;
+    }
+
+    pub struct ByHand;
+
+    impl Kind for ByHand {
+        type Value = ReadByHand;
+    }
+
+    #[derive(Deserialize)]
+    pub struct OfAKind<K: Kind> {
+        #[validate(nested)]
+        #[allow(dead_code, reason = "only read, never used")]
+        pub value: K::Value,
+    }
+
+    #[test]
+    fn an_associated_type_read_with_nested_is_bounded_by_annotated_s_deserialize_alone() {
+        fn reads<T: for<'de> Deserialize<'de>>() {}
+
+        reads::<OfAKind<ByHand>>();
+    }
 }
 
 // `Self` in a field's type, in a bound and in a rule's arguments, in a struct, a generic one and an enum's variants.

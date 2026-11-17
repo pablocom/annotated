@@ -44,13 +44,9 @@ impl<'a> Bounds<'a> {
         }
     }
 
-    pub fn has_type_parameters(&self) -> bool {
-        !self.type_parameters.is_empty()
-    }
-
     // Bounds every parameter `used` uses by `bound`, but those in the part apart.
     pub fn add(&mut self, used: &Used, bound: &TokenStream) {
-        if !self.has_type_parameters() {
+        if self.type_parameters.is_empty() {
             return;
         }
         let mut finder = ParameterFinder {
@@ -115,6 +111,9 @@ struct ParameterFinder<'a, 'b> {
 
 impl ParameterFinder<'_, '_> {
     fn visit_value_type(&mut self, value_type: &Type) {
+        if self.is_apart(value_type) {
+            return;
+        }
         if let Type::Path(type_path) = ungrouped(value_type)
             && let Some(Pair::Punctuated(first, _)) = type_path.path.segments.pairs().next()
             && self.type_parameters.iter().any(|parameter| first.ident == **parameter)
@@ -124,8 +123,12 @@ impl ParameterFinder<'_, '_> {
         self.visit_type(value_type);
     }
 
+    fn is_apart(&self, written_type: &Type) -> bool {
+        self.apart.is_some_and(|apart| std::ptr::eq(apart, written_type))
+    }
+
     fn visit_type(&mut self, written_type: &Type) {
-        if self.apart.is_some_and(|apart| std::ptr::eq(apart, written_type)) {
+        if self.is_apart(written_type) {
             return;
         }
         match written_type {
