@@ -41,7 +41,7 @@ mod house_rules {
     impl<T: AsRef<str> + ?Sized> Rule<T> for WordCount {
         fn check(&self, value: &T) -> Result<(), Problem> {
             if value.as_ref().split_whitespace().count() > self.max {
-                return Err(Problem::custom("word_count", "has too many words").with_param("max", self.max));
+                return Err(Problem::custom("word_count", "has more than {max} words").with_param("max", self.max));
             }
             Ok(())
         }
@@ -71,6 +71,8 @@ struct NewProduct {
     slug: String,
     #[validate(house_rules::word_count(max = 3, message = "use {max} words at most"))]
     name: String,
+    #[validate(house_rules::word_count(max = 8))]
+    tagline: String,
     #[validate(house_rules::divisible_by = 6)]
     pack_size: u32,
     #[validate(house_rules::divisible_by(5, message = "must be a multiple of {divisor}"))]
@@ -81,6 +83,7 @@ fn new_product() -> NewProduct {
     NewProduct {
         slug: "garden-chair".to_owned(),
         name: "Garden chair".to_owned(),
+        tagline: "Folds flat".to_owned(),
         pack_size: 12,
         price_in_cents: 4995,
     }
@@ -109,6 +112,19 @@ fn named_arguments_of_a_rule_of_your_own_call_its_builder_methods() {
     };
 
     assert_eq!(product.validate().unwrap_err().to_string(), "name: use 3 words at most");
+}
+
+#[test]
+fn a_placeholder_in_the_message_of_a_rule_of_your_own_is_filled_from_its_params() {
+    let product = NewProduct {
+        tagline: "Folds flat, weighs little, lasts for years and years".to_owned(),
+        ..new_product()
+    };
+
+    assert_eq!(
+        product.validate().unwrap_err().to_string(),
+        "tagline: has more than 8 words"
+    );
 }
 
 #[test]

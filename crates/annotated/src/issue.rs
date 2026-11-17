@@ -1,7 +1,8 @@
 use std::borrow::Cow;
-use std::fmt::{self, Display, Write};
+use std::fmt::{self, Display};
 
-use crate::{ParamValue, Path, Problem};
+use crate::problem::write_with_placeholders_filled;
+use crate::{Path, Problem};
 
 /// One thing wrong with a value, and the path where it was found: a broken rule, a missing field or a value of the
 /// wrong type.
@@ -58,40 +59,16 @@ impl Issue {
     #[must_use]
     pub fn message(&self) -> String {
         match &self.message_override {
-            Some(message_override) => fill_placeholders(message_override, &self.problem.params()),
+            Some(message_override) => with_placeholders_filled(message_override, &self.problem),
             None => self.problem.to_string(),
         }
     }
 }
 
-fn fill_placeholders(message: &str, params: &[(&'static str, ParamValue)]) -> String {
+fn with_placeholders_filled(message: &str, problem: &Problem) -> String {
     let mut filled = String::with_capacity(message.len());
-    let mut rest = message;
-    while let Some(next_character) = rest.chars().next() {
-        rest = if let Some(after) = rest.strip_prefix("{{") {
-            filled.push('{');
-            after
-        } else if let Some(after) = rest.strip_prefix("}}") {
-            filled.push('}');
-            after
-        } else if let Some((value, after)) = param_placeholder_at_start_of(rest, params) {
-            write!(filled, "{value}").expect("a String takes any text");
-            after
-        } else {
-            filled.push(next_character);
-            &rest[next_character.len_utf8()..]
-        };
-    }
+    write_with_placeholders_filled(message, &problem.params(), &mut filled).expect("a String takes any text");
     filled
-}
-
-fn param_placeholder_at_start_of<'text, 'params>(
-    text: &'text str,
-    params: &'params [(&'static str, ParamValue)],
-) -> Option<(&'params ParamValue, &'text str)> {
-    let (name, after) = text.strip_prefix('{')?.split_once('}')?;
-    let (_, value) = params.iter().find(|(param_name, _)| *param_name == name)?;
-    Some((value, after))
 }
 
 impl Display for Issue {

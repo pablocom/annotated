@@ -55,7 +55,7 @@ A **`Issue`** has a `Path`, a `Problem` and an optional message override. `messa
 - Every variant has named `params()`, for code that translates messages or reacts to a problem.
 - A parameter is a `ParamValue`: an integer, a float or text. Because parameters are typed, a translator can pick a plural form or compare a bound without parsing text. An integer is stored as an `i128`, so every primitive integer fits exactly, except a `u128` too large for an `i128`, which is kept as text.
 - In a message, a `{param}` placeholder is replaced by the parameter as `Display` prints it.
-- Your own rules report with `Problem::custom(code, message)`. `.with_param(name, value)` adds a parameter, which is a number or text.
+- Your own rules report with `Problem::custom(code, message)`. `.with_param(name, value)` adds a parameter, which is a number or text. The message's `{param}` placeholders are filled from those parameters when it is displayed, in the same place and the same way as an override's.
 
 A **`Path`** is a list of segments.
 

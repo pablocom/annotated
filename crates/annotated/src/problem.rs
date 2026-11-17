@@ -111,7 +111,8 @@ pub enum Problem {
     Custom {
         /// The stable code that identifies it.
         code: &'static str,
-        /// The English message for people.
+        /// The English message for people, as written: its `{param}` placeholders are filled from `params` when the
+        /// problem is displayed.
         message: Cow<'static, str>,
         /// The named parameters, in the order they were added.
         params: Vec<(&'static str, ParamValue)>,
@@ -236,6 +237,17 @@ impl LengthUnit {
 impl Problem {
     /// A problem for a rule of your own. `code` is the stable code that identifies it, and `message` explains it to
     /// people.
+    ///
+    /// `{name}` in the message is replaced by the parameter `name` that [`Problem::with_param`] adds, as in a rule's
+    /// `message`. Write `{{` and `}}` for literal braces.
+    ///
+    /// ```
+    /// use annotated::Problem;
+    ///
+    /// let problem = Problem::custom("too_many_guests", "use {max} guests or fewer").with_param("max", 8);
+    ///
+    /// assert_eq!(problem.to_string(), "use 8 guests or fewer");
+    /// ```
     #[must_use]
     pub fn custom(code: &'static str, message: impl Into<Cow<'static, str>>) -> Self {
         Self::Custom {
@@ -338,9 +350,47 @@ impl Display for Problem {
             Self::Contains { text } => write!(formatter, "must contain {text:?}"),
             Self::Prefix { prefix } => write!(formatter, "must start with {prefix:?}"),
             Self::Suffix { suffix } => write!(formatter, "must end with {suffix:?}"),
-            Self::Custom { message, .. } => formatter.write_str(message),
+            Self::Custom { message, params, .. } => write_with_placeholders_filled(message, params, formatter),
         }
     }
+}
+
+/// Writes `message` with each `{name}` in it replaced by the parameter `name`, and `{{` and `}}` by a brace. A
+/// placeholder naming no parameter is written as it is.
+pub(crate) fn write_with_placeholders_filled(
+    message: &str,
+    params: &[(&'static str, ParamValue)],
+    written: &mut impl fmt::Write,
+) -> fmt::Result {
+    let mut rest = message;
+    while let Some(brace_at) = rest.find(['{', '}']) {
+        let (text, from_brace) = rest.split_at(brace_at);
+        written.write_str(text)?;
+        rest = if let Some(after) = from_brace.strip_prefix("{{") {
+            written.write_char('{')?;
+            after
+        } else if let Some(after) = from_brace.strip_prefix("}}") {
+            written.write_char('}')?;
+            after
+        } else if let Some((value, after)) = param_placeholder_at_start_of(from_brace, params) {
+            write!(written, "{value}")?;
+            after
+        } else {
+            let (brace, after) = from_brace.split_at(1);
+            written.write_str(brace)?;
+            after
+        };
+    }
+    written.write_str(rest)
+}
+
+fn param_placeholder_at_start_of<'text, 'params>(
+    text: &'text str,
+    params: &'params [(&'static str, ParamValue)],
+) -> Option<(&'params ParamValue, &'text str)> {
+    let (name, after) = text.strip_prefix('{')?.split_once('}')?;
+    let (_, value) = params.iter().find(|(param_name, _)| *param_name == name)?;
+    Some((value, after))
 }
 
 #[cfg(test)]
@@ -359,6 +409,27 @@ mod tests {
         let problem = Problem::custom("reserved_name", "is reserved");
 
         assert_eq!(problem.to_string(), "is reserved");
+    }
+
+    #[test]
+    fn a_placeholder_in_a_custom_problem_s_message_is_filled_from_its_params() {
+        let problem = Problem::custom("too_many_guests", "use {max} guests or fewer").with_param("max", 8);
+
+        assert_eq!(problem.to_string(), "use 8 guests or fewer");
+    }
+
+    #[test]
+    fn doubled_braces_in_a_custom_problem_s_message_are_literal_braces() {
+        let problem = Problem::custom("reserved_name", "{{name}} is {name}").with_param("name", "admin");
+
+        assert_eq!(problem.to_string(), "{name} is admin");
+    }
+
+    #[test]
+    fn a_placeholder_in_a_custom_problem_s_message_naming_no_param_is_left_as_written() {
+        let problem = Problem::custom("reserved_name", "{nickname} is reserved").with_param("name", "admin");
+
+        assert_eq!(problem.to_string(), "{nickname} is reserved");
     }
 
     #[test]
