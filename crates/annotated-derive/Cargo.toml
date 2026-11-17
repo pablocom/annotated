@@ -15,12 +15,12 @@ proc-macro = true
 
 [features]
 json-schema = []
-regex = ["dep:regex-syntax"]
+regex = ["dep:regex"]
 
 [dependencies]
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
-regex-syntax = { version = "0.8.11", optional = true }
+regex = { version = "1.13.1", optional = true }
 serde_derive_internals = "0.30.0"
 syn = { version = "3.0.10", features = ["full"] }
 

@@ -1,0 +1,6 @@
+error: `pattern` is too big: the `regex` crate refuses an expression that compiles to more than 10485760 bytes.
+       Use a smaller repetition or a simpler class.
+ --> tests/ui/regex/pattern_that_is_too_big.rs:5:26
+  |
+5 |     #[validate(pattern = r"^[\p{L}\p{N}_-]{1,1000}$")]
+  |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -6,8 +6,8 @@ use crate::{Problem, Rule};
 /// anchored with `^` and `$`.
 ///
 /// `#[validate(pattern = r"^\d{5}$")]` compiles the expression once, into a `static` at the field, and an expression
-/// that doesn't parse is a compile error. When you use the rule by hand, keep the [`Regex`] in a `static` in the same
-/// way.
+/// that doesn't parse, or is too big to compile, is a compile error. When you use the rule by hand, keep the [`Regex`]
+/// in a `static` in the same way.
 ///
 /// ```
 /// use std::sync::LazyLock;

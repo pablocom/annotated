@@ -12,7 +12,7 @@ pub fn pattern_rule(call: &RuleCall, span: Span) -> syn::Result<TokenStream> {
             static PATTERN: ::std::sync::LazyLock<::annotated::__private::Regex> =
                 ::std::sync::LazyLock::new(|| {
                     ::annotated::__private::Regex::new(#expression)
-                        .expect("`#[derive(Validate)]` parsed this regular expression")
+                        .expect("`#[derive(Validate)]` built this regular expression")
                 });
             ::annotated::rules::pattern(&PATTERN)
         }
@@ -34,15 +34,19 @@ fn regular_expression(call: &RuleCall, span: Span) -> syn::Result<&LitStr> {
 
 #[cfg(feature = "regex")]
 fn check_regular_expression(expression: &LitStr, _: Span) -> syn::Result<()> {
-    regex_syntax::Parser::new()
-        .parse(&expression.value())
+    regex::Regex::new(&expression.value())
         .map(drop)
-        .map_err(|error| {
-            Error::new_spanned(
-                expression,
-                format!("`pattern` can't parse this regular expression:\n{error}"),
-            )
-        })
+        .map_err(|error| Error::new_spanned(expression, refusal_message(&error)))
+}
+
+#[cfg(feature = "regex")]
+fn refusal_message(error: &regex::Error) -> String {
+    match error {
+        regex::Error::CompiledTooBig(size_limit) => format!(
+            "`pattern` is too big: the `regex` crate refuses an expression that compiles to more than {size_limit} bytes.\nUse a smaller repetition or a simpler class."
+        ),
+        other => format!("`pattern` can't parse this regular expression:\n{other}"),
+    }
 }
 
 #[cfg(not(feature = "regex"))]

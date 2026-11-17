@@ -103,7 +103,7 @@ pub use validate::Validate;
 /// - `length` takes `unit = "chars"`, `"bytes"` or, with the `unicode` feature, `"graphemes"`. A unit on a collection
 ///   is a compile error.
 /// - `pattern`, with the `regex` feature, takes its regular expression as a string literal. The expression is compiled
-///   once, and one that doesn't parse is a compile error.
+///   once, and one that doesn't parse, or is too big to compile, is a compile error.
 ///
 /// # How fields are checked
 ///

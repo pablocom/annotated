@@ -228,6 +228,23 @@ fn pattern_checks_that_a_field_matches_its_regular_expression() {
 }
 
 #[cfg(feature = "regex")]
+#[derive(Validate)]
+struct Account {
+    #[validate(pattern = r"^[\p{L}\p{N}_-]{1,200}$")]
+    name: String,
+}
+
+#[cfg(feature = "regex")]
+#[test]
+fn a_pattern_just_under_the_size_limit_still_checks_its_field() {
+    let account = Account {
+        name: "mar\u{ed}a_1-b".to_owned(),
+    };
+
+    assert_eq!(account.validate(), Ok(()));
+}
+
+#[cfg(feature = "regex")]
 #[test]
 fn pattern_takes_its_regular_expression_in_parentheses_too() {
     let address = Address {

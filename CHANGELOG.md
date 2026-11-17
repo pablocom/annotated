@@ -4,6 +4,10 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+### Fixed
+
+- `#[validate(pattern = r"...")]` is a compile error when the regular expression is too big for the `regex` crate to compile, such as `^[\p{L}\p{N}_-]{1,1000}$`. It compiled before, then panicked the first time the field was validated, and every validation after that panicked too. The derive builds the expression with the same `regex` crate, so one that compiles can't panic at run time. The error says to use a smaller repetition or a simpler class. The `regex` feature now builds the `regex` crate for the derive too, which adds about 0.2 seconds to a clean build.
+
 ## [0.4.0] - 2026-11-16
 
 ### Changed

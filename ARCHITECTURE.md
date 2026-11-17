@@ -70,7 +70,7 @@ A **`Path`** is a list of segments.
 - A `Location` is a linked list on the stack: it is `Root`, or a parent location plus one segment. So descending into a field or an element allocates nothing. A `Location` is turned into an owned `Path` only when an issue is recorded.
 - `Report` allocates when it records its first issue, not before.
 - A rule is a small value built inline where it is used: `rules::length().max(50)`. Its constructor and builder methods are `const fn` wherever they can be, so the compiler folds them away. A check is a call to `Rule::check(&rule, value) -> Result<(), Problem>`, and a `Problem` is built only when the check fails.
-- `pattern` is the one rule with expensive setup. The derive generates a `static` `LazyLock<Regex>` where the rule is written, so each regular expression is compiled once. The derive also parses the expression at compile time, and one that doesn't parse is a compile error.
+- `pattern` is the one rule with expensive setup. The derive generates a `static` `LazyLock<Regex>` where the rule is written, so each regular expression is compiled once. The derive also builds the expression at compile time, with the same `regex` crate and the same limits, so one that doesn't parse, or is too big to compile, is a compile error, and the `LazyLock` can't fail at run time.
 
 Claims about speed are backed by the [benchmarks](benchmarks/README.md), a workspace of their own beside the crates. They compare validation and collecting deserialization against `validator`, `garde`, `serde_valid` and `wary`.
 
@@ -529,7 +529,7 @@ Where a schema says something a little different from the rule:
 | Crate | What it holds | Depends on |
 |---|---|---|
 | `annotated` | The `Validate` trait, issues, problems and paths, the built-in rules, and collecting deserialization | `annotated-derive`, which it re-exports, and the optional dependencies its features add |
-| `annotated-derive` | The `Validate` and `Deserialize` derive macros. Derive macros have to live in a crate of their own | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex-syntax`, to check patterns at compile time. Its `json-schema` feature makes the derives implement `rules()` |
+| `annotated-derive` | The `Validate` and `Deserialize` derive macros. Derive macros have to live in a crate of their own | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex`, to build patterns at compile time. Its `json-schema` feature makes the derives implement `rules()` |
 | `annotated-axum` | `ValidJson<T>`, an axum extractor, its rejection, and RFC 9457 problem details | `annotated` with `json`, `axum` 0.8, `mime`, `serde` and `serde_json` |
 | `annotated-utoipa` | `write_rules_of` and `write_rules`, which write rules into a document utoipa generated | `annotated` with `json-schema`, `utoipa` 6 and `serde_json` |
 
