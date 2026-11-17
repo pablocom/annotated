@@ -29,7 +29,7 @@ How we work in this repository. The [README](README.md) shows how to use the lib
 
 ## Commits
 
-- [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`, scope `core`, `derive`, `examples`, `benchmarks`, `ci`, `docs` or `repo`; imperative, lowercase, no trailing period. Breaking changes take `!` and a `BREAKING CHANGE:` footer. The body says why. The type and the `!` decide the version of the next [release](#releasing), so they have to be true.
+- [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`, scope `core`, `derive`, `utoipa`, `axum`, `examples`, `benchmarks`, `ci`, `docs` or `repo`; imperative, lowercase, no trailing period. Breaking changes take `!` and a `BREAKING CHANGE:` footer. The body says why. The type and the `!` decide the version of the next [release](#releasing), so they have to be true.
 - No attribution to Claude: no `Co-Authored-By` trailer and no session link.
 - Trunk-based: small, atomic commits straight to `main`, each green on its own, pushed once its checks pass.
 - Every change users can notice gets a line under *Unreleased* in the changelog of each crate it changes, in the same commit: `CHANGELOG.md` for annotated, and the one in its directory for a crate released on its own. The lines there become the notes of the next release.

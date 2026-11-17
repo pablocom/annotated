@@ -1,0 +1,22 @@
+[package]
+name = "annotated-utoipa"
+version = "0.1.0"
+description = "Writes annotated's validation rules into the OpenAPI document that utoipa generates"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["validation", "openapi", "utoipa", "json-schema", "annotated"]
+categories = ["web-programming", "encoding"]
+
+[dependencies]
+annotated = { path = "../annotated", features = ["json-schema"] }
+serde_json = "1.0.154"
+utoipa = "6.0.0"
+
+[dev-dependencies]
+annotated = { path = "../annotated", features = ["json-schema", "regex"] }
+
+[lints]
+workspace = true
