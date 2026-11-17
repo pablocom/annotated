@@ -14,6 +14,17 @@ use std::fmt::{self, Display};
 ///
 /// assert_eq!(problem.params(), [("max", ParamValue::Integer(8))]);
 /// ```
+///
+/// With the `serde` feature, on by default, it serializes as its bare value: an integer or a float as a number, and
+/// text as a string. An integer is written as an `i64` when one holds it, else as a `u64` or an `i128`, since many
+/// formats can't write an `i128`.
+///
+/// ```
+/// use annotated::ParamValue;
+///
+/// assert_eq!(serde_json::to_string(&ParamValue::Integer(50)).unwrap(), "50");
+/// assert_eq!(serde_json::to_string(&ParamValue::Text("chars".into())).unwrap(), r#""chars""#);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ParamValue {
@@ -62,6 +73,29 @@ impl ParamValue {
             None => Self::number_or_text(value),
         }
     }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for ParamValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Integer(integer) => serialize_integer(*integer, serializer),
+            Self::Float(float) => serializer.serialize_f64(*float),
+            Self::Text(text) => serializer.serialize_str(text),
+        }
+    }
+}
+
+// Many formats can't write an `i128`, so an integer is written in the narrowest type that holds it.
+#[cfg(feature = "serde")]
+fn serialize_integer<S: serde::Serializer>(integer: i128, serializer: S) -> Result<S::Ok, S::Error> {
+    if let Ok(integer) = i64::try_from(integer) {
+        return serializer.serialize_i64(integer);
+    }
+    if let Ok(integer) = u64::try_from(integer) {
+        return serializer.serialize_u64(integer);
+    }
+    serializer.serialize_i128(integer)
 }
 
 impl Display for ParamValue {

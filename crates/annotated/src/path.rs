@@ -20,6 +20,20 @@ use std::hash::{Hash, Hasher};
 /// assert_eq!(path.to_string(), "members[1].name");
 /// assert_eq!(path.json_pointer(), "/members/1/name");
 /// ```
+///
+/// # Serialized
+///
+/// With the `serde` feature, on by default, a path serializes as the sequence of its segments: a field or a map's key
+/// as a string, kept as it is, and an index as a number. The root path is an empty sequence.
+///
+/// ```
+/// use annotated::Path;
+///
+/// let path = Path::root().field("members").index(1).field("name");
+///
+/// assert_eq!(serde_json::to_string(&path).unwrap(), r#"["members",1,"name"]"#);
+/// assert_eq!(serde_json::to_string(&Path::root()).unwrap(), "[]");
+/// ```
 #[derive(Clone, Default)]
 pub struct Path {
     segments: Segments,
@@ -36,6 +50,15 @@ enum Segments {
 }
 
 /// One step of a [`Path`].
+///
+/// With the `serde` feature, on by default, it serializes as its bare value: a field or a map's key as a string, and an
+/// index as a number.
+///
+/// ```
+/// use annotated::PathSegment;
+///
+/// assert_eq!(serde_json::to_string(&PathSegment::Index(1)).unwrap(), "1");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PathSegment {
@@ -180,6 +203,24 @@ impl Debug for Path {
             .debug_struct("Path")
             .field("segments", &self.segments())
             .finish()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Path {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.segments())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PathSegment {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Field(name) => serializer.serialize_str(name),
+            Self::Index(index) => serde::Serialize::serialize(index, serializer),
+            Self::Key(key) => serializer.serialize_str(key),
+        }
     }
 }
 

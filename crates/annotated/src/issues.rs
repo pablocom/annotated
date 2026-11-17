@@ -9,6 +9,26 @@ use crate::Issue;
 ///
 /// Iterating over it yields the issues in the order they were found, and its [`Display`] prints one issue per
 /// line. [`Issues::is_complete`] says whether the value may have more.
+///
+/// With the `serde` feature, on by default, it serializes as the sequence of its issues, each as
+/// [`Issue`] serializes it. Whether they are complete isn't serialized: send it apart when the client needs it.
+///
+/// ```
+/// use annotated::Validate;
+///
+/// #[derive(Validate)]
+/// struct NewMember {
+///     #[validate(range(min = 18))]
+///     age: u8,
+/// }
+///
+/// let issues = NewMember { age: 12 }.validate().unwrap_err();
+///
+/// assert_eq!(
+///     serde_json::to_string(&issues).unwrap(),
+///     r#"[{"path":["age"],"code":"range","params":{"min":18},"message":"must be at least 18"}]"#
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Issues {
     issues: Vec<Issue>,
@@ -52,6 +72,13 @@ impl Issues {
     #[must_use]
     pub fn as_slice(&self) -> &[Issue] {
         &self.issues
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Issues {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.iter())
     }
 }
 

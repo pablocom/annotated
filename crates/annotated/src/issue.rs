@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::fmt::{self, Display};
 
+#[cfg(feature = "serde")]
+use crate::problem::SerializedParams;
 use crate::problem::write_with_placeholders_filled;
 use crate::{Path, Problem};
 
@@ -14,6 +16,23 @@ use crate::{Path, Problem};
 /// let issue = Issue::new(Path::root().field("name"), reserved_name).with_message("{name} is taken");
 ///
 /// assert_eq!(issue.to_string(), "name: admin is taken");
+/// ```
+///
+/// # Serialized
+///
+/// With the `serde` feature, on by default, an issue serializes as its `path`, the [`Path`]'s segments, its problem's
+/// `code` and `params`, as [`Problem`] serializes them, and its `message`, what [`Issue::message`] returns:
+///
+/// ```
+/// use annotated::{Issue, Path, Problem};
+///
+/// let reserved_name = Problem::custom("reserved_name", "is reserved").with_param("name", "admin");
+/// let issue = Issue::new(Path::root().field("members").index(1).field("name"), reserved_name);
+///
+/// assert_eq!(
+///     serde_json::to_string(&issue).unwrap(),
+///     r#"{"path":["members",1,"name"],"code":"reserved_name","params":{"name":"admin"},"message":"is reserved"}"#
+/// );
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Issue {
@@ -69,6 +88,20 @@ fn with_placeholders_filled(message: &str, problem: &Problem) -> String {
     let mut filled = String::with_capacity(message.len());
     write_with_placeholders_filled(message, &problem.params(), &mut filled).expect("a String takes any text");
     filled
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Issue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let mut issue = serializer.serialize_struct("Issue", 4)?;
+        issue.serialize_field("path", &self.path)?;
+        issue.serialize_field("code", self.problem.code())?;
+        issue.serialize_field("params", &SerializedParams(&self.problem.params()))?;
+        issue.serialize_field("message", &self.message())?;
+        issue.end()
+    }
 }
 
 impl Display for Issue {

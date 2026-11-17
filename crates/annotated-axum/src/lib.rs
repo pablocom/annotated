@@ -116,7 +116,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use annotated::{DeserializeError, Issue, Issues, ParamValue};
+use annotated::{DeserializeError, Issue, Issues, Problem};
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::rejection::{BytesRejection, FailedToBufferBody, MissingJsonContentType};
@@ -372,9 +372,8 @@ struct Members {
 #[derive(Debug, Serialize)]
 struct IssueDetails {
     pointer: String,
-    code: String,
-    #[serde(serialize_with = "params_as_object")]
-    params: Vec<(&'static str, ParamValue)>,
+    #[serde(flatten)]
+    problem: Problem,
     detail: String,
 }
 
@@ -462,8 +461,7 @@ impl From<&Issue> for IssueDetails {
     fn from(issue: &Issue) -> Self {
         Self {
             pointer: issue.path().json_pointer(),
-            code: issue.problem().code().to_owned(),
-            params: issue.problem().params(),
+            problem: issue.problem().clone(),
             detail: issue.message(),
         }
     }
@@ -482,20 +480,4 @@ impl IntoResponse for ProblemDetails {
 )]
 fn status_as_number<S: Serializer>(status: &StatusCode, serializer: S) -> Result<S::Ok, S::Error> {
     serializer.serialize_u16(status.as_u16())
-}
-
-fn params_as_object<S: Serializer>(params: &[(&'static str, ParamValue)], serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.collect_map(params.iter().map(|(name, value)| (name, Param(value))))
-}
-
-struct Param<'a>(&'a ParamValue);
-
-impl Serialize for Param<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self.0 {
-            ParamValue::Integer(integer) => serializer.serialize_i128(*integer),
-            ParamValue::Float(float) => serializer.serialize_f64(*float),
-            text => serializer.collect_str(text),
-        }
-    }
 }

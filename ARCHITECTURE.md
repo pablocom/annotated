@@ -66,6 +66,19 @@ A **`Path`** is a list of segments.
 - `json_pointer()` returns it as an RFC 6901 JSON Pointer: `/members/1/name`. There a key is data, so it is kept as it is, but for `~` and `/`, written `~0` and `~1`.
 - The root path has no segments. An issue a struct-level rule finds on the validated struct itself has the root path.
 
+**Serialized**, with the `serde` feature, the issues are data an app can send as they are. The shape follows zod's issues and pydantic's `loc`, so a client that knows either reads it:
+
+```json
+[{ "path": ["members", 1, "name"], "code": "length", "params": { "max": 50, "unit": "chars" }, "message": "must be at most 50 characters long" }]
+```
+
+- `Issues` is the sequence of its issues. Whether they are complete isn't in it: an app sends that apart if its clients need it.
+- An `Issue` is a struct of four fields: `path`, `code`, `params` and `message`, which is what `Issue::message()` returns.
+- A `Path` is the sequence of its segments, `[]` for the root. A `PathSegment` is its bare value: a field or a key as a string, kept as it is, and an index as a number. A path a client reads as data needs no escaping and no pointer syntax.
+- A `Problem` on its own is a struct of `code` and `params`. `params` is a map in the problem's own order, there and empty when it has none.
+- A `ParamValue` is its bare value. An integer is written as an `i64` when one holds it, else as a `u64` or an `i128`, since many formats can't write an `i128`. A float is an `f64`, and text a string.
+- The impls are written by hand, so the crate needs serde's `derive` feature for none of them. annotated-axum's problem details use them for each issue's `code` and `params`.
+
 ## Nothing to pay on the success path
 
 - `Validate::validate_into(&self, at: &Location<'_>, found: &mut Report)` does the work. `validate()` is a provided method that calls it at the root.
@@ -592,7 +605,7 @@ Each crate built on annotated works with one major version of its library, or on
 
 | Feature of `annotated` | Dependency it adds | What it enables |
 |---|---|---|
-| `serde`, on by default | `serde` | The `Deserialize` trait and derive, and `from_deserializer` |
+| `serde`, on by default | `serde` | The `Deserialize` trait and derive, `from_deserializer`, and `Serialize` for `Issues`, `Issue`, `Path`, `PathSegment`, `Problem` and `ParamValue` |
 | `json` | `serde_json` | `annotated::json`. It turns on `serde` too |
 | `regex` | `regex` | The `pattern` rule |
 | `unicode` | `unicode-segmentation` | `length` counted in graphemes |

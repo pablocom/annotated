@@ -21,6 +21,20 @@ use crate::ParamValue;
 /// assert_eq!(problem.code(), "reserved_name");
 /// assert_eq!(problem.to_string(), "is reserved");
 /// ```
+///
+/// # Serialized
+///
+/// With the `serde` feature, on by default, a problem serializes as its `code` and its `params`: an object of each
+/// parameter's name and [value](ParamValue), in the problem's order, which is there and empty when it has none.
+///
+/// ```
+/// use annotated::Problem;
+///
+/// let problem = Problem::custom("too_many_guests", "has too many guests").with_param("max", 8);
+///
+/// assert_eq!(serde_json::to_string(&problem).unwrap(), r#"{"code":"too_many_guests","params":{"max":8}}"#);
+/// assert_eq!(serde_json::to_string(&Problem::Required).unwrap(), r#"{"code":"required","params":{}}"#);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Problem {
@@ -321,6 +335,29 @@ impl Problem {
             Self::Suffix { suffix } => vec![("suffix", ParamValue::text(suffix))],
             Self::Custom { params, .. } => params.clone(),
         }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Problem {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let mut problem = serializer.serialize_struct("Problem", 2)?;
+        problem.serialize_field("code", self.code())?;
+        problem.serialize_field("params", &SerializedParams(&self.params()))?;
+        problem.end()
+    }
+}
+
+/// A problem's params, serialized as an object of their names and values, in their order.
+#[cfg(feature = "serde")]
+pub(crate) struct SerializedParams<'a>(pub(crate) &'a [(&'static str, ParamValue)]);
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SerializedParams<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.0.iter().map(|(name, value)| (name, value)))
     }
 }
 

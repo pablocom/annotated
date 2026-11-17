@@ -108,6 +108,15 @@ In a path, a map's key longer than 256 characters is cut to its first 256 follow
 
 Printed, the error is one issue per line: `age: must be between 18 and 120`. A map's key is printed with a newline, and any other char that could break a line or hide text, escaped: `labels[a\nb]`.
 
+`Issues`, `Issue`, `Path`, `Problem` and `ParamValue` implement serde's `Serialize`, so an app can send the issues as they are. In JSON, the issues are a list, and each issue is its path as a list of segments, a field or a key as a string and an index as a number, its code, its params as an object in their order, and its message:
+
+```json
+[
+  { "path": ["fullName"], "code": "required", "params": {}, "message": "is required" },
+  { "path": ["age"], "code": "range", "params": { "min": 18, "max": 120 }, "message": "must be between 18 and 120" }
+]
+```
+
 ## Ways to validate
 
 | You call | For input that breaks the rules, you get |
@@ -134,7 +143,7 @@ A value of the wrong type, like `"age": "twelve"`, ends deserialization with the
 
 | Feature | What it adds |
 |---|---|
-| `serde`, on by default | `#[derive(Deserialize)]` and `annotated::from_deserializer` |
+| `serde`, on by default | `#[derive(Deserialize)]`, `annotated::from_deserializer`, and `Serialize` for the issues |
 | `json` | `annotated::json`, built on `serde_json` |
 | `regex` | The `pattern` rule |
 | `unicode` | `length(unit = "graphemes")` |
