@@ -7,6 +7,7 @@ This file lists every change that users of the crates can notice. The format fol
 ### Fixed
 
 - `#[validate(pattern = r"...")]` is a compile error when the regular expression is too big for the `regex` crate to compile, such as `^[\p{L}\p{N}_-]{1,1000}$`. It compiled before, then panicked the first time the field was validated, and every validation after that panicked too. The derive builds the expression with the same `regex` crate, so one that compiles can't panic at run time. The error says to use a smaller repetition or a simpler class. The `regex` feature now builds the `regex` crate for the derive too, which adds about 0.2 seconds to a clean build.
+- A map's key in an issue's path is at most 256 `char`s: a longer key is cut to its first 256 followed by `…`, in `path()`, its `Display` and its `json_pointer()`. Before, every issue under a key held a whole copy of it, so a body with a 100 kB key and thousands of issues under it took hundreds of MiB. `Path::key` cuts a key the same way, and `PathSegment::MAX_KEY_CHARS` is the bound.
 
 ## [0.4.0] - 2026-11-16
 

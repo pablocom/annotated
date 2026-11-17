@@ -1,4 +1,4 @@
-use std::fmt::{self, Debug, Display};
+use std::fmt::{self, Debug, Display, Write};
 use std::hash::{Hash, Hasher};
 
 /// Where in a value an issue was found: the segments that lead from the validated value down to it.
@@ -39,7 +39,22 @@ pub enum PathSegment {
     /// An element of a sequence, by its position, counting from zero.
     Index(usize),
     /// A value of a map, by its key rendered with [`Display`].
+    ///
+    /// A key in a path is at most [`MAX_KEY_CHARS`](Self::MAX_KEY_CHARS) `char`s: a longer one is cut to its first
+    /// that many, followed by `…`. So an issue holds a bounded copy of its key, however long the key in the input is.
     Key(String),
+}
+
+impl PathSegment {
+    /// The most `char`s of a map's key that a path keeps. A longer key is cut to its first 256 `char`s followed by
+    /// `…`.
+    pub const MAX_KEY_CHARS: usize = 256;
+
+    pub(crate) fn key(key: &dyn Display) -> Self {
+        let mut rendered = String::new();
+        write_cut_key(key, &mut rendered).expect("a Display implementation returned an error unexpectedly");
+        Self::Key(rendered)
+    }
 }
 
 impl Path {
@@ -64,9 +79,12 @@ impl Path {
     }
 
     /// This path followed by the map value at `key`, rendered with [`Display`].
+    ///
+    /// A key longer than [`PathSegment::MAX_KEY_CHARS`] `char`s is cut as in an issue's path, so this path equals the
+    /// path of an issue found under the same key.
     #[must_use]
     pub fn key(self, key: impl Display) -> Self {
-        self.followed_by(PathSegment::Key(key.to_string()))
+        self.followed_by(PathSegment::key(&key))
     }
 
     /// The segments from the root down.
@@ -169,6 +187,41 @@ impl Display for PathSegment {
             Self::Index(index) => write!(formatter, "{index}"),
             Self::Key(key) => formatter.write_str(key),
         }
+    }
+}
+
+/// Writes how `key` renders, cut to its first [`PathSegment::MAX_KEY_CHARS`] `char`s followed by `…` when it is
+/// longer. Rendering stops there, so a long key is never rendered whole.
+pub(crate) fn write_cut_key(key: &dyn Display, written_to: &mut impl Write) -> fmt::Result {
+    let mut first_chars = FirstChars {
+        written_to,
+        chars_left: PathSegment::MAX_KEY_CHARS,
+        is_cut: false,
+    };
+    let rendering = fmt::write(&mut first_chars, format_args!("{key}"));
+    if first_chars.is_cut {
+        return first_chars.written_to.write_char('…');
+    }
+    rendering
+}
+
+struct FirstChars<'a, W> {
+    written_to: &'a mut W,
+    chars_left: usize,
+    is_cut: bool,
+}
+
+impl<W: Write> Write for FirstChars<'_, W> {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        if let Some((end_of_first_chars, _)) = text.char_indices().nth(self.chars_left) {
+            self.written_to.write_str(&text[..end_of_first_chars])?;
+            self.chars_left = 0;
+            self.is_cut = true;
+            return Err(fmt::Error);
+        }
+        self.written_to.write_str(text)?;
+        self.chars_left -= text.chars().count();
+        Ok(())
     }
 }
 

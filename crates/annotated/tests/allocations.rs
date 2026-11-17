@@ -1,6 +1,7 @@
 //! Validating a valid value allocates nothing, deserializing one allocates only what its fields hold, even when it
 //! collects type errors, and finding an issue allocates little.
 
+use std::collections::BTreeMap;
 use std::hint::black_box;
 
 use annotated::{Location, Problem, Report, Validate};
@@ -343,4 +344,23 @@ fn an_issue_three_segments_deep_allocates_nothing_but_the_report() {
     });
 
     assert_eq!(allocations.count_total, 1);
+}
+
+#[derive(Validate)]
+struct Shipment {
+    #[validate(each(each(range(min = 1))))]
+    quantities: BTreeMap<String, Vec<u32>>,
+}
+
+#[test]
+fn a_thousand_issues_under_a_100_kb_key_hold_only_its_first_256_chars() {
+    let shipment = Shipment {
+        quantities: BTreeMap::from([("k".repeat(100_000), vec![0; 1_000])]),
+    };
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = black_box(shipment.validate());
+    });
+
+    assert_eq!(allocations.bytes_max, 692_480);
 }

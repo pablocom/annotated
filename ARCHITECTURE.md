@@ -60,6 +60,7 @@ A **`Issue`** has a `Path`, a `Problem` and an optional message override. `messa
 A **`Path`** is a list of segments.
 
 - A segment is a field (`&'static str`, the serde name), an element's index, or a map's key (rendered with `Display`).
+- A key is at most `PathSegment::MAX_KEY_CHARS`, 256 `char`s. A longer key is cut to its first 256 `char`s followed by `…`, so an issue under a key from the input holds a bounded copy of it however long the key is. The key is rendered through a `fmt::Write` that stops it there, so a long key is never rendered whole. `Path::key` cuts a key the same way, and `Location` compares a key with a path's key as cut, so a path built by hand equals the path of an issue under the same key.
 - `Display` prints a path in dotted form: `members[1].name`. A map's key goes in brackets, like an index: `labels[en]`.
 - `json_pointer()` returns it as an RFC 6901 JSON Pointer: `/members/1/name`.
 - The root path has no segments. An issue a struct-level rule finds on the validated struct itself has the root path.

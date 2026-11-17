@@ -1,5 +1,6 @@
 use std::fmt::{self, Debug, Display};
 
+use crate::path::write_cut_key;
 use crate::{Path, PathSegment};
 
 /// The place in a value that validation has reached. It is kept on the stack while validation descends into the value.
@@ -49,7 +50,8 @@ impl<'a> Location<'a> {
         self.followed_by(Step::Index(index))
     }
 
-    /// The location of this map's value at `key`. The key is rendered with [`Display`] if an issue is found there.
+    /// The location of this map's value at `key`. The key is rendered with [`Display`] if an issue is found there,
+    /// and cut as [`PathSegment::Key`] says.
     #[must_use]
     pub const fn key(&'a self, key: &'a dyn Display) -> Self {
         self.followed_by(Step::Key(key))
@@ -99,7 +101,7 @@ impl Step<'_> {
         match self {
             Self::Field(name) => PathSegment::Field(name),
             Self::Index(index) => PathSegment::Index(index),
-            Self::Key(key) => PathSegment::Key(key.to_string()),
+            Self::Key(key) => PathSegment::key(key),
         }
     }
 }
@@ -117,7 +119,7 @@ fn renders_as(key: &dyn Display, rendered: &str) -> bool {
     }
 
     let mut comparison = RenderingCompared { rest: rendered };
-    fmt::write(&mut comparison, format_args!("{key}")).is_ok() && comparison.rest.is_empty()
+    write_cut_key(key, &mut comparison).is_ok() && comparison.rest.is_empty()
 }
 
 impl Debug for Location<'_> {
@@ -217,6 +219,26 @@ mod tests {
         let stock = root.field("stock");
 
         assert!(!stock.key(&"sku-1").leads_to(&Path::root().field("stock").key("sku-10")));
+    }
+
+    #[test]
+    fn a_location_under_a_long_key_leads_to_the_path_holding_its_cut_key() {
+        let root = Location::root();
+        let long_key = "k".repeat(300);
+
+        let location = root.key(&long_key);
+
+        assert!(location.leads_to(&Path::root().key(format!("{}…", "k".repeat(256)))));
+    }
+
+    #[test]
+    fn a_location_under_a_long_key_does_not_lead_to_a_path_holding_another_key_with_the_same_first_chars() {
+        let root = Location::root();
+        let long_key = "k".repeat(300);
+
+        let location = root.key(&long_key);
+
+        assert!(!location.leads_to(&Path::root().key("k".repeat(256))));
     }
 
     #[test]

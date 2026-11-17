@@ -104,6 +104,8 @@ The error holds its issues in the order of the struct's fields, followed by thos
 | `problem().params()` | The rule's parameters, as numbers or text | `min` is `18` and `max` is `120` |
 | `message()` | A message for people: the rule's `message` when it has one, or else the English one | `must be between 18 and 120` |
 
+In a path, a map's key longer than 256 characters is cut to its first 256 followed by `…`, so an issue holds a bounded copy of the key however long it is in the input.
+
 Printed, the error is one issue per line: `age: must be between 18 and 120`.
 
 ## Ways to validate
