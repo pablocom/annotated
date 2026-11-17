@@ -55,7 +55,7 @@ impl StringUnit {
     fn possible_counts(self, text: &str) -> RangeInclusive<usize> {
         let bytes = text.len();
         match self {
-            Self::Chars => bytes.div_ceil(char::MAX_LEN_UTF8)..=bytes,
+            Self::Chars => bytes.div_ceil(LengthUnit::MOST_BYTES_IN_A_CHAR)..=bytes,
             Self::Bytes => bytes..=bytes,
             #[cfg(feature = "unicode")]
             Self::Graphemes => usize::from(!text.is_empty())..=bytes,

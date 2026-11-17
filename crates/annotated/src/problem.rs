@@ -245,6 +245,9 @@ pub enum LengthUnit {
 }
 
 impl LengthUnit {
+    // `char::MAX_LEN_UTF8` says this from Rust 1.93 on, which is newer than the minimum supported Rust.
+    pub(crate) const MOST_BYTES_IN_A_CHAR: usize = 4;
+
     fn name(self) -> &'static str {
         match self {
             Self::Chars => "chars",

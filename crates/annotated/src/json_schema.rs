@@ -376,7 +376,7 @@ fn write_length(bounds: &Bounds<usize>, unit: LengthUnit, schema: &mut Map<Strin
         LengthUnit::Chars => write_counts(&[CHARS], shortest, longest, schema),
         // A string has no more chars than bytes, and at least a quarter as many, since a char takes up to four bytes.
         LengthUnit::Bytes => {
-            let fewest_chars = shortest.map(|bytes| bytes.div_ceil(char::MAX_LEN_UTF8));
+            let fewest_chars = shortest.map(|bytes| bytes.div_ceil(LengthUnit::MOST_BYTES_IN_A_CHAR));
             write_counts(&[CHARS], fewest_chars, longest, schema)
         }
         // A grapheme has one char or more, so graphemes cap no number of chars.

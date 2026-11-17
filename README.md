@@ -178,7 +178,7 @@ let unwritten = annotated::json_schema::write_rules(&<NewMember as Validate>::ru
 
 ## Minimum supported Rust version
 
-The three most recent stable releases are supported, so today the minimum is Rust 1.98. Raising the minimum is not a breaking change, and the changelog notes each time it happens.
+The minimum is Rust 1.88. It is raised only when annotated needs a newer Rust, and never to a release less than six months old. Raising the minimum is not a breaking change, and the changelog notes each time it happens.
 
 ## License
 

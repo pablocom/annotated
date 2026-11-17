@@ -35,6 +35,7 @@ This file lists every change that users of the crates can notice. The format fol
   - An `IPvFuture` host breaks it: `http://[v1.x]`.
   - Whitespace and invisible characters break it anywhere, even those RFC 3987 allows: a no-break space (U+00A0), a zero-width space (U+200B), a line separator (U+2028), a right-to-left override (U+202E), and every other character in Unicode's `White_Space` or `Default_Ignorable_Code_Point`.
   - A query and a fragment take `[`, `]` and `|`: `https://fonts.example/css?family=A|B` and `https://api.example/items?filter[x]=1` follow it.
+- The minimum supported Rust version is 1.88, where it was 1.98. It is now raised only when annotated needs a newer Rust, and never to a release less than six months old, where it followed the three most recent stable releases.
 
 ### Fixed
 
