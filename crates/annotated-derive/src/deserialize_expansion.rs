@@ -8,8 +8,11 @@ use crate::bounds::{Bounds, Used};
 use crate::described_rules::rules_function;
 use crate::deserialized_struct::{DeserializedStruct, Form};
 use crate::expansion::{Expansion, message_override, validity_of};
+use crate::generated::in_a_scope_of_its_own;
 use crate::serde_names::{DefaultValue, SerdeField};
-use crate::validated_struct::{FieldRule, Place, ValidatedField, nested_rules_in, option_content};
+use crate::validated_struct::{
+    FieldRule, Place, ValidatedField, nested_rules_in, option_content, patterns_compiled_once,
+};
 
 pub fn deserialize_impl(deserialized_struct: &DeserializedStruct) -> TokenStream {
     DeserializeExpansion::new(deserialized_struct).deserialize_impl()
@@ -110,7 +113,7 @@ impl<'a> DeserializeExpansion<'a> {
                 quote!(#serde::Deserializer::deserialize_struct(#deserializer, #struct_name, __FIELDS, #new_visitor)),
             )
         };
-        quote! {
+        let impls = quote! {
             impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
@@ -133,7 +136,8 @@ impl<'a> DeserializeExpansion<'a> {
                     ::annotated::__private::deserialize_for_serde(#deserializer)
                 }
             }
-        }
+        };
+        in_a_scope_of_its_own(&patterns_compiled_once(self.fields()), &impls)
     }
 
     pub fn new_visitor(&self) -> TokenStream {

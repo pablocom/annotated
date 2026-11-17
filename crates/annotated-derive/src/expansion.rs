@@ -4,9 +4,10 @@ use syn::{DeriveInput, Expr, Generics, Ident};
 
 use crate::bounds::{Bounds, Used};
 use crate::described_rules::rules_function;
+use crate::generated::in_a_scope_of_its_own;
 use crate::validated_enum::{ValidatedEnum, ValidatedVariant};
 use crate::validated_struct::{
-    FieldRule, Place, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in,
+    FieldRule, Place, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in, patterns_compiled_once,
 };
 
 #[derive(Clone)]
@@ -47,7 +48,7 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
     let generics = generics_validating(input, &validated_struct.fields);
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let (_, type_generics, _) = input.generics.split_for_impl();
-    quote! {
+    let validate_impl = quote! {
         impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
             fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
                 #(#field_checks)*
@@ -56,7 +57,8 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
 
             #rules_function
         }
-    }
+    };
+    in_a_scope_of_its_own(&patterns_compiled_once(&validated_struct.fields), &validate_impl)
 }
 
 pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
@@ -74,10 +76,10 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
         .iter()
         .flat_map(|variant| &variant.content.fields)
         .collect();
-    let generics = generics_validating(input, fields);
+    let generics = generics_validating(input, fields.iter().copied());
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let (_, type_generics, _) = input.generics.split_for_impl();
-    quote! {
+    let validate_impl = quote! {
         impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
             fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
                 match *self {
@@ -86,7 +88,8 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
                 #(#enum_checks)*
             }
         }
-    }
+    };
+    in_a_scope_of_its_own(&patterns_compiled_once(fields), &validate_impl)
 }
 
 // As serde's derive bounds the type parameters a field reads, the type parameters of each nested value are bounded by

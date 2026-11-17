@@ -8,7 +8,7 @@ use syn::{
     Member, Path, PathArguments, Type, TypePath,
 };
 
-use crate::pattern;
+use crate::pattern::Pattern;
 use crate::serde_names::{SerdeField, SerdeStruct, UnreadableAttribute};
 use crate::written_rule::{
     NamedArgument, RuleCall, StructCustom, StructRule, WrittenRule, written_rules, written_struct_rules,
@@ -76,6 +76,7 @@ pub struct RuleCheck {
     pub is_required: bool,
     pub message: Option<Expr>,
     pub span: Span,
+    pub pattern: Option<Box<Pattern>>,
 }
 
 impl<'a> ValidatedStruct<'a> {
@@ -292,6 +293,30 @@ fn type_arguments(type_path: &TypePath) -> impl Iterator<Item = &Type> {
     })
 }
 
+// The `static` of each regular expression the fields' rules match, once each.
+pub fn patterns_compiled_once<'a>(fields: impl IntoIterator<Item = &'a ValidatedField<'a>>) -> TokenStream {
+    let mut patterns: Vec<&Pattern> = Vec::new();
+    for field in fields {
+        for pattern in patterns_in(&field.rules) {
+            if !patterns.iter().any(|known| known.is_the_same_as(pattern)) {
+                patterns.push(pattern);
+            }
+        }
+    }
+    patterns.iter().map(|pattern| pattern.compiled_once()).collect()
+}
+
+fn patterns_in(rules: &[FieldRule]) -> Vec<&Pattern> {
+    rules
+        .iter()
+        .flat_map(|rule| match rule {
+            FieldRule::Check(check) => check.pattern.iter().map(AsRef::as_ref).collect(),
+            FieldRule::Each { element_rules, .. } => patterns_in(element_rules),
+            FieldRule::Nested { .. } => Vec::new(),
+        })
+        .collect()
+}
+
 pub fn nested_rules_in(rules: &[FieldRule]) -> Vec<Span> {
     rules
         .iter()
@@ -380,11 +405,13 @@ impl RuleCheck {
         let rule_name = &call.path.segments.last().expect("a path has a segment").ident;
         let span = rule_name.span();
         if call.path.is_ident("pattern") {
+            let pattern = Pattern::of(&call, span)?;
             return Ok(Self {
-                rule: pattern::pattern_rule(&call, span)?,
+                rule: pattern.rule(span),
                 is_required: false,
                 message: call.message,
                 span,
+                pattern: Some(Box::new(pattern)),
             });
         }
         let constructor = match call.path.get_ident() {
@@ -402,6 +429,7 @@ impl RuleCheck {
             is_required: call.path.is_ident("required"),
             message: call.message,
             span,
+            pattern: None,
         })
     }
 }

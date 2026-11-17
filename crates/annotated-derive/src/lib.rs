@@ -21,6 +21,7 @@ mod deserialize_expansion;
 mod deserialized_enum;
 mod deserialized_struct;
 mod expansion;
+mod generated;
 mod pattern;
 mod receiver;
 mod serde_names;

@@ -401,6 +401,35 @@ fn a_struct_without_rules_has_none_as_data() {
     assert_eq!(Member::rules(), Rules::default());
 }
 
+#[cfg(feature = "regex")]
+fn the_expression_in(problem: &Problem) -> *const u8 {
+    match problem {
+        Problem::Pattern { pattern, .. } => pattern.as_ptr(),
+        other => panic!("expected a pattern's problem, got {other:?}"),
+    }
+}
+
+#[cfg(feature = "regex")]
+#[test]
+fn a_pattern_is_described_by_the_expression_its_check_compiled() {
+    #[derive(Validate)]
+    struct Address {
+        #[validate(pattern = r"^\d{5}$")]
+        postal_code: String,
+    }
+    let address = Address {
+        postal_code: "2801".to_owned(),
+    };
+
+    let issues = address.validate().unwrap_err();
+    let rules = Address::rules();
+
+    assert_eq!(
+        the_expression_in(&rules.fields()[0].rules().problems()[0]),
+        the_expression_in(issues.iter().next().unwrap().problem())
+    );
+}
+
 #[test]
 fn the_field_of_a_transparent_struct_has_no_name_to_be_described_under() {
     #[derive(Validate)]

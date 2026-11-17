@@ -8,8 +8,9 @@ use crate::deserialize_expansion::{DeserializeExpansion, with_lifetime, without_
 use crate::deserialized_enum::{DeserializedEnum, DeserializedVariant};
 use crate::deserialized_struct::Form;
 use crate::expansion::Expansion;
+use crate::generated::in_a_scope_of_its_own;
 use crate::serde_names::Tag;
-use crate::validated_struct::Place;
+use crate::validated_struct::{Place, patterns_compiled_once};
 
 pub fn deserialize_enum_impl(deserialized_enum: &DeserializedEnum) -> TokenStream {
     EnumExpansion::new(deserialized_enum).deserialize_impl()
@@ -83,7 +84,7 @@ impl<'a> EnumExpansion<'a> {
             Tag::Internal { .. } | Tag::Untagged => self.variant_seed(),
         };
         let reading = self.reading();
-        quote! {
+        let impls = quote! {
             impl #impl_generics ::annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
@@ -103,7 +104,14 @@ impl<'a> EnumExpansion<'a> {
                     ::annotated::__private::deserialize_for_serde(#deserializer)
                 }
             }
-        }
+        };
+        let fields = self
+            .deserialized_enum
+            .variants
+            .iter()
+            .flat_map(|variant| &variant.content)
+            .flat_map(|content| &content.validated.fields);
+        in_a_scope_of_its_own(&patterns_compiled_once(fields), &impls)
     }
 
     // The bounds of the fields of every variant read, as each variant's own reading needs them, and those the enum's

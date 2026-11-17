@@ -5,8 +5,8 @@ use crate::{Problem, Rule};
 /// The rule that a string matches a regular expression. A match anywhere in the string passes, unless the expression is
 /// anchored with `^` and `$`.
 ///
-/// `#[validate(pattern = r"^\d{5}$")]` compiles the expression once, into a `static` at the field, and an expression
-/// that doesn't parse, or is too big to compile, is a compile error. When you use the rule by hand, keep the [`Regex`]
+/// `#[validate(pattern = r"^\d{5}$")]` compiles the expression once, into a `static` every rule with that expression
+/// shares within the derive, and an expression that doesn't parse, or is too big to compile, is a compile error. When you use the rule by hand, keep the [`Regex`]
 /// in a `static` in the same way.
 ///
 /// ```
