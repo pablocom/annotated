@@ -41,7 +41,12 @@ cargo fmt --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+for feature in "" serde json regex unicode json-schema; do
+  cargo clippy --package annotated --all-targets --no-default-features --features "$feature" -- -D warnings
+done
 ```
+
+CI also fails a push that breaks the public API of a crate on crates.io without a breaking commit since its last release. It writes the next versions with [`release`](release), then runs [cargo-semver-checks](https://github.com/obi1kenobi/cargo-semver-checks), which compares each crate with its latest version on crates.io under the release that version makes. To check a change to the public API first, do the same: `cargo run --package annotated-release -- 2026-01-01`, `cargo semver-checks --package annotated`, then discard what the release tool wrote with `git checkout -- .`.
 
 and check the benchmarks, which CI leaves out for now:
 
