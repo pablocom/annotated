@@ -498,10 +498,6 @@ mod an_externally_tagged_enum {
     /// for a sequence of the wrong length, unless the field has a default.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"{"Transfer": ["ES12"]}"#)];
 
-    /// annotated's buffer reads a struct variant from a map only, where serde's reads it from a sequence too.
-    const STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] =
-        &[in_both_formats(r#"{"Transfer": ["ES12", "rent"]}"#)];
-
     /// annotated's buffer reads a variant's name only, where MessagePack also reads its index.
     const INDICES_AS_TAGS_IN_THE_BUFFER: &[KnownDifference] = &[in_message_pack("0")];
 
@@ -523,7 +519,7 @@ mod an_externally_tagged_enum {
             "an externally tagged enum collecting type errors",
             BODIES,
             &[
-                STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER,
+                OPTIONS_MISSING_FROM_A_SEQUENCE,
                 INDICES_AS_TAGS_IN_THE_BUFFER,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
@@ -536,7 +532,7 @@ mod an_externally_tagged_enum {
             "an externally tagged enum collecting type errors throughout",
             BODIES,
             &[
-                STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER,
+                OPTIONS_MISSING_FROM_A_SEQUENCE,
                 INDICES_AS_TAGS_IN_THE_BUFFER,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
@@ -917,10 +913,6 @@ mod tagged_enums_in_a_struct {
         in_both_formats(r#"{"adjacent": {"type": {"Cash": null}}}"#),
     ];
 
-    /// annotated's buffer reads a struct variant from a map only, where serde's reads it from a sequence too.
-    const STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] =
-        &[in_both_formats(r#"{"external": {"Card": ["4111"]}}"#)];
-
     /// annotated's buffer reads a variant's name only, where MessagePack also reads its index.
     const INDICES_AS_TAGS_IN_THE_BUFFER: &[KnownDifference] = &[in_message_pack(r#"{"external": 0}"#)];
 
@@ -938,11 +930,7 @@ mod tagged_enums_in_a_struct {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_at_the_root::Order>(
             "tagged enums in a struct collecting type errors",
             BODIES,
-            &[
-                TAGS_READ_FROM_THE_BUFFER,
-                STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER,
-                INDICES_AS_TAGS_IN_THE_BUFFER,
-            ],
+            &[TAGS_READ_FROM_THE_BUFFER, INDICES_AS_TAGS_IN_THE_BUFFER],
         );
     }
 
@@ -951,11 +939,7 @@ mod tagged_enums_in_a_struct {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_throughout::Order>(
             "tagged enums collecting type errors in a struct collecting them",
             BODIES,
-            &[
-                TAGS_READ_FROM_THE_BUFFER,
-                STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER,
-                INDICES_AS_TAGS_IN_THE_BUFFER,
-            ],
+            &[TAGS_READ_FROM_THE_BUFFER, INDICES_AS_TAGS_IN_THE_BUFFER],
         );
     }
 }
@@ -1006,10 +990,6 @@ mod flattened_fields {
         "null",
     ];
 
-    /// annotated's buffer reads a struct variant from a map only, where serde's reads it from a sequence too.
-    const STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] =
-        &[in_both_formats(r#"{"id": 1, "Card": ["4111"]}"#)];
-
     /// A flattened enum collecting type errors reads every key left, where serde reads only the first that names a
     /// variant, and leaves that key to the flattened fields after it.
     const FLATTENED_ENUMS_READING_EVERY_KEY_LEFT: &[KnownDifference] = &[
@@ -1029,7 +1009,7 @@ mod flattened_fields {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, by_annotated::Order>(
             "flattened fields",
             BODIES,
-            &[STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER],
+            &[],
         );
     }
 
@@ -1038,7 +1018,7 @@ mod flattened_fields {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_at_the_root::Order>(
             "flattened fields collecting type errors",
             BODIES,
-            &[STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER],
+            &[],
         );
     }
 

@@ -4,7 +4,7 @@ use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, Visitor};
 
 use crate::collecting_type_errors::problem_of;
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, ReadAs, WrongType};
+use crate::content_deserializer::{BufferedEnum, ContentDeserializer, ReadAs, WrongType};
 use crate::{Location, Report};
 
 // As serde's derive reads them, the entries kept are human-readable, and a struct or an enum takes its own out of the
@@ -152,12 +152,15 @@ impl<'de, E: de::Error> Deserializer<'de> for FlatMapDeserializer<'_, 'de, E> {
         visitor: V,
     ) -> Result<V::Value, E> {
         let variant = self.entries.iter_mut().find_map(|entry| take_if_named(entry, variants));
-        let Some(variant) = variant else {
+        let Some((variant, content)) = variant else {
             return Err(E::custom(format_args!(
                 "no variant of enum {name} found in flattened data"
             )));
         };
-        ContentDeserializer::new(Content::Map(vec![variant]), TAKEN_OUT).deserialize_enum(name, variants, visitor)
+        visitor.visit_enum(BufferedEnum::with_content(
+            ContentDeserializer::new(variant, TAKEN_OUT),
+            ContentDeserializer::new(content, TAKEN_OUT),
+        ))
     }
 
     fn deserialize_newtype_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, E> {

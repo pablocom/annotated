@@ -3,9 +3,7 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::marker::PhantomData;
 
-use serde::de::value::{
-    BorrowedStrDeserializer, MapAccessDeserializer, MapDeserializer, SeqDeserializer, StringDeserializer,
-};
+use serde::de::value::{BorrowedStrDeserializer, MapDeserializer, SeqDeserializer};
 use serde::de::{
     self, DeserializeSeed, Deserializer, EnumAccess, Expected, IntoDeserializer, Unexpected, VariantAccess, Visitor,
 };
@@ -374,12 +372,16 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
         _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, E> {
+        let read_as = self.read_as;
         match self.content {
-            Content::Str(variant) => visitor.visit_enum(BorrowedStrDeserializer::new(variant)),
-            Content::String(variant) => visitor.visit_enum(StringDeserializer::new(variant)),
-            Content::Map(entries) if entries.len() == 1 => {
-                visitor.visit_enum(MapAccessDeserializer::new(Self::entries(entries, self.read_as)))
-            }
+            Content::Str(_) | Content::String(_) => visitor.visit_enum(BufferedEnum::named(self)),
+            Content::Map(entries) => match <[_; 1]>::try_from(entries) {
+                Ok([(variant, content)]) => visitor.visit_enum(BufferedEnum::with_content(
+                    Self::new(variant, read_as),
+                    Self::new(content, read_as),
+                )),
+                Err(entries) => Err(Self::new(Content::Map(entries), read_as).invalid_type(&visitor)),
+            },
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -407,6 +409,77 @@ impl<'de, E: de::Error> IntoDeserializer<'de, E> for ContentDeserializer<'de, E>
 
     fn into_deserializer(self) -> Self {
         self
+    }
+}
+
+/// An enum in annotated's buffer: the name of its variant, and the variant's content unless the name came alone. Each
+/// kind of variant reads its content as serde's buffer does, a struct variant from a map or a sequence.
+pub(crate) struct BufferedEnum<D> {
+    variant: D,
+    content: Option<D>,
+}
+
+impl<D> BufferedEnum<D> {
+    /// A variant named alone, which only a unit variant reads.
+    pub(crate) const fn named(variant: D) -> Self {
+        Self { variant, content: None }
+    }
+
+    /// A variant named with its content.
+    pub(crate) const fn with_content(variant: D, content: D) -> Self {
+        Self {
+            variant,
+            content: Some(content),
+        }
+    }
+}
+
+impl<'de, D: Deserializer<'de>> EnumAccess<'de> for BufferedEnum<D> {
+    type Error = D::Error;
+    type Variant = BufferedVariant<D>;
+
+    fn variant_seed<V: DeserializeSeed<'de>>(self, seed: V) -> Result<(V::Value, Self::Variant), D::Error> {
+        let variant = seed.deserialize(self.variant)?;
+        Ok((variant, BufferedVariant(self.content)))
+    }
+}
+
+/// The content of a variant in annotated's buffer, when it has any.
+pub(crate) struct BufferedVariant<D>(Option<D>);
+
+impl<'de, D: Deserializer<'de>> VariantAccess<'de> for BufferedVariant<D> {
+    type Error = D::Error;
+
+    fn unit_variant(self) -> Result<(), D::Error> {
+        match self.0 {
+            Some(content) => de::Deserialize::deserialize(content),
+            None => Ok(()),
+        }
+    }
+
+    fn newtype_variant_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Value, D::Error> {
+        match self.0 {
+            Some(content) => seed.deserialize(content),
+            None => Err(de::Error::invalid_type(Unexpected::UnitVariant, &"newtype variant")),
+        }
+    }
+
+    fn tuple_variant<V: Visitor<'de>>(self, length: usize, visitor: V) -> Result<V::Value, D::Error> {
+        match self.0 {
+            Some(content) => content.deserialize_tuple(length, visitor),
+            None => Err(de::Error::invalid_type(Unexpected::UnitVariant, &"tuple variant")),
+        }
+    }
+
+    fn struct_variant<V: Visitor<'de>>(
+        self,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, D::Error> {
+        match self.0 {
+            Some(content) => content.deserialize_struct("", fields, visitor),
+            None => Err(de::Error::invalid_type(Unexpected::UnitVariant, &"struct variant")),
+        }
     }
 }
 

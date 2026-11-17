@@ -1,13 +1,11 @@
 use std::marker::PhantomData;
 
-use serde::de::value::{
-    BorrowedStrDeserializer, MapAccessDeserializer, MapDeserializer, SeqDeserializer, StrDeserializer,
-};
+use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, Deserializer, Expected, IntoDeserializer, Visitor};
 
 use crate::content::Content;
 use crate::content_deserializer::{
-    ContentDeserializer, ReadAs, boolean_written_in, integer_written_in, visit_i128, visit_u128,
+    BufferedEnum, ContentDeserializer, ReadAs, boolean_written_in, integer_written_in, visit_i128, visit_u128,
 };
 
 /// Reads a [`Content`] by reference, so the same buffer can be read again: each variant of an untagged enum is tried
@@ -291,11 +289,14 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentRefDeserializer<'_, 'de, E>
         visitor: V,
     ) -> Result<V::Value, E> {
         match self.content {
-            Content::Str(variant) => visitor.visit_enum(BorrowedStrDeserializer::new(variant)),
-            Content::String(variant) => visitor.visit_enum(StrDeserializer::new(variant)),
-            Content::Map(entries) if entries.len() == 1 => visitor.visit_enum(MapAccessDeserializer::new(
-                Self::entries(entries, self.is_human_readable),
-            )),
+            Content::Str(_) | Content::String(_) => visitor.visit_enum(BufferedEnum::named(self)),
+            Content::Map(entries) => match entries.as_slice() {
+                [(variant, content)] => visitor.visit_enum(BufferedEnum::with_content(
+                    Self::new(variant, self.is_human_readable),
+                    Self::new(content, self.is_human_readable),
+                )),
+                _ => Err(self.invalid_type(&visitor)),
+            },
             _ => Err(self.invalid_type(&visitor)),
         }
     }

@@ -483,6 +483,25 @@ fn under_collect_type_errors_a_variant_of_its_type_is_read() {
     assert_eq!(read::<Donation>(r#""cash""#), Ok(Donation::Cash));
 }
 
+#[test]
+fn under_collect_type_errors_a_struct_variant_is_read_from_a_sequence_as_with_serde() {
+    assert_eq!(
+        read::<Donation>(r#"{ "card": ["4111111111111111", "Ada"] }"#),
+        Ok(Donation::Card {
+            number: "4111111111111111".to_owned(),
+            holder: "Ada".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn under_collect_type_errors_a_struct_variant_s_issues_in_a_sequence_are_at_its_fields() {
+    assert_eq!(
+        issues_reading::<Donation>(r#"{ "card": ["4111", ""] }"#),
+        ["card.number: length(min: 16, unit: chars)", "card.holder: required"]
+    );
+}
+
 #[derive(Deserialize, Debug)]
 #[annotated(collect_type_errors)]
 #[allow(dead_code)]
@@ -1273,6 +1292,28 @@ fn an_untagged_struct_variant_is_not_read_from_a_sequence_as_with_serde() {
     assert_eq!(
         issues_reading::<Recipient>(r#"["ada@example.com"]"#),
         ["invalid_type(expected: untagged enum Recipient, found: sequence)"]
+    );
+}
+
+#[derive(serde::Deserialize, Debug, PartialEq)]
+enum Method {
+    Card { number: String },
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(untagged)]
+enum MethodOrNote {
+    Method(Method),
+    Note(String),
+}
+
+#[test]
+fn an_untagged_variant_reads_a_struct_variant_inside_it_from_a_sequence_as_with_serde() {
+    assert_eq!(
+        read::<MethodOrNote>(r#"{ "Card": ["4111"] }"#),
+        Ok(MethodOrNote::Method(Method::Card {
+            number: "4111".to_owned()
+        }))
     );
 }
 

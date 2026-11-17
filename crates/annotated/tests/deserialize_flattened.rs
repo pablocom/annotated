@@ -338,6 +338,23 @@ fn a_flattened_enum_takes_the_key_that_names_its_variant() {
     );
 }
 
+#[test]
+fn a_flattened_struct_variant_is_read_from_a_sequence_as_with_serde() {
+    let body = r#"{ "email": "ada@example.com", "Transfer": ["ES91"] }"#;
+
+    let checkout = deserialize::<Checkout>(body).unwrap();
+
+    assert_eq!(
+        checkout,
+        Checkout {
+            email: "ada@example.com".to_owned(),
+            payment: Payment::Transfer {
+                iban: "ES91".to_owned()
+            },
+        }
+    );
+}
+
 #[derive(Deserialize, Debug, PartialEq)]
 struct Envelope<T> {
     #[validate(required)]
