@@ -48,6 +48,14 @@ done
 
 CI also fails a push that breaks the public API of a crate on crates.io without a breaking commit since its last release. It writes the next versions with [`release`](release), then runs [cargo-semver-checks](https://github.com/obi1kenobi/cargo-semver-checks), which compares each crate with its latest version on crates.io under the release that version makes. To check a change to the public API first, do the same: `cargo run --package annotated-release -- 2026-01-01`, `cargo semver-checks --package annotated`, then discard what the release tool wrote with `git checkout -- .`.
 
+Check the tests under `serde_json`'s `arbitrary_precision` and `raw_value` features too, a workspace of their own since those features change `serde_json` for every crate built with it:
+
+```sh
+cargo fmt --check --manifest-path serde-json-features/Cargo.toml
+cargo clippy --manifest-path serde-json-features/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path serde-json-features/Cargo.toml
+```
+
 and check the benchmarks, which CI leaves out for now:
 
 ```sh

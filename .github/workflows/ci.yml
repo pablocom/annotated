@@ -48,6 +48,25 @@ jobs:
             echo "::endgroup::"
           done
 
+  # serde_json's arbitrary_precision and raw_value change it for every crate built with it, so the tests that turn them
+  # on are a workspace of their own.
+  serde-json-features:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: serde-json-features
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: serde-json-features
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
   # Every push to main releases what its commits say, so a public API that breaks has to come with a breaking commit.
   semver:
     runs-on: ubuntu-latest
@@ -115,7 +134,7 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main'
-    needs: [format, lint, features, semver, test, docs]
+    needs: [format, lint, features, serde-json-features, semver, test, docs]
     runs-on: ubuntu-latest
     environment: release
     # A release reads what the one before it left on main, so they run one at a time.
