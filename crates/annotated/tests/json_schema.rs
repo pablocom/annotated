@@ -633,6 +633,24 @@ fn a_second_pattern_goes_into_all_of() {
 }
 
 #[test]
+fn a_second_pattern_is_unwritten_when_the_all_of_beside_it_is_not_a_list() {
+    #[derive(Validate)]
+    struct Upload {
+        #[validate(prefix = "img-", suffix = ".png")]
+        name: String,
+    }
+
+    let unwritten = unwritten_rules_of::<Upload>(object_with(json!({
+        "name": { "type": "string", "allOf": "not a list" }
+    })));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten("/properties/name", "suffix", Reason::NoSchema)]
+    );
+}
+
+#[test]
 fn the_rules_of_each_element_are_written_into_items() {
     #[derive(Validate)]
     struct Post {
@@ -911,6 +929,79 @@ fn a_required_field_declared_in_a_member_of_all_of_is_listed_as_required_there()
                 }
             ]
         })
+    );
+}
+
+#[test]
+fn a_required_field_is_unwritten_when_the_required_of_the_schema_is_not_a_list() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(required)]
+        nickname: Option<String>,
+    }
+
+    let unwritten = unwritten_rules_of::<Member>(json!({
+        "type": "object",
+        "properties": { "nickname": { "type": ["string", "null"] } },
+        "required": true
+    }));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten("/properties/nickname", "required", Reason::NoSchema)]
+    );
+}
+
+#[test]
+fn a_required_of_the_schema_that_is_not_a_list_is_left_as_it_is() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(required)]
+        nickname: Option<String>,
+    }
+
+    let schema = with_the_rules_of::<Member>(json!({
+        "type": "object",
+        "properties": { "nickname": { "type": ["string", "null"] } },
+        "required": true
+    }));
+
+    assert_eq!(
+        schema,
+        json!({
+            "type": "object",
+            "properties": { "nickname": { "type": ["string", "null"] } },
+            "required": true
+        })
+    );
+}
+
+#[test]
+fn a_required_field_is_unwritten_in_the_member_of_all_of_whose_required_is_not_a_list() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(required)]
+        nickname: Option<String>,
+    }
+
+    let unwritten = unwritten_rules_of::<Member>(json!({
+        "allOf": [
+            { "$ref": "#/components/schemas/Audited" },
+            {
+                "type": "object",
+                "properties": { "nickname": { "type": ["string", "null"] } },
+                "required": "nickname"
+            }
+        ]
+    }));
+
+    assert_eq!(
+        unwritten,
+        vec![left_unwritten(
+            "/allOf/1/properties/nickname",
+            "required",
+            Reason::NoSchema
+        )]
     );
 }
 

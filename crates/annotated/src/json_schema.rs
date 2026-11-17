@@ -71,6 +71,8 @@
 //!
 //! - A field's property is looked for among the schema's `properties`, then among those of its `allOf` members, at any
 //!   depth: utoipa documents a struct with a flattened field as `allOf`.
+//! - A field's name is added to the `required` of the schema that holds its property. A `required` that isn't a list is
+//!   left as it is, and the rule is returned as unwritten for [`Reason::NoSchema`].
 //! - A keyword already in the schema is never loosened: a maximum keeps the smaller value and a minimum the larger.
 //!   A `format` already there is kept, and a second `pattern` goes into `allOf`.
 //! - Nothing is written for `ip`, which no single format covers, or for a property that is a `$ref`, whose schema
@@ -174,8 +176,9 @@ impl fmt::Display for UnwrittenRule {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Reason {
-    /// The schema has no subschema where the rule's keyword belongs: no property for the field, or no `items` or
-    /// `additionalProperties` for its elements.
+    /// The schema has nowhere to put the rule's keyword: no property for the field, no `items` or
+    /// `additionalProperties` for its elements, or a `required` or an `allOf` that isn't a list, where the keyword goes
+    /// into the list.
     NoSchema,
     /// The subschema there refers to another with `$ref`, which isn't followed.
     Reference,
@@ -241,8 +244,12 @@ fn write_where_declared(
         let property_pointer = property_pointer(pointer, field.name());
         write_value_rules(field.rules(), property, &property_pointer, unwritten);
         let is_broken_by_its_absence = field.rules().problems().contains(&Problem::Required) && !field.has_default();
-        if is_broken_by_its_absence {
-            list_as_required(field.name(), schema);
+        if is_broken_by_its_absence && let Err(reason) = list_as_required(field.name(), schema) {
+            unwritten.push(UnwrittenRule {
+                pointer: property_pointer,
+                problem: Problem::Required,
+                reason,
+            });
         }
         return true;
     }
@@ -266,14 +273,15 @@ fn property_pointer(pointer: &str, name: &str) -> String {
     format!("{pointer}/properties/{name}")
 }
 
-fn list_as_required(name: &str, schema: &mut Map<String, Value>) {
+fn list_as_required(name: &str, schema: &mut Map<String, Value>) -> Result<(), Reason> {
     let required = schema.entry("required").or_insert_with(|| Value::Array(Vec::new()));
     let Value::Array(required) = required else {
-        return;
+        return Err(Reason::NoSchema);
     };
     if !required.iter().any(|listed| listed == name) {
         required.push(name.into());
     }
+    Ok(())
 }
 
 fn write_value_rules(
