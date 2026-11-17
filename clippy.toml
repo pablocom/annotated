@@ -1,4 +1,4 @@
-doc-valid-idents = ["OpenAPI", ".."]
+doc-valid-idents = ["OpenAPI", "MessagePack", ".."]
 disallowed-macros = [
     { path = "quote::quote_spanned", reason = "quote with `quote_at!`, which keeps the hygiene of the generated code" },
 ]
