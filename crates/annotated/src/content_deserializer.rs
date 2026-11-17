@@ -138,10 +138,21 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
             Content::I32(integer) => visitor.visit_i32(integer),
             Content::I64(integer) => visitor.visit_i64(integer),
             Content::I128(integer) => visit_i128(visitor, integer),
-            _ => match self.number_the_format_kept_as_text() {
-                Some(number) => Self::new(number, self.read_as).deserialize_float(visitor),
-                None => Err(self.invalid_type(&visitor)),
-            },
+            _ => self.visit_number_kept_as_text(visitor),
+        }
+    }
+
+    // Reading the number here, rather than through `deserialize_float`, which comes back to `deserialize_integer`,
+    // keeps the two from calling each other, which would keep them out of line for every number read.
+    #[cold]
+    fn visit_number_kept_as_text<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
+        match self.number_the_format_kept_as_text() {
+            Some(Content::U64(integer)) => visitor.visit_u64(integer),
+            Some(Content::I64(integer)) => visitor.visit_i64(integer),
+            Some(Content::U128(integer)) => visit_u128(visitor, integer),
+            Some(Content::I128(integer)) => visit_i128(visitor, integer),
+            Some(Content::F64(float)) => visitor.visit_f64(float),
+            _ => Err(self.invalid_type(&visitor)),
         }
     }
 
@@ -1116,6 +1127,14 @@ mod tests {
                 Ok(1_180_591_620_717_411_303_424),
                 Ok(-1_180_591_620_717_411_303_424)
             )
+        );
+    }
+
+    #[test]
+    fn a_whole_number_within_64_bits_kept_as_text_is_read_as_the_integer_a_type_asks_for() {
+        assert_eq!(
+            (read::<u8>(kept_as_text("42")), read::<i8>(kept_as_text("-42"))),
+            (Ok(42), Ok(-42))
         );
     }
 
