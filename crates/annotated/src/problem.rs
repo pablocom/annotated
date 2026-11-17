@@ -22,6 +22,25 @@ use crate::ParamValue;
 /// assert_eq!(problem.to_string(), "is reserved");
 /// ```
 ///
+/// # Making a built-in problem
+///
+/// A built-in problem is made by its rule, through [`Rule::problem`](crate::Rule::problem), for the type the rule
+/// checks. So it holds what the rule's own issue would hold: a `length` counts a `str` in `char`s and a `Vec` in
+/// elements. With [`Issue::new`](crate::Issue::new), it makes an issue to push into a [`Report`](crate::Report).
+///
+/// ```
+/// use annotated::{Problem, Rule, rules};
+///
+/// let too_long = Rule::<str>::problem(&rules::length().max(50)).unwrap();
+///
+/// assert_eq!(too_long.to_string(), "must be at most 50 characters long");
+/// assert_eq!(Rule::<u8>::problem(&rules::range().min(18)).unwrap().to_string(), "must be at least 18");
+/// ```
+///
+/// Every built-in rule answers its problem, but for a `length` or a `range` without bounds, which has none. The
+/// variants without data, such as `Problem::Missing`, are written as they are. Only collecting deserialization makes
+/// `InvalidType` and `UnknownVariant`: an app passes one on by pushing the issue it came in.
+///
 /// # Serialized
 ///
 /// With the `serde` feature, on by default, a problem serializes as its `code` and its `params`: an object of each

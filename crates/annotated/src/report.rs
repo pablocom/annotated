@@ -115,6 +115,38 @@ impl Report {
             .push(Issue::new(at.to_path(), problem).with_message(message));
     }
 
+    /// Records `issue` as it is, at its own path and with its own message, unless the report is finished.
+    ///
+    /// It moves an issue an app already has into the report: one found by another validation, or by a check of the
+    /// app's own. [`Issue::new`] makes one from a [`Path`](crate::Path) and a [`Problem`], and
+    /// [`Issue::with_message`] gives it a message of its own. A built-in problem is made by its rule, as
+    /// [`Problem`] shows.
+    ///
+    /// ```
+    /// use annotated::{Issue, Location, Path, Problem, Report, Validate};
+    ///
+    /// #[derive(Validate)]
+    /// struct NewMember {
+    ///     #[validate(email)]
+    ///     email: String,
+    /// }
+    ///
+    /// let new_member = NewMember { email: "alex@example.com".to_owned() };
+    /// let mut found = Report::new();
+    /// new_member.validate_into(&Location::root(), &mut found);
+    ///
+    /// let email_taken = Problem::custom("email_taken", "belongs to another member");
+    /// found.push_issue(Issue::new(Path::root().field("email"), email_taken));
+    ///
+    /// assert_eq!(found.into_result().unwrap_err().to_string(), "email: belongs to another member");
+    /// ```
+    pub fn push_issue(&mut self, issue: Issue) {
+        if self.is_finished() {
+            return;
+        }
+        self.issues.push(issue);
+    }
+
     /// Moves the issues in `other` to the end of this report, keeping their order, and leaves `other` empty.
     ///
     /// The report takes the first of them, as many as its limit has room for, so a finished report takes none. An
@@ -143,13 +175,6 @@ impl Report {
             return;
         }
         self.issues.append(&mut other.issues);
-    }
-
-    pub(crate) fn push_issue(&mut self, issue: Issue) {
-        if self.is_finished() {
-            return;
-        }
-        self.issues.push(issue);
     }
 
     /// How many more issues the report keeps before it is finished.

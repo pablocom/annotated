@@ -49,6 +49,10 @@ Issues ──1..*── Issue ──── Path ──0..*── PathSegment (Fi
 
 A **`Issue`** has a `Path`, a `Problem` and an optional message override. `message()` returns the override when there is one, with its `{param}` placeholders filled from the problem's parameters. Otherwise it returns the problem's English message.
 
+An app can build issues too, to join one it already has to a report: one found by another validation, or by a check of its own, like "this email is taken". `Issue::new(path, problem)` makes one, `with_message` gives it a message of its own, and `Report::push_issue` records it as it is, within the report's limit like any push. `Issues` is still made only by a report, so it stays never empty and says truly whether it is complete.
+
+A built-in problem is made by its rule, through `Rule::problem`, so it holds what the rule's own issue would: `Rule::<str>::problem(&rules::length().max(50))`. There are no constructors for the data variants, since the rule already says what each holds. Every built-in rule answers its problem, but a `length` or a `range` without bounds. `InvalidType` and `UnknownVariant` are made only by collecting deserialization.
+
 **`Problem`** is `#[non_exhaustive]`, so adding a built-in problem is not a breaking change. The `Bounds` a length or a range problem holds are too, so neither is adding a kind of bounds.
 
 - Every variant has a stable snake_case `code()`. For a problem reported by a built-in rule, the code is the rule's name: the `ipv4` rule reports the code `ipv4`.
