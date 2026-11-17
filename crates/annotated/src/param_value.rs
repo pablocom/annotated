@@ -52,6 +52,16 @@ impl ParamValue {
         );
         Self::Text(value.to_string().into())
     }
+
+    /// `value` as [`ParamValue::number_or_text`] has it, except an `f32`, which is the `f64` it widens to without
+    /// rounding. A person reads `0.1`, and a rule compares against `0.10000000149011612`.
+    pub(crate) fn exact_number_or_text<T: Display + Any>(value: &T) -> Self {
+        let any: &dyn Any = value;
+        match any.downcast_ref::<f32>() {
+            Some(single) => Self::Float(f64::from(*single)),
+            None => Self::number_or_text(value),
+        }
+    }
 }
 
 impl Display for ParamValue {

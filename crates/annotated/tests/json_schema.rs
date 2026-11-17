@@ -165,6 +165,102 @@ fn range_on_a_number_becomes_its_minimum_and_maximum() {
 }
 
 #[test]
+fn a_maximum_on_an_f32_is_the_f32_the_rule_compares_against_not_the_decimal_it_is_written_as() {
+    #[derive(Validate)]
+    struct Measure {
+        #[validate(range(max = 0.1))]
+        ratio: f32,
+    }
+
+    let schema = with_the_rules_of::<Measure>(object_with(json!({ "ratio": { "type": "number" } })));
+
+    assert_eq!(
+        schema,
+        object_with(json!({ "ratio": { "type": "number", "maximum": 0.100_000_001_490_116_12 } }))
+    );
+}
+
+#[test]
+fn a_minimum_on_an_f32_is_the_f32_the_rule_compares_against_not_the_decimal_it_is_written_as() {
+    #[derive(Validate)]
+    struct Measure {
+        #[validate(range(min = 0.7))]
+        ratio: f32,
+    }
+
+    let schema = with_the_rules_of::<Measure>(object_with(json!({ "ratio": { "type": "number" } })));
+
+    assert_eq!(
+        schema,
+        object_with(json!({ "ratio": { "type": "number", "minimum": 0.699_999_988_079_071 } }))
+    );
+}
+
+#[test]
+fn a_bound_on_an_f64_is_written_as_it_is() {
+    #[derive(Validate)]
+    struct Measure {
+        #[validate(range(min = 0.7, max = 0.1))]
+        ratio: f64,
+    }
+
+    let schema = with_the_rules_of::<Measure>(object_with(json!({ "ratio": { "type": "number" } })));
+
+    assert_eq!(
+        schema,
+        object_with(json!({ "ratio": { "type": "number", "minimum": 0.7, "maximum": 0.1 } }))
+    );
+}
+
+#[test]
+fn the_bounds_of_the_widest_64_bit_integers_are_written_exactly() {
+    #[derive(Validate)]
+    struct Counter {
+        #[validate(range(max = 18_446_744_073_709_551_615))]
+        visits: u64,
+        #[validate(range(min = -9_223_372_036_854_775_808))]
+        balance: i64,
+    }
+
+    let schema = with_the_rules_of::<Counter>(object_with(json!({
+        "visits": { "type": "integer" },
+        "balance": { "type": "integer" }
+    })));
+
+    assert_eq!(
+        schema,
+        object_with(json!({
+            "visits": { "type": "integer", "maximum": 18_446_744_073_709_551_615_u64 },
+            "balance": { "type": "integer", "minimum": -9_223_372_036_854_775_808_i64 }
+        }))
+    );
+}
+
+#[test]
+fn a_bound_beyond_the_integers_json_holds_exactly_is_unwritten() {
+    #[derive(Validate)]
+    struct Counter {
+        #[validate(range(min = -170_141_183_460_469_231_731_687_303_715_884_105_728))]
+        balance: i128,
+        #[validate(range(max = 340_282_366_920_938_463_463_374_607_431_768_211_455))]
+        visits: u128,
+    }
+
+    let unwritten = unwritten_rules_of::<Counter>(object_with(json!({
+        "balance": { "type": "integer" },
+        "visits": { "type": "integer" }
+    })));
+
+    assert_eq!(
+        unwritten,
+        vec![
+            left_unwritten("/properties/balance", "range", Reason::NoKeyword),
+            left_unwritten("/properties/visits", "range", Reason::NoKeyword)
+        ]
+    );
+}
+
+#[test]
 fn range_with_bounds_that_are_not_numbers_writes_nothing() {
     #[derive(PartialEq, PartialOrd)]
     struct Euros(f64);

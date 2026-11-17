@@ -78,6 +78,8 @@
 //!   they require, so [`Rules`] doesn't list them, and they are neither written nor returned.
 //! - `pattern` is read by the `regex` crate when it is checked, and by a schema's reader as ECMA-262 says. The two
 //!   differ at the edges: `\d` is any Unicode digit for the rule, and `0` to `9` in a schema.
+//! - `range` on an `f32` writes each bound as the `f64` it widens to: `0.1` is `0.10000000149011612`, the value the rule
+//!   compares against. The decimal `0.1` would be a `maximum` below values the rule accepts.
 //! - The keywords are those of JSON Schema 2020-12, which OpenAPI 3.1 uses.
 
 use std::fmt;

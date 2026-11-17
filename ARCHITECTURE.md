@@ -499,6 +499,7 @@ It is built in three layers, and each can be used without the next.
 `Rule::problem` answers the problem that every value breaking the rule has, or `None` when the rule can't say:
 
 - **A built-in rule's problem describes the rule.** It holds the rule's parameters and never the value checked. `length().max(50)` answers a `Problem::Length` of at most 50, counted in `LengthUnit::Chars` for a `String` and in `LengthUnit::Elements` for a `Vec`.
+- **It holds a bound as exactly as the rule compares against it.** A failed check reports an `f32` bound as the decimal a person reads, `0.1`, and `Rule::problem` as the `f64` it widens to, `0.10000000149011612`, since that is the value a value is compared with and a schema must not be tighter than it.
 - **A rule with nothing to require answers `None`:** a `length` or a `range` with no bounds.
 - **`custom(f)` answers `None`**, which is the method's default. So does a rule of your own, until it implements `problem`.
 
@@ -557,6 +558,7 @@ A type that implements `Validate` or `Deserialize` by hand answers no fields, un
 
 Where a schema says something a little different from the rule:
 
+- **`range` on an `f32`** writes each bound as the `f64` it widens to, `0.10000000149011612` for `0.1`, since that is the value the rule compares against. The decimal `0.1` would be a `maximum` below values the rule accepts.
 - **`pattern`** is copied as written. The rule reads it as the `regex` crate does, and a schema's reader as ECMA-262 says. The two differ at the edges: `\d` is any Unicode digit for the rule, and `0` to `9` in a schema.
 - **`format`** names a kind of string and leaves its details to the reader. annotated's email address is HTML's, not RFC 5321's, and its URL is mostly narrower than an IRI: it has an authority and one of the accepted schemes. But it takes `[`, `]` and `|` in a query or a fragment, which an IRI has percent-encoded.
 - **`required` on a type of your own** that implements `Required` writes the keyword above when the type's schema is a string, an array or an object, whatever the type counts as present.

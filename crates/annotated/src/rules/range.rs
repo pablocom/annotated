@@ -9,7 +9,9 @@ use crate::{Bounds, ParamValue, Problem, Rule};
 /// bound, like a float's NaN, is out of range. A range with no bounds accepts any value.
 ///
 /// Its problem reports the bounds as [`ParamValue`] numbers when the type is a primitive number type, like `u8` or
-/// `f64`, and as text rendered with `Display` for any other type.
+/// `f64`, and as text rendered with `Display` for any other type. An `f32` bound is `0.1` in the problem of a failed
+/// check, which people read, and `0.10000000149011612` in the problem [`Rule::problem`] says, which is the value the
+/// rule compares against.
 ///
 /// ```
 /// use annotated::{Rule, rules};
@@ -66,8 +68,8 @@ impl<T: PartialOrd + Display + 'static> Rule<T> for Range<T> {
 
     fn problem(&self) -> Option<Problem> {
         let bounds = Bounds::of(
-            self.min.as_ref().map(ParamValue::number_or_text),
-            self.max.as_ref().map(ParamValue::number_or_text),
+            self.min.as_ref().map(ParamValue::exact_number_or_text),
+            self.max.as_ref().map(ParamValue::exact_number_or_text),
         )?;
         Some(Problem::Range { bounds })
     }
@@ -210,6 +212,26 @@ mod tests {
             out_of_range(Bounds::Between {
                 min: ParamValue::Text("A".into()),
                 max: ParamValue::Text("F".into())
+            })
+        );
+    }
+
+    #[test]
+    fn the_problem_the_rule_says_holds_an_f32_bound_as_the_exact_value_it_compares_against() {
+        assert_eq!(
+            range().max(0.1_f32).problem(),
+            Some(Problem::Range {
+                bounds: Bounds::AtMost(ParamValue::Float(0.100_000_001_490_116_12))
+            })
+        );
+    }
+
+    #[test]
+    fn the_problem_the_rule_says_holds_an_f64_bound_as_it_is() {
+        assert_eq!(
+            range().max(0.1_f64).problem(),
+            Some(Problem::Range {
+                bounds: Bounds::AtMost(ParamValue::Float(0.1))
             })
         );
     }
