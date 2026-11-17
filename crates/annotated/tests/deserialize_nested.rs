@@ -5,6 +5,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{BuildHasherDefault, DefaultHasher};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use annotated::{Deserialize, DeserializeError, Issue, Location, Problem, Report, Validate};
 
@@ -344,6 +346,65 @@ fn every_element_of_a_boxed_slice_is_read_at_its_index() {
         r#"{ "stock": {}, "docks": [{ "street": "Gran Vía 1", "postalCode": "28013" }, { "postalCode": "28013" }] }"#;
 
     assert_eq!(issues_reading::<Depot>(body), ["docks[1].street: missing"]);
+}
+
+#[derive(Deserialize, Debug)]
+struct Journey {
+    #[validate(nested)]
+    #[allow(dead_code)]
+    start: Rc<Address>,
+    #[validate(nested)]
+    #[allow(dead_code)]
+    end: Arc<Address>,
+}
+
+#[test]
+fn a_nested_struct_in_an_rc_is_read_under_its_field() {
+    let body = r#"{ "start": { "postalCode": "28013" }, "end": { "street": "Gran Vía 1", "postalCode": "28013" } }"#;
+
+    assert_eq!(issues_reading::<Journey>(body), ["start.street: missing"]);
+}
+
+#[test]
+fn a_nested_struct_in_an_arc_is_read_under_its_field() {
+    let body = r#"{ "start": { "street": "Gran Vía 1", "postalCode": "28013" }, "end": { "street": "", "postalCode": "28013" } }"#;
+
+    assert_eq!(issues_reading::<Journey>(body), ["end.street: required"]);
+}
+
+#[derive(Deserialize, Debug)]
+struct Handover {
+    #[validate(nested)]
+    #[allow(dead_code)]
+    courier_and_drop_off: (Member, Address),
+}
+
+#[test]
+fn every_element_of_a_nested_tuple_is_read_at_its_index() {
+    let body = r#"{ "courier_and_drop_off": [{}, { "postalCode": "28013" }] }"#;
+
+    assert_eq!(
+        issues_reading::<Handover>(body),
+        [
+            "courier_and_drop_off[0].name: missing",
+            "courier_and_drop_off[1].street: missing"
+        ]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+struct Relay {
+    #[validate(each(nested))]
+    #[allow(dead_code)]
+    stops: [Address; 2],
+}
+
+#[test]
+fn every_element_of_an_array_checked_with_each_nested_is_read_at_its_index() {
+    let body =
+        r#"{ "stops": [{ "street": "Gran Vía 1", "postalCode": "28013" }, { "street": "", "postalCode": "28013" }] }"#;
+
+    assert_eq!(issues_reading::<Relay>(body), ["stops[1].street: required"]);
 }
 
 #[derive(Deserialize, Debug)]

@@ -1,11 +1,14 @@
-//! The containers a nested value is held in, `Option`, `Box`, sequences and maps, read every value in them
-//! collecting its issues: a sequence's element at its index, a map's value at its key.
+//! The containers a nested value is held in, `Option`, smart pointers, sequences, arrays, tuples and maps, read every
+//! value in them collecting its issues: an element of a sequence, an array or a tuple at its index, a map's value at
+//! its key.
 
 #![cfg(feature = "serde")]
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt::Debug;
 use std::hash::{BuildHasherDefault, Hasher};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use annotated::{Deserialize, Issue, Location, Report};
 use serde::Deserializer;
@@ -547,4 +550,317 @@ fn a_hash_map_given_a_value_that_is_not_a_map_is_the_format_s_error_saying_what_
         format_error_reading::<HashMap<String, Address>>("5"),
         "invalid type: integer `5`, expected a map at line 1 column 1"
     );
+}
+
+fn read_by_serde<'de, T: serde::Deserialize<'de>>(json: &'de str) -> Result<T, String> {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    serde::Deserialize::deserialize(&mut deserializer).map_err(|error: serde_json::Error| error.to_string())
+}
+
+fn read_by_annotated<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, String> {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    annotated::from_deserializer(&mut deserializer).map_err(|error| error.to_string())
+}
+
+#[test]
+fn a_value_in_an_rc_is_read_with_its_issues() {
+    let body = r#"{ "street": "", "postalCode": "28013" }"#;
+
+    assert_eq!(
+        read::<Rc<Address>>(body),
+        (
+            Some(Rc::new(Address {
+                street: String::new(),
+                ..gran_via()
+            })),
+            vec!["street: required".to_owned()]
+        )
+    );
+}
+
+#[test]
+fn an_rc_whose_value_could_not_be_built_is_not_built() {
+    assert_eq!(
+        read::<Rc<Address>>(r#"{ "postalCode": "28013" }"#),
+        (None, vec!["street: missing".to_owned()])
+    );
+}
+
+#[test]
+fn an_rc_reads_as_serde_s_own_reads_it() {
+    let body = r#"{ "street": "Gran Vía 1", "postalCode": "28013" }"#;
+
+    assert_eq!(
+        read_by_annotated::<Rc<Address>>(body),
+        read_by_serde::<Rc<Address>>(body)
+    );
+}
+
+#[test]
+fn a_value_in_an_arc_is_read_with_its_issues() {
+    let body = r#"{ "street": "", "postalCode": "28013" }"#;
+
+    assert_eq!(
+        read::<Arc<Address>>(body),
+        (
+            Some(Arc::new(Address {
+                street: String::new(),
+                ..gran_via()
+            })),
+            vec!["street: required".to_owned()]
+        )
+    );
+}
+
+#[test]
+fn an_arc_reads_as_serde_s_own_reads_it() {
+    let body = r#"{ "street": "Gran Vía 1", "postalCode": "28013" }"#;
+
+    assert_eq!(
+        read_by_annotated::<Arc<Address>>(body),
+        read_by_serde::<Arc<Address>>(body)
+    );
+}
+
+#[test]
+fn every_element_of_an_array_is_read_at_its_index() {
+    let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }, { "postalCode": "280" }]"#;
+
+    assert_eq!(
+        issues_reading::<[Address; 2]>(body),
+        ["[1].street: missing", "[1].postalCode: length"]
+    );
+}
+
+#[test]
+fn an_array_is_built_from_its_elements() {
+    let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }, { "street": "", "postalCode": "28013" }]"#;
+
+    let (array, _) = read::<[Address; 2]>(body);
+
+    assert_eq!(
+        array,
+        Some([
+            gran_via(),
+            Address {
+                street: String::new(),
+                ..gran_via()
+            }
+        ])
+    );
+}
+
+#[test]
+fn an_array_with_an_element_that_could_not_be_built_is_not_built_after_every_element_is_read() {
+    let body = r#"[{ "postalCode": "28013" }, { "street": "", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        read::<[Address; 2]>(body),
+        (
+            None,
+            vec!["[0].street: missing".to_owned(), "[1].street: required".to_owned()]
+        )
+    );
+}
+
+#[test]
+fn an_array_given_too_few_elements_is_the_format_s_error_saying_the_length_expected() {
+    let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        format_error_reading::<[Address; 2]>(body),
+        "invalid length 1, expected an array of length 2 at line 1 column 52"
+    );
+}
+
+#[test]
+fn an_array_given_too_few_elements_fails_as_serde_s_own_fails() {
+    let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        read_by_annotated::<[Address; 2]>(body),
+        read_by_serde::<[Address; 2]>(body)
+    );
+}
+
+#[test]
+fn an_array_given_too_many_elements_fails_as_serde_s_own_fails() {
+    let body =
+        r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }, { "street": "Gran Vía 1", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        read_by_annotated::<[Address; 1]>(body),
+        read_by_serde::<[Address; 1]>(body)
+    );
+}
+
+#[test]
+fn an_array_given_a_value_that_is_not_a_sequence_fails_as_serde_s_own_fails() {
+    assert_eq!(
+        read_by_annotated::<[Address; 2]>("5"),
+        read_by_serde::<[Address; 2]>("5")
+    );
+}
+
+#[test]
+fn an_array_of_the_right_length_reads_as_serde_s_own_reads_it() {
+    let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        read_by_annotated::<[Address; 1]>(body),
+        read_by_serde::<[Address; 1]>(body)
+    );
+}
+
+#[test]
+fn an_empty_array_reads_as_serde_s_own_reads_it() {
+    assert_eq!(
+        read_by_annotated::<[Address; 0]>("[]"),
+        read_by_serde::<[Address; 0]>("[]")
+    );
+}
+
+#[test]
+fn an_empty_array_given_elements_fails_as_serde_s_own_fails() {
+    let body = r#"[{ "street": "Gran Vía 1", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        read_by_annotated::<[Address; 0]>(body),
+        read_by_serde::<[Address; 0]>(body)
+    );
+}
+
+#[test]
+fn an_empty_array_given_a_value_that_is_not_a_sequence_fails_as_serde_s_own_fails() {
+    assert_eq!(
+        read_by_annotated::<[Address; 0]>("5"),
+        read_by_serde::<[Address; 0]>("5")
+    );
+}
+
+#[test]
+fn an_array_is_read_without_allocating() {
+    let quantities = SeqDeserializer::<_, ValueError>::new([1_u32, 2, 3].into_iter());
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = <[Quantity; 3]>::deserialize_at(quantities, &Location::root(), &mut Report::new());
+    });
+
+    assert_eq!(allocations.count_total, 0);
+}
+
+#[test]
+fn every_element_of_a_tuple_is_read_at_its_index() {
+    let body = r#"[{ "quantity": 0 }, { "street": "", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        issues_reading::<(Line, Address)>(body),
+        ["[0].quantity: range", "[1].street: required"]
+    );
+}
+
+#[test]
+fn a_tuple_is_built_from_its_elements() {
+    let body = r#"[{ "quantity": 1 }, { "street": "Gran Vía 1", "postalCode": "28013" }]"#;
+
+    let (tuple, _) = read::<(Line, Address)>(body);
+
+    assert_eq!(tuple, Some((Line { quantity: 1 }, gran_via())));
+}
+
+#[test]
+fn a_tuple_with_an_element_that_could_not_be_built_is_not_built_after_every_element_is_read() {
+    let body = r#"[{}, { "street": "", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        read::<(Line, Address)>(body),
+        (
+            None,
+            vec!["[0].quantity: missing".to_owned(), "[1].street: required".to_owned()]
+        )
+    );
+}
+
+#[test]
+fn a_tuple_given_too_few_elements_is_the_format_s_error_saying_the_size_expected() {
+    assert_eq!(
+        format_error_reading::<(Line, Address)>(r#"[{ "quantity": 1 }]"#),
+        "invalid length 1, expected a tuple of size 2 at line 1 column 19"
+    );
+}
+
+#[test]
+fn a_tuple_given_too_few_elements_fails_as_serde_s_own_fails() {
+    let body = r#"[{ "quantity": 1 }]"#;
+
+    assert_eq!(
+        read_by_annotated::<(Line, Address)>(body),
+        read_by_serde::<(Line, Address)>(body)
+    );
+}
+
+#[test]
+fn a_tuple_given_too_many_elements_fails_as_serde_s_own_fails() {
+    let body = r#"[{ "quantity": 1 }, { "quantity": 2 }]"#;
+
+    assert_eq!(read_by_annotated::<(Line,)>(body), read_by_serde::<(Line,)>(body));
+}
+
+#[test]
+fn a_tuple_given_a_value_that_is_not_a_sequence_fails_as_serde_s_own_fails() {
+    assert_eq!(
+        read_by_annotated::<(Line, Line)>("5"),
+        read_by_serde::<(Line, Line)>("5")
+    );
+}
+
+#[test]
+fn a_tuple_of_the_right_size_reads_as_serde_s_own_reads_it() {
+    let body = r#"[{ "quantity": 1 }, { "street": "Gran Vía 1", "postalCode": "28013" }]"#;
+
+    assert_eq!(
+        read_by_annotated::<(Line, Address)>(body),
+        read_by_serde::<(Line, Address)>(body)
+    );
+}
+
+#[test]
+fn a_tuple_of_sixteen_elements_reads_its_last_at_its_index() {
+    let body = r#"[{ "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 },
+        { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 },
+        { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 }, { "quantity": 1 },
+        { "quantity": 0 }]"#;
+
+    assert_eq!(
+        issues_reading::<(
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line,
+            Line
+        )>(body),
+        ["[15].quantity: range"]
+    );
+}
+
+#[test]
+fn a_tuple_is_read_without_allocating() {
+    let quantities = SeqDeserializer::<_, ValueError>::new([1_u32, 2].into_iter());
+
+    let allocations = allocation_counter::measure(|| {
+        let _ = <(Quantity, Quantity)>::deserialize_at(quantities, &Location::root(), &mut Report::new());
+    });
+
+    assert_eq!(allocations.count_total, 0);
 }

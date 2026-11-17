@@ -82,7 +82,7 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 | `contains = "@"`, `prefix = "SKU-"`, `suffix = ".pdf"` | The string contains, starts with or ends with the text |
 | `pattern = r"^\d{5}$"` | The string matches the regular expression, anywhere in it unless the expression is anchored with `^` and `$`. Needs the `regex` feature |
 | `custom(function)` | Your function, any `Fn(&T) -> Result<(), Problem>`, returns `Ok(())` |
-| `nested` | The field is a struct or an enum with rules of its own, and it passes them |
+| `nested` | The field is a struct or an enum with rules of its own, and it passes them. It can be behind a `Box`, an `Rc`, an `Arc` or a reference, and a tuple's elements are each checked at their index |
 | `each(...)` | Every element of the collection, or every value of the map, passes the rules inside: `each(length(max = 20))`, `each(nested)` |
 
 - **Order.** A field's rules run in the order written, and the field stops at its first broken rule. So a blank name isn't also reported as too short. Put `#[validate(report_all)]` on the struct to report every broken rule instead.

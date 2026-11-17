@@ -462,3 +462,43 @@ fn a_struct_that_borrows_describes_its_rules() {
         Rules::of_fields([FieldRules::new("email", ValueRules::new().with_problem(Problem::Email))])
     );
 }
+
+#[derive(Validate, Clone)]
+struct Reader {
+    #[validate(email)]
+    email: String,
+}
+
+fn reader_rules() -> Rules {
+    Rules::of_fields([FieldRules::new("email", ValueRules::new().with_problem(Problem::Email))])
+}
+
+#[test]
+fn a_struct_in_a_box_has_the_struct_s_rules() {
+    assert_eq!(<Box<Reader> as Validate>::rules(), reader_rules());
+}
+
+#[test]
+fn a_struct_in_an_rc_has_the_struct_s_rules() {
+    assert_eq!(<std::rc::Rc<Reader> as Validate>::rules(), reader_rules());
+}
+
+#[test]
+fn a_struct_in_an_arc_has_the_struct_s_rules() {
+    assert_eq!(<std::sync::Arc<Reader> as Validate>::rules(), reader_rules());
+}
+
+#[test]
+fn a_borrowed_struct_has_the_struct_s_rules() {
+    assert_eq!(<&Reader as Validate>::rules(), reader_rules());
+}
+
+#[test]
+fn a_mutably_borrowed_struct_has_the_struct_s_rules() {
+    assert_eq!(<&mut Reader as Validate>::rules(), reader_rules());
+}
+
+#[test]
+fn a_struct_in_a_cow_has_the_struct_s_rules() {
+    assert_eq!(<std::borrow::Cow<'_, Reader> as Validate>::rules(), reader_rules());
+}

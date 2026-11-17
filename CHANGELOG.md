@@ -9,6 +9,8 @@ This file lists every change that users of the crates can notice. The format fol
 - Functions that take the most issues to keep: `annotated::from_deserializer_limited_to`, `annotated::json::from_str_limited_to`, `annotated::json::from_slice_limited_to` and `Validate::validate_limited_to`. A limit of 0 is taken as 1, so that a value with issues never passes.
 - `Report::limited_to(most_issues)`, `Report::unlimited()` and `Report::DEFAULT_LIMIT`, 1,000, for code that starts a report itself.
 - `Issues::is_complete()`: `false` when the report the issues were found in reached its limit, so the value may have more issues than are listed. It is always `false` for the issue returned when failing fast.
+- `nested` works on a value behind a `Box`, an `Rc`, an `Arc`, a `&`, a `&mut` or a `Cow` under `#[derive(Validate)]`, as `Box` already did under `#[derive(Deserialize)]`, and on a tuple of up to 16 elements under both derives, each element reported at its index: `leg[1].street`. `Validate` is implemented for each of them, and with the `json-schema` feature a pointer's `rules()` are those of the value it points to.
+- `annotated::Deserialize` is implemented for `Rc<T>`, `Arc<T>`, arrays `[T; N]` and tuples of up to 16 elements, so `nested` reads a value behind an `Rc` or an `Arc` and a tuple's elements, and `each(nested)` an array's, with every issue at its path. Each accepts what serde's own implementation accepts and fails as it fails, and `Rc` and `Arc` don't need serde's `rc` feature.
 
 ### Changed
 

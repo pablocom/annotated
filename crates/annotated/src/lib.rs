@@ -129,7 +129,8 @@ pub use validate::Validate;
 /// - On an `Option` field, `required` asks for the field's key, which only deserializing can tell, so a value that
 ///   already exists passes it, `None` included. Every other rule checks the value inside, and is skipped when there
 ///   is none.
-/// - `nested` validates a field whose type implements [`Validate`], and reports under the field's name.
+/// - `nested` validates a field whose type implements [`Validate`], and reports under the field's name. The value can be
+///   behind a `Box`, an `Rc`, an `Arc`, a reference or a `Cow`. A tuple's elements are each validated at their index.
 /// - `each(...)` applies its rules to every element of a collection, reported at its index, or to every value of a map,
 ///   reported at its key. It works on anything that implements [`rules::HasElements`]. `each(nested)` validates every
 ///   element.

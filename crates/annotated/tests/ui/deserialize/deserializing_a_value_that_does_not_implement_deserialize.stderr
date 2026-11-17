@@ -11,13 +11,15 @@ help: the trait `Deserialize<'_>` is not implemented for `Address`
   | ^^^^^^^^^^^^^^
   = note: derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand
   = help: the following other types implement trait `Deserialize<'de>`:
+            Arc<T>
             BTreeMap<K, V>
             Box<T>
             Box<[T]>
             HashMap<K, V, S>
             Option<T>
+            Rc<T>
             Vec<T>
-            VecDeque<T>
+          and $N others
 note: required by a bound in `from_deserializer`
  --> src/deserialize.rs
   |

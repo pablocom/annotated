@@ -13,3 +13,10 @@ help: the trait `Validate` is not implemented for `Address`
  4 | struct Address {
    | ^^^^^^^^^^^^^^
    = note: derive it with `#[derive(Validate)]`, or implement it by hand
+   = help: the following other types implement trait `Validate`:
+             &T
+             &mut T
+             Arc<T>
+             Box<T>
+             Cow<'_, T>
+             Rc<T>

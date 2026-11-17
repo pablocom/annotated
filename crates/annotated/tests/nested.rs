@@ -2,10 +2,14 @@
 
 mod support;
 
+use std::borrow::Cow;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use annotated::{Problem, Validate};
 use support::issues_of;
 
-#[derive(Validate)]
+#[derive(Validate, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Address {
     #[validate(required)]
@@ -152,4 +156,127 @@ fn a_flattened_nested_struct_is_validated_at_the_struct_s_location() {
     };
 
     assert_eq!(issues_of(&customer), ["name: required", "street: required"]);
+}
+
+fn without_a_street() -> Address {
+    Address {
+        street: String::new(),
+        ..address()
+    }
+}
+
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+struct Itinerary<'a> {
+    #[validate(nested)]
+    boxed_stop: Box<Address>,
+    #[validate(nested)]
+    shared_stop: Rc<Address>,
+    #[validate(nested)]
+    thread_shared_stop: Arc<Address>,
+    #[validate(nested)]
+    borrowed_stop: &'a Address,
+    #[validate(nested)]
+    copied_on_write_stop: Cow<'a, Address>,
+    #[validate(nested)]
+    leg: (Address, Address),
+}
+
+fn itinerary(valid: &Address) -> Itinerary<'_> {
+    Itinerary {
+        boxed_stop: Box::new(address()),
+        shared_stop: Rc::new(address()),
+        thread_shared_stop: Arc::new(address()),
+        borrowed_stop: valid,
+        copied_on_write_stop: Cow::Owned(address()),
+        leg: (address(), address()),
+    }
+}
+
+#[test]
+fn a_nested_struct_behind_a_box_is_validated_under_its_field() {
+    let valid = address();
+    let itinerary = Itinerary {
+        boxed_stop: Box::new(without_a_street()),
+        ..itinerary(&valid)
+    };
+
+    assert_eq!(issues_of(&itinerary), ["boxedStop.street: required"]);
+}
+
+#[test]
+fn a_nested_struct_behind_an_rc_is_validated_under_its_field() {
+    let valid = address();
+    let itinerary = Itinerary {
+        shared_stop: Rc::new(without_a_street()),
+        ..itinerary(&valid)
+    };
+
+    assert_eq!(issues_of(&itinerary), ["sharedStop.street: required"]);
+}
+
+#[test]
+fn a_nested_struct_behind_an_arc_is_validated_under_its_field() {
+    let valid = address();
+    let itinerary = Itinerary {
+        thread_shared_stop: Arc::new(without_a_street()),
+        ..itinerary(&valid)
+    };
+
+    assert_eq!(issues_of(&itinerary), ["threadSharedStop.street: required"]);
+}
+
+#[test]
+fn a_borrowed_nested_struct_is_validated_under_its_field() {
+    let valid = address();
+    let invalid = without_a_street();
+    let itinerary = Itinerary {
+        borrowed_stop: &invalid,
+        ..itinerary(&valid)
+    };
+
+    assert_eq!(issues_of(&itinerary), ["borrowedStop.street: required"]);
+}
+
+#[test]
+fn a_nested_struct_in_a_cow_is_validated_under_its_field() {
+    let valid = address();
+    let invalid = without_a_street();
+    let itinerary = Itinerary {
+        copied_on_write_stop: Cow::Borrowed(&invalid),
+        ..itinerary(&valid)
+    };
+
+    assert_eq!(issues_of(&itinerary), ["copiedOnWriteStop.street: required"]);
+}
+
+#[test]
+fn the_elements_of_a_nested_tuple_are_validated_at_their_index() {
+    let valid = address();
+    let itinerary = Itinerary {
+        leg: (without_a_street(), without_a_street()),
+        ..itinerary(&valid)
+    };
+
+    assert_eq!(
+        issues_of(&itinerary),
+        ["leg[0].street: required", "leg[1].street: required"]
+    );
+}
+
+#[test]
+fn failing_fast_stops_a_tuple_at_its_first_issue() {
+    let leg = (without_a_street(), without_a_street());
+
+    let issues = leg.validate_fail_fast().unwrap_err();
+
+    assert_eq!(issues.to_string(), "[0].street: is required");
+}
+
+#[test]
+fn a_struct_behind_a_mutable_reference_is_validated() {
+    let mut invalid = without_a_street();
+    let borrowed = &mut invalid;
+
+    assert_eq!(issues_of(&borrowed), ["street: required"]);
 }

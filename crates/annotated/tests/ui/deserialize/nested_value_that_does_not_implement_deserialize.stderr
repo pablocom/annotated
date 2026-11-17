@@ -12,15 +12,15 @@ help: the trait `annotated::Deserialize<'_>` is not implemented for `Address`
    = note: derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand
    = note: `Address` implements similarly named trait `_serde::Deserialize`, but not `annotated::Deserialize<'_>`
    = help: the following other types implement trait `annotated::Deserialize<'de>`:
+             Arc<T>
              BTreeMap<K, V>
              Box<T>
              Box<[T]>
              HashMap<K, V, S>
              Order
+             Rc<T>
              Route
-             Vec<T>
-             VecDeque<T>
-             std::option::Option<T>
+           and $N others
 note: required by a bound in `annotated::__private::DeserializeAt::<'a, 'l, T>::new`
   --> src/deserialize.rs
    |
@@ -45,15 +45,15 @@ help: the trait `annotated::Deserialize<'_>` is not implemented for `Address`
    = note: derive it with `#[derive(annotated::Deserialize)]`, or implement it by hand
    = note: `Address` implements similarly named trait `_serde::Deserialize`, but not `annotated::Deserialize<'_>`
    = help: the following other types implement trait `annotated::Deserialize<'de>`:
+             Arc<T>
              BTreeMap<K, V>
              Box<T>
              Box<[T]>
              HashMap<K, V, S>
              Order
+             Rc<T>
              Route
-             Vec<T>
-             VecDeque<T>
-             std::option::Option<T>
+           and $N others
    = note: required for `Vec<Address>` to implement `annotated::Deserialize<'_>`
 note: required by a bound in `annotated::__private::DeserializeAt::<'a, 'l, T>::new`
   --> src/deserialize.rs

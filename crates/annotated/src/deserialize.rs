@@ -23,9 +23,14 @@ use crate::{DeserializeError, Location, Report};
 ///
 /// The crate implements the trait for the containers that hold a nested value, whenever what they hold implements it:
 ///
-/// - `Option<T>` and `Box<T>`.
-/// - `Box<[T]>`, `Vec<T>` and `VecDeque<T>`, whose elements are read at their index.
+/// - `Option<T>`, `Box<T>`, `Rc<T>` and `Arc<T>`. `Rc<T>` and `Arc<T>` are built from the `T` read, so they don't
+///   need serde's `rc` feature.
+/// - `Box<[T]>`, `Vec<T>` and `VecDeque<T>`, arrays `[T; N]` and tuples of up to 16 elements, whose elements are read
+///   at their index.
 /// - `BTreeMap<K, V>` and `HashMap<K, V, S>`, whose values are read at their key.
+///
+/// Each accepts what serde's own implementation accepts, and fails as it fails: an array or a tuple given too few
+/// elements is the format's error, `invalid length 1, expected an array of length 2`, as with serde.
 ///
 /// A container is built only when everything in it could be built. A map reports its values' issues in the order it
 /// iterates over them. When a key appears twice, the later value replaces the earlier one, along with its issues.

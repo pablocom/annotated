@@ -125,6 +125,8 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
   - Only a field read by its key has one to ask for. A skipped field, a flattened one and a tuple variant's element pass, as does an `Option` behind a type alias the derive can't see, whose absent key is `missing` already.
 - **Other rules on an `Option` field** check the value inside, and are skipped when the field is `None`. The derive recognizes an `Option` field by how its type is written: a path ending in `Option<T>`.
 - **`nested`** validates a field whose type implements `Validate`. The field's segment is added to the location, so issues inside it are reported at their full path.
+  - The crate implements `Validate` for `Box<T>`, `Rc<T>`, `Arc<T>`, `&T`, `&mut T` and `Cow<'_, T>`, which check the value they point to at their own location and answer its `rules()`, and for tuples of up to 16 elements, which check each element at its index. So a nested value can be behind a pointer, and the elements of a tuple are reported as a list's are: `leg[1].street`.
+  - It isn't implemented for collections: their elements are checked with `each(nested)`, which goes through `HasElements`. That keeps a single way to reach elements, and `each` can hold other rules beside `nested`.
 - **`each(...)`** applies its rules to every element of a collection, reported at the element's index, or to every value of a map, reported at its key. `each(nested)` validates every element as a struct.
   - It works on anything that implements the `HasElements` capability trait: `Vec`, `VecDeque`, arrays, slices, `HashMap` and `BTreeMap`, and any of these behind a reference or a `Box`, like `&'a [T]` or `Box<[T]>`.
   - Elements that are `Option`s are treated like `Option` fields. To find the element type, the derive again goes by how the collection's type is written, looking through `&` and `Box`. A map's values are its second type argument, whatever comes after it (`HashMap<K, V, S>`). Any other collection's elements are its first type argument. A type counts as a map when its name ends in `Map`.
@@ -254,9 +256,10 @@ A value whose fields were all present is returned as `Some` even when `found` is
 
 The trait shares its name with serde's trait, the way serde's own derive and trait share one. `#[derive(annotated::Deserialize)]` implements it.
 
-The crate implements the trait for the containers a `nested` or `each(nested)` field can hold, whenever their elements implement it: `Option<T>`, `Box<T>`, `Vec<T>`, `VecDeque<T>`, `Box<[T]>`, `HashMap<K, V, S>` and `BTreeMap<K, V>`.
+The crate implements the trait for the containers a `nested` or `each(nested)` field can hold, whenever their elements implement it: `Option<T>`, `Box<T>`, `Rc<T>`, `Arc<T>`, `Vec<T>`, `VecDeque<T>`, `Box<[T]>`, arrays `[T; N]`, tuples of up to 16 elements, `HashMap<K, V, S>` and `BTreeMap<K, V>`.
 
-- An element of a sequence is read at its index, and a value of a map at its key (`K: serde::Deserialize + Display`). Both are read through a `DeserializeSeed` that carries the location.
+- An element of a sequence, an array or a tuple is read at its index, and a value of a map at its key (`K: serde::Deserialize + Display`). Both are read through a `DeserializeSeed` that carries the location.
+- Each accepts what serde's own implementation accepts and fails as it fails, with the same `expecting`: a sequence's size hint reserves no more than serde's cap, and an array or a tuple given too few elements is serde's `invalid_length` error. Differential tests read the same bodies through both. `Rc<T>` and `Arc<T>` are built from the `T` read, as `Box<T>` is, so they don't need serde's `rc` feature. An array is read in place, as serde reads one, so it allocates nothing of its own, and it is implemented for every `N`, where serde stops at 32.
 - The implementations compose, so `Option<Vec<Address>>` works with no code of its own.
 - A container is built only when everything in it could be built.
 - A map keeps each value's issues apart until it has read every entry. It then reports them in the order it iterates over its values, which is the order `Validate` checks them in. It holds no more than [its limit](#a-report-keeps-at-most-its-limit) allows.

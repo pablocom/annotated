@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt::{self, Display};
 use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use serde::Deserializer;
-use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::de::{Error as _, MapAccess, SeqAccess, Visitor};
 
 use crate::deserialize::DeserializeAt;
 use crate::{Deserialize, Location, Report};
@@ -28,6 +30,117 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
         let value = T::deserialize_at(deserializer, at, found)?;
         Ok(value.map(Box::new))
     }
+}
+
+// Built from the `T` read, as `Box<T>` is, so neither needs serde's `rc` feature.
+macro_rules! deserializes_the_value_it_points_to {
+    ($($pointer:ident),*) => {
+        $(
+            impl<'de, T: Deserialize<'de>> Deserialize<'de> for $pointer<T> {
+                fn deserialize_at<D: Deserializer<'de>>(
+                    deserializer: D,
+                    at: &Location<'_>,
+                    found: &mut Report,
+                ) -> Result<Option<Self>, D::Error> {
+                    let value = T::deserialize_at(deserializer, at, found)?;
+                    Ok(value.map($pointer::new))
+                }
+            }
+        )*
+    };
+}
+
+deserializes_the_value_it_points_to!(Rc, Arc);
+
+impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for [T; N] {
+    fn deserialize_at<D: Deserializer<'de>>(
+        deserializer: D,
+        at: &Location<'_>,
+        found: &mut Report,
+    ) -> Result<Option<Self>, D::Error> {
+        deserializer.deserialize_tuple(N, VisitorAt::<Self>::new(at, found))
+    }
+}
+
+macro_rules! deserializes_each_element_at_its_index {
+    ($($size:literal => ($($index:tt $element:ident $read:ident),+))+) => {
+        $(
+            #[diagnostic::do_not_recommend]
+            impl<'de, $($element: Deserialize<'de>),+> Deserialize<'de> for ($($element,)+) {
+                fn deserialize_at<D: Deserializer<'de>>(
+                    deserializer: D,
+                    at: &Location<'_>,
+                    found: &mut Report,
+                ) -> Result<Option<Self>, D::Error> {
+                    deserializer.deserialize_tuple($size, VisitorAt::<Self>::new(at, found))
+                }
+            }
+
+            impl<'de, $($element: Deserialize<'de>),+> Visitor<'de> for VisitorAt<'_, '_, ($($element,)+)> {
+                type Value = Option<($($element,)+)>;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str(concat!("a tuple of size ", $size))
+                }
+
+                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                    $(
+                        let element_at = self.at.index($index);
+                        let Some($read) = seq.next_element_seed(DeserializeAt::<$element>::new(&element_at, self.found))? else {
+                            return Err(A::Error::invalid_length($index, &self));
+                        };
+                    )+
+                    match ($($read,)+) {
+                        ($(Some($read),)+) => Ok(Some(($($read,)+))),
+                        _ => Ok(None),
+                    }
+                }
+            }
+        )+
+    };
+}
+
+// serde's own tuples go up to 16 elements.
+deserializes_each_element_at_its_index! {
+    1 => (0 T0 read0)
+    2 => (0 T0 read0, 1 T1 read1)
+    3 => (0 T0 read0, 1 T1 read1, 2 T2 read2)
+    4 => (0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3)
+    5 => (0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4)
+    6 => (0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5)
+    7 => (0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6)
+    8 => (0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7)
+    9 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8
+    )
+    10 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8,
+        9 T9 read9
+    )
+    11 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8,
+        9 T9 read9, 10 T10 read10
+    )
+    12 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8,
+        9 T9 read9, 10 T10 read10, 11 T11 read11
+    )
+    13 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8,
+        9 T9 read9, 10 T10 read10, 11 T11 read11, 12 T12 read12
+    )
+    14 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8,
+        9 T9 read9, 10 T10 read10, 11 T11 read11, 12 T12 read12, 13 T13 read13
+    )
+    15 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8,
+        9 T9 read9, 10 T10 read10, 11 T11 read11, 12 T12 read12, 13 T13 read13, 14 T14 read14
+    )
+    16 => (
+        0 T0 read0, 1 T1 read1, 2 T2 read2, 3 T3 read3, 4 T4 read4, 5 T5 read5, 6 T6 read6, 7 T7 read7, 8 T8 read8,
+        9 T9 read9, 10 T10 read10, 11 T11 read11, 12 T12 read12, 13 T13 read13, 14 T14 read14, 15 T15 read15
+    )
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<[T]> {
@@ -174,6 +287,32 @@ impl<'de, T: Deserialize<'de>> Visitor<'de> for VisitorAt<'_, '_, VecDeque<T>> {
     fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
         let elements = VecDeque::with_capacity(room_for::<T>(seq.size_hint()));
         self.read_elements(seq, elements, VecDeque::push_back)
+    }
+}
+
+impl<'de, T: Deserialize<'de>, const N: usize> Visitor<'de> for VisitorAt<'_, '_, [T; N]> {
+    type Value = Option<[T; N]>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if N == 0 {
+            return formatter.write_str("an empty array");
+        }
+        write!(formatter, "an array of length {N}")
+    }
+
+    // Read in place, as serde's arrays are, so that reading one allocates nothing of its own.
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        let mut elements: [Option<T>; N] = [const { None }; N];
+        let mut is_every_element_built = true;
+        for (index, element) in elements.iter_mut().enumerate() {
+            let element_at = self.at.index(index);
+            let Some(read) = seq.next_element_seed(DeserializeAt::<T>::new(&element_at, self.found))? else {
+                return Err(A::Error::invalid_length(index, &self));
+            };
+            is_every_element_built &= read.is_some();
+            *element = read;
+        }
+        Ok(is_every_element_built.then(|| elements.map(|element| element.expect("every element was built"))))
     }
 }
 
