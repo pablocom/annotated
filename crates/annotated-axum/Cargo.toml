@@ -19,6 +19,7 @@ serde_json = "1.0.154"
 
 [dev-dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["json", "macros"] }
+http-body = "1.1.0"
 http-body-util = "0.1.5"
 tokio = { version = "1.54.1", features = ["macros", "rt"] }
 tower = { version = "0.5.3", features = ["util"] }

@@ -1,5 +1,5 @@
-//! `ValidJson` reads a JSON body with annotated, answers every issue in it with 422 as RFC 9457 problem details,
-//! and refuses a request it can't read as axum's own `Json` does.
+//! `ValidJson` reads a JSON body with annotated, and answers every refusal as RFC 9457 problem details: every issue
+//! in the body with 422, and a request it can't read with the status axum's own `Json` answers it with.
 
 mod support;
 
@@ -149,30 +149,69 @@ async fn a_value_of_the_wrong_type_is_answered_as_an_issue_when_its_struct_colle
 }
 
 #[tokio::test]
-async fn a_value_of_the_wrong_type_is_refused_as_axum_refuses_it_when_its_struct_does_not_collect_type_errors() {
+async fn a_value_of_the_wrong_type_is_refused_with_422_as_problem_details_when_its_struct_does_not_collect_type_errors()
+{
     let response =
         post_json::<NewMember>(r#"{ "fullName": "Alex Morgan", "email": "alex@example.com", "age": "thirty" }"#).await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(content_type_of(&response), "application/problem+json");
     assert_eq!(
-        text_body_of(response).await,
-        r#"Failed to deserialize the JSON body into the target type: invalid type: string "thirty", expected u8 at line 1 column 73"#
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Unprocessable Content",
+            "status": 422,
+            "detail": "a value at line 1 column 73 can't be read into the type expected"
+        })
     );
 }
 
 #[tokio::test]
-async fn a_body_that_is_not_json_is_refused_with_400() {
+async fn a_refusal_of_a_value_of_the_wrong_type_never_echoes_the_value() {
+    let response =
+        post_json::<NewMember>(r#"{ "fullName": "Alex Morgan", "email": "alex@example.com", "age": "s3cr3t" }"#).await;
+
+    let body = text_body_of(response).await;
+    assert!(!body.contains("s3cr3t"), "the body echoes the client's value: {body}");
+}
+
+#[tokio::test]
+async fn a_body_that_is_not_json_is_refused_with_400_as_problem_details() {
     let response = post_json::<NewMember>("not json").await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(content_type_of(&response), "application/problem+json");
     assert_eq!(
-        text_body_of(response).await,
-        "Failed to parse the request body as JSON: expected ident at line 1 column 2"
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Bad Request",
+            "status": 400,
+            "detail": "the body is not JSON: syntax error at line 1 column 2"
+        })
     );
 }
 
 #[tokio::test]
-async fn a_body_not_sent_as_json_is_refused_with_415() {
+async fn a_body_that_ends_before_its_json_does_is_refused_with_400_as_problem_details() {
+    let response = post_json::<NewMember>(r#"{ "fullName": "#).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(content_type_of(&response), "application/problem+json");
+    assert_eq!(
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Bad Request",
+            "status": 400,
+            "detail": "the body is not JSON: unexpected end at line 1 column 14"
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_body_not_sent_as_json_is_refused_with_415_as_problem_details() {
     let response = support::post(
         creating::<NewMember>(),
         "text/plain",
@@ -181,9 +220,15 @@ async fn a_body_not_sent_as_json_is_refused_with_415() {
     .await;
 
     assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(content_type_of(&response), "application/problem+json");
     assert_eq!(
-        text_body_of(response).await,
-        "Expected request with `Content-Type: application/json`"
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Unsupported Media Type",
+            "status": 415,
+            "detail": "the request isn't sent as JSON: its Content-Type must be application/json or end in +json"
+        })
     );
 }
 
@@ -222,14 +267,37 @@ async fn a_body_sent_as_a_media_type_built_on_json_is_read() {
 }
 
 #[tokio::test]
-async fn a_body_larger_than_the_limit_is_refused_as_axum_refuses_it() {
+async fn a_body_larger_than_the_limit_is_refused_with_413_as_problem_details() {
     let app = creating::<NewMember>().layer(DefaultBodyLimit::max(16));
 
     let response = support::post(app, "application/json", r#"{ "fullName": "Alex Morgan" }"#).await;
 
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(content_type_of(&response), "application/problem+json");
     assert_eq!(
-        text_body_of(response).await,
-        "Failed to buffer the request body: length limit exceeded"
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Content Too Large",
+            "status": 413,
+            "detail": "the body is larger than the server accepts"
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_body_that_fails_while_it_is_read_is_refused_with_400_as_problem_details() {
+    let response = support::post_a_body_that_fails(creating::<NewMember>()).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(content_type_of(&response), "application/problem+json");
+    assert_eq!(
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Bad Request",
+            "status": 400,
+            "detail": "the body couldn't be read"
+        })
     );
 }

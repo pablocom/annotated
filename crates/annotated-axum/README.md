@@ -64,13 +64,17 @@ That is the answer annotated-axum recommends: a standard format, with the codes 
 
 ## What it refuses
 
-| The request | The answer |
-|---|---|
-| Has issues: missing fields, broken rules, and values of the wrong type in a struct with `#[annotated(collect_type_errors)]` | 422, problem details |
-| Isn't sent as JSON: its `Content-Type` is neither `application/json` nor a type built on JSON, such as `application/vnd.api+json` | 415, as axum's `Json` answers it |
-| Has a body that isn't JSON | 400, as axum's `Json` answers it |
-| Has a value of the wrong type, in a struct that doesn't collect type errors | 422, as axum's `Json` answers it |
-| Has a body larger than the app's limit | 413, as axum answers it |
+Every refusal is problem details, with the status axum's own `Json` answers the same request with:
+
+| The request | The status | The problem details |
+|---|---|---|
+| Has issues: missing fields, broken rules, and values of the wrong type in a struct with `#[annotated(collect_type_errors)]` | 422 | `errors` lists every issue |
+| Isn't sent as JSON: its `Content-Type` is neither `application/json` nor a type built on JSON, such as `application/vnd.api+json` | 415 | `detail` says so |
+| Has a body larger than the app's limit | 413 | `detail` says so |
+| Has a body that isn't JSON | 400 | `detail` says where: `the body is not JSON: syntax error at line 1 column 2` |
+| Has a value of the wrong type, in a struct that doesn't collect type errors | 422 | `detail` says where: `a value at line 1 column 73 can't be read into the type expected` |
+
+A `detail` never repeats what the client sent, so a password in the wrong place isn't echoed back. To answer values of the wrong type as issues, each at its JSON Pointer and all at once with the rest, put `#[annotated(collect_type_errors)]` on the struct.
 
 ## A response of your own
 

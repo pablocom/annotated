@@ -435,7 +435,7 @@ Its message is `must be {expected}, found {found}`.
 [`annotated-axum`](crates/annotated-axum) is an extractor for axum 0.8, `ValidJson<T>`:
 
 - It reads the body with `annotated::json::from_slice`.
-- Its rejection, `ValidJsonRejection`, holds annotated's `DeserializeError` as it came, not a response. As a response, it is the issues as `ProblemDetails`: 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body, whose `errors` member lists each issue's JSON Pointer, code, params and message. Anything else is refused as axum's own `Json` refuses it: 415, 413, 400, or 422 with serde_json's message.
+- Its rejection, `ValidJsonRejection`, holds annotated's `DeserializeError` as it came, not a response. As a response, it is the issues as `ProblemDetails`: 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body, whose `errors` member lists each issue's JSON Pointer, code, params and message. Anything else is problem details too, with the status axum's own `Json` answers it with (415, 413, 400 or 422), and a `detail` that says what is wrong and where, but never serde_json's message, which repeats the client's value.
 - Problem details are the answer the crate recommends: a standard format, with codes and params for code that reacts to them, and messages for people. An app that answers issues its own way converts the rejection into an error type of its own, through axum's own ways of replacing a rejection, such as `#[from_request(via(ValidJson), rejection(ApiError))]`. So the crate has no setting for it.
 - `ProblemDetails` converts from `Issues`, so a handler answers the issues `Validate::validate` finds with `?`.
 

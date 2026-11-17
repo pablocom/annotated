@@ -14,7 +14,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::json;
-use support::{content_type_of, json_body_of, text_body_of};
+use support::{content_type_of, json_body_of};
 
 #[derive(annotated::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,9 +93,15 @@ async fn a_rejection_of_your_own_can_refuse_the_rest_as_valid_json_does() {
     let response = support::post(app, "application/json", "not json").await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(content_type_of(&response), "application/problem+json");
     assert_eq!(
-        text_body_of(response).await,
-        "Failed to parse the request body as JSON: expected ident at line 1 column 2"
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Bad Request",
+            "status": 400,
+            "detail": "the body is not JSON: syntax error at line 1 column 2"
+        })
     );
 }
 
