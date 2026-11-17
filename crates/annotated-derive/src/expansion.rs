@@ -462,7 +462,7 @@ pub fn validity_of(field: &ValidatedField) -> Ident {
     field.local("is_valid")
 }
 
-fn spanned(tokens: &TokenStream, span: Span) -> TokenStream {
+pub fn spanned(tokens: &TokenStream, span: Span) -> TokenStream {
     tokens
         .clone()
         .into_iter()

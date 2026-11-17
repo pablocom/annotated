@@ -21,6 +21,7 @@ mod deserialized_enum;
 mod deserialized_struct;
 mod expansion;
 mod pattern;
+mod receiver;
 mod serde_names;
 mod validated_enum;
 mod validated_struct;
@@ -38,7 +39,12 @@ use validated_struct::ValidatedStruct;
 #[proc_macro_derive(Validate, attributes(validate, serde))]
 pub fn derive_validate(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let validate_impl = match &input.data {
+    validate_impl(input).unwrap_or_else(Error::into_compile_error).into()
+}
+
+fn validate_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    let input = receiver::without_self(input)?;
+    match &input.data {
         Data::Enum(data) => {
             ValidatedEnum::from_input(&input, data).map(|validated_enum| expansion::validate_enum_impl(&validated_enum))
         }
@@ -47,8 +53,7 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
             "`Validate` can only be derived for a struct with named fields or an enum",
         )
         .map(|validated_struct| expansion::validate_impl(&validated_struct)),
-    };
-    validate_impl.unwrap_or_else(Error::into_compile_error).into()
+    }
 }
 
 /// Derives `annotated::Deserialize`, and serde's `Deserialize` through it. Reading the struct then collects every
@@ -56,11 +61,15 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Deserialize, attributes(validate, serde, annotated))]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let deserialize_impl = match &input.data {
+    deserialize_impl(input).unwrap_or_else(Error::into_compile_error).into()
+}
+
+fn deserialize_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    let input = receiver::without_self(input)?;
+    match &input.data {
         Data::Enum(data) => DeserializedEnum::from_input(&input, data)
             .map(|deserialized_enum| deserialize_enum_expansion::deserialize_enum_impl(&deserialized_enum)),
         Data::Struct(_) | Data::Union(_) => DeserializedStruct::from_input(&input)
             .map(|deserialized_struct| deserialize_expansion::deserialize_impl(&deserialized_struct)),
-    };
-    deserialize_impl.unwrap_or_else(Error::into_compile_error).into()
+    }
 }

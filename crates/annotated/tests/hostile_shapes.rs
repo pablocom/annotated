@@ -292,6 +292,77 @@ fn a_module_without_the_prelude_derives_both() {
     derives_both::<without_the_prelude::Internal>();
 }
 
+// `Self` in a field's type, in a bound and in a rule's arguments, in a struct, a generic one and an enum's variants.
+mod self_in_the_input {
+    use annotated::{Deserialize, Problem, Validate};
+
+    #[derive(Debug, Validate, Deserialize)]
+    #[validate(custom(Self::is_not_their_own_friend))]
+    pub struct Member {
+        #[validate(range(max = Self::MAX_AGE))]
+        pub age: u8,
+        #[validate(length(max = Self::MAX_FRIENDS), each(nested))]
+        pub friends: Vec<Self>,
+        #[validate(required)]
+        pub mentor: Option<Box<Self>>,
+        #[validate(custom(|name: &String| Self::is_a_name(name)))]
+        pub name: String,
+    }
+
+    impl Member {
+        const MAX_AGE: u8 = 120;
+        const MAX_FRIENDS: usize = 10;
+
+        fn is_not_their_own_friend(&self) -> Result<(), Problem> {
+            if self.friends.iter().any(|friend| friend.name == self.name) {
+                return Err(Problem::custom("own_friend", "is their own friend"));
+            }
+            Ok(())
+        }
+
+        fn is_a_name(name: &str) -> Result<(), Problem> {
+            if name.is_empty() {
+                return Err(Problem::custom("no_name", "is no name"));
+            }
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Ranked<T>
+    where
+        T: Clone,
+        Option<Self>: Default,
+    {
+        #[validate(length(max = Self::MOST))]
+        pub ranks: Vec<T>,
+    }
+
+    impl<T: Clone> Ranked<T> {
+        const MOST: usize = 3;
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub enum Node {
+        Leaf(#[validate(range(max = Self::DEEPEST))] u8),
+        Branch {
+            #[validate(each(nested))]
+            children: Vec<Self>,
+        },
+    }
+
+    impl Node {
+        const DEEPEST: u8 = 4;
+    }
+}
+
+#[test]
+fn self_in_the_input_is_the_type_deriving() {
+    derives_both::<self_in_the_input::Member>();
+    derives_both::<self_in_the_input::Ranked<u8>>();
+    derives_both::<self_in_the_input::Node>();
+}
+
 // Tokens a `macro_rules!` passes on keep its hygiene, and a type it passes as `$t:ty` arrives in an invisible group.
 mod through_macros {
     use annotated::{Deserialize, Validate};

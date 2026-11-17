@@ -678,3 +678,30 @@ fn the_issues_a_collection_reports_out_of_the_order_of_its_elements_are_still_re
         ["rivals[1].name: required", "rivals[0].name: required"]
     );
 }
+
+#[derive(Deserialize, Debug)]
+#[validate(custom(Self::has_no_friend_of_the_same_age))]
+struct Mentee {
+    #[validate(range(max = Self::OLDEST))]
+    age: u8,
+    #[validate(each(nested))]
+    friends: Vec<Self>,
+}
+
+impl Mentee {
+    const OLDEST: u8 = 120;
+
+    fn has_no_friend_of_the_same_age(&self) -> Result<(), Problem> {
+        if self.friends.iter().any(|friend| friend.age == self.age) {
+            return Err(Problem::custom("a_twin", "has a friend of the same age"));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn self_in_a_field_s_type_and_in_rule_arguments_is_the_struct() {
+    let body = r#"{ "age": 30, "friends": [{ "age": 130, "friends": [] }, { "age": 30, "friends": [] }] }"#;
+
+    assert_eq!(issues_reading::<Mentee>(body), ["friends[0].age: range", "a_twin"]);
+}

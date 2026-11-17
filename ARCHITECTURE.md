@@ -154,6 +154,7 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
 The derives generate code into the user's module, among the user's names, so it relies on none of them:
 
 - **Its locals are hygienic**, so a field named `value` or `found` is never one of them. Every path it names is absolute, so a user's `Option` or `Result` in scope changes nothing, and so does `#![no_implicit_prelude]`.
+- **`Self` is the type deriving**, in a field's type, a bound or a rule's arguments. As serde's derive does, the derive replaces it with the type's name before generating code, since the code that reads a field runs in a visitor of its own, where `Self` would be the visitor.
 - **Code at a place in the user's code**, such as a field's type, is there so that an error in it points at that place. It keeps the derive's own hygiene all the same, through `quote_at!`, so an item passed through a `macro_rules!` derives like any other, and lints take the code for generated code. `clippy.toml` disallows `quote_spanned!`, which would give the code the hygiene of the user's tokens.
 - **`crates/annotated/tests/hostile_shapes.rs`** derives both traits on shapes meant to break a macro, with every warning denied. A shape the derives break belongs there first.
 
