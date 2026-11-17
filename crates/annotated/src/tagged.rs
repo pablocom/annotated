@@ -444,10 +444,11 @@ impl<'de, V: serde::Deserialize<'de>> DeserializeSeed<'de> for TagName<V> {
 /// Reads a tag with `naming`, as `tag` reads it, or as `None` when `naming` refuses it. A format can't go on past a
 /// value it refused, so a tag from a format is buffered first, and read as the format reads it. annotated's buffers
 /// read it where it is, as the reader they stand for.
-fn variant_named_by<'de, D, S>(tag: D, naming: S) -> Result<Option<S::Value>, D::Error>
+fn variant_named_by<'de, D, S, V>(tag: D, naming: S) -> Result<Option<V>, D::Error>
 where
     D: Deserializer<'de>,
-    S: DeserializeSeed<'de>,
+    S: DeserializeSeed<'de, Value = V>,
+    V: serde::Deserialize<'de>,
 {
     if is_annotated_s_buffer::<D>() {
         return Ok(naming.deserialize(tag).ok());
@@ -456,9 +457,16 @@ where
         is_human_readable: tag.is_human_readable(),
     };
     let tag = <Content as serde::Deserialize>::deserialize(tag)?;
-    Ok(naming
-        .deserialize(ContentDeserializer::<WrongType>::new(tag, read_as))
-        .ok())
+    let is_a_name = matches!(tag, Content::Str(_) | Content::String(_));
+    let tag = ContentDeserializer::<WrongType>::new(tag, read_as);
+    // A name reads as the variant it names whatever `naming` reads, a unit variant included, so it skips the enum
+    // access a unit variant is read through.
+    let variant = if is_a_name {
+        V::deserialize(tag)
+    } else {
+        naming.deserialize(tag)
+    };
+    Ok(variant.ok())
 }
 
 /// Reads a unit variant of an enum whose variants `V` names. Only annotated's buffers are asked, which read an enum
