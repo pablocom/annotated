@@ -5,8 +5,8 @@
 //! `application/problem+json`: [`ProblemDetails`].
 //!
 //! - **Issues** are answered with 422, and the problem details list each issue's JSON Pointer, code, params and
-//!   message. That is the answer this crate recommends. An app that answers with a body of its own reads the issues
-//!   from the [`ValidJsonRejection`] instead.
+//!   message, as its `detail`. That is the answer this crate recommends. An app that answers with a body of its own
+//!   reads the issues from the [`ValidJsonRejection`] instead.
 //! - **A request it can't read** is answered with the status axum's own `Json` answers it with: 415 when it isn't
 //!   sent as JSON, 413 when its body is larger than the app's limit, 400 when the body isn't JSON, and 422 when a
 //!   value has the wrong type in a struct that doesn't collect type errors. The problem details' `detail` says what
@@ -81,6 +81,8 @@
 //! # Versions
 //!
 //! This crate works with axum 0.8. A new version of axum that breaks its API comes with a new version of this crate.
+
+use std::borrow::Cow;
 
 use annotated::{DeserializeError, Issue, Issues, ParamValue};
 use axum::Json;
@@ -188,16 +190,34 @@ impl IntoResponse for ValidJsonRejection {
     fn into_response(self) -> Response {
         match self {
             Self::Deserialize(DeserializeError::Issues(issues)) => ProblemDetails::from(issues).into_response(),
-            rejection => ProblemDetails::of_a_refusal(rejection.status(), rejection.detail()).into_response(),
+            rejection => ProblemDetails::new(rejection.status())
+                .with_detail(rejection.detail())
+                .into_response(),
         }
     }
 }
 
-/// A refusal, as the response to send: [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, as
-/// `application/problem+json`.
+/// A problem, as the response to send: [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, as
+/// `application/problem+json`, with its status.
 ///
-/// The problem details of issues are answered with 422, and their `errors` member lists each issue's JSON Pointer,
-/// code, params and message, in the order found:
+/// Its members are RFC 9457's:
+///
+/// - `type`: a URI that identifies the kind of problem. It is `about:blank` unless the app sets its own, and RFC 9457
+///   says `about:blank` means no more than the status, so an app that documents its problems sets the URI of their
+///   documentation with [`ProblemDetails::with_type`].
+/// - `title`: a short summary of that kind of problem. It is the status's reason phrase unless the app sets its own,
+///   and left out for a status that has none.
+/// - `status`: the status it is answered with.
+/// - `detail`, which explains this occurrence of the problem, and `instance`, a URI that identifies it, when they are
+///   set. They are left out otherwise.
+///
+/// The problem details of issues have the status 422, and an `errors` member that lists each issue, in the order
+/// found, as RFC 9457's own example of validation errors does:
+///
+/// - `pointer`: where the issue is, as an [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer in its
+///   string form, `/age`, rather than as the fragment of a URI, `#/age`. The value itself is `""`.
+/// - `code` and `params`: the problem, as data, for a client that translates it or reacts to it.
+/// - `detail`: the problem's English message, or the rule's own `message`.
 ///
 /// ```json
 /// {
@@ -205,22 +225,40 @@ impl IntoResponse for ValidJsonRejection {
 ///   "title": "Unprocessable Content",
 ///   "status": 422,
 ///   "errors": [
-///     { "pointer": "/age", "code": "range", "params": { "min": 18, "max": 120 }, "message": "must be between 18 and 120" }
+///     { "pointer": "/age", "code": "range", "params": { "min": 18, "max": 120 }, "detail": "must be between 18 and 120" }
 ///   ]
 /// }
 /// ```
 ///
-/// It converts from [`Issues`], so a handler that returns `Result<_, ProblemDetails>` can answer the issues
-/// `Validate::validate` finds with `?`.
+/// It converts from [`Issues`], so a handler that returns `Result<_, ProblemDetails>` answers the issues
+/// `Validate::validate` finds with `?`, and it answers any other problem of the app's:
+///
+/// ```
+/// use annotated_axum::ProblemDetails;
+/// use axum::http::StatusCode;
+///
+/// async fn add_member() -> Result<StatusCode, ProblemDetails> {
+///     Err(ProblemDetails::new(StatusCode::CONFLICT)
+///         .with_type("https://example.com/problems/email-taken")
+///         .with_detail("the email belongs to another member"))
+/// }
+/// ```
 #[derive(Debug, Serialize)]
-pub struct ProblemDetails {
-    r#type: &'static str,
+#[serde(transparent)]
+pub struct ProblemDetails(Box<Members>);
+
+/// The members of [`ProblemDetails`], boxed so that a `Result<_, ProblemDetails>` stays as small as its success.
+#[derive(Debug, Serialize)]
+struct Members {
+    r#type: Cow<'static, str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<&'static str>,
+    title: Option<Cow<'static, str>>,
     #[serde(serialize_with = "status_as_number")]
     status: StatusCode,
     #[serde(skip_serializing_if = "Option::is_none")]
-    detail: Option<String>,
+    detail: Option<Cow<'static, str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instance: Option<Cow<'static, str>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     errors: Vec<IssueDetails>,
 }
@@ -231,25 +269,60 @@ struct IssueDetails {
     code: String,
     #[serde(serialize_with = "params_as_object")]
     params: Vec<(&'static str, ParamValue)>,
-    message: String,
+    detail: String,
 }
 
 impl ProblemDetails {
-    fn new(status: StatusCode) -> Self {
-        Self {
-            r#type: "about:blank",
-            title: reason_phrase(status),
-            status,
-            detail: None,
-            errors: Vec::new(),
-        }
+    /// A problem answered with `status`, of the type `about:blank`, whose title is the status's reason phrase.
+    #[must_use]
+    pub fn new(status: StatusCode) -> Self {
+        Self::with_errors(status, Vec::new())
     }
 
-    fn of_a_refusal(status: StatusCode, detail: String) -> Self {
-        Self {
-            detail: Some(detail),
-            ..Self::new(status)
-        }
+    fn with_errors(status: StatusCode, errors: Vec<IssueDetails>) -> Self {
+        Self(Box::new(Members {
+            r#type: Cow::Borrowed("about:blank"),
+            title: reason_phrase(status).map(Cow::Borrowed),
+            status,
+            detail: None,
+            instance: None,
+            errors,
+        }))
+    }
+
+    /// The same problem, of the type `uri`: a URI that identifies the kind of problem, and should lead to its
+    /// documentation.
+    #[must_use]
+    pub fn with_type(mut self, uri: impl Into<Cow<'static, str>>) -> Self {
+        self.0.r#type = uri.into();
+        self
+    }
+
+    /// The same problem, summed up as `title`, which should be the same for every problem of its type.
+    #[must_use]
+    pub fn with_title(mut self, title: impl Into<Cow<'static, str>>) -> Self {
+        self.0.title = Some(title.into());
+        self
+    }
+
+    /// The same problem, with `detail`: what went wrong this time, for the client to correct it.
+    #[must_use]
+    pub fn with_detail(mut self, detail: impl Into<Cow<'static, str>>) -> Self {
+        self.0.detail = Some(detail.into());
+        self
+    }
+
+    /// The same problem, with `uri` as its instance: a URI that identifies this occurrence of the problem.
+    #[must_use]
+    pub fn with_instance(mut self, uri: impl Into<Cow<'static, str>>) -> Self {
+        self.0.instance = Some(uri.into());
+        self
+    }
+
+    /// The status the problem is answered with.
+    #[must_use]
+    pub fn status(&self) -> StatusCode {
+        self.0.status
     }
 }
 
@@ -265,10 +338,8 @@ fn reason_phrase(status: StatusCode) -> Option<&'static str> {
 
 impl From<Issues> for ProblemDetails {
     fn from(issues: Issues) -> Self {
-        Self {
-            errors: issues.iter().map(IssueDetails::from).collect(),
-            ..Self::new(StatusCode::UNPROCESSABLE_ENTITY)
-        }
+        let errors = issues.iter().map(IssueDetails::from).collect();
+        Self::with_errors(StatusCode::UNPROCESSABLE_ENTITY, errors)
     }
 }
 
@@ -278,7 +349,7 @@ impl From<&Issue> for IssueDetails {
             pointer: issue.path().json_pointer(),
             code: issue.problem().code().to_owned(),
             params: issue.problem().params(),
-            message: issue.message(),
+            detail: issue.message(),
         }
     }
 }
@@ -286,7 +357,7 @@ impl From<&Issue> for IssueDetails {
 impl IntoResponse for ProblemDetails {
     fn into_response(self) -> Response {
         let problem_json = [(header::CONTENT_TYPE, "application/problem+json")];
-        (self.status, problem_json, Json(self)).into_response()
+        (self.status(), problem_json, Json(self)).into_response()
     }
 }
 

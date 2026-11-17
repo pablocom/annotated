@@ -124,7 +124,7 @@ async fn issues_found_by_validate_are_answered_as_problem_details() {
                     "pointer": "/password",
                     "code": "length",
                     "params": { "min": 8, "unit": "chars" },
-                    "message": "must be at least 8 characters long"
+                    "detail": "must be at least 8 characters long"
                 }
             ]
         })

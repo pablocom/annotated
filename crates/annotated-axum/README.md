@@ -38,7 +38,7 @@ async fn add_member(ValidJson(new_member): ValidJson<NewMember>) -> StatusCode {
 let app: Router = Router::new().route("/members", post(add_member));
 ```
 
-A body that breaks the rules is answered with 422 and [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, whose `errors` member lists every issue's JSON Pointer, code, params and message:
+A body that breaks the rules is answered with 422 and [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, whose `errors` member lists every issue, as RFC 9457's own example of validation errors does: its JSON Pointer, its code and params, and its message as its `detail`:
 
 ```sh
 curl -i http://127.0.0.1:3000/members -H 'content-type: application/json' -d '{ "fullName": "  ", "age": 12 }'
@@ -53,14 +53,16 @@ content-type: application/problem+json
   "title": "Unprocessable Content",
   "status": 422,
   "errors": [
-    { "pointer": "/fullName", "code": "required", "params": {}, "message": "is required" },
-    { "pointer": "/email", "code": "missing", "params": {}, "message": "is missing" },
-    { "pointer": "/age", "code": "range", "params": { "min": 18, "max": 120 }, "message": "must be between 18 and 120" }
+    { "pointer": "/fullName", "code": "required", "params": {}, "detail": "is required" },
+    { "pointer": "/email", "code": "missing", "params": {}, "detail": "is missing" },
+    { "pointer": "/age", "code": "range", "params": { "min": 18, "max": 120 }, "detail": "must be between 18 and 120" }
   ]
 }
 ```
 
-That is the answer annotated-axum recommends: a standard format, with the codes and params for a client that translates them, and an English message for people. A rule's own `message` replaces the English one.
+That is the answer annotated-axum recommends: a standard format, with the codes and params for a client that translates them, and an English message for people. A rule's own `message` replaces the English one. A `pointer` is an [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer in its string form, `/age`, not the fragment of a URI, `#/age`.
+
+RFC 9457 says the type `about:blank` means no more than the status. An app that documents its problems, the `errors` member among them, sets their type to the URI of that documentation, as the next section shows.
 
 ## What it refuses
 
@@ -75,6 +77,32 @@ Every refusal is problem details, with the status axum's own `Json` answers the 
 | Has a value of the wrong type, in a struct that doesn't collect type errors | 422 | `detail` says where: `a value at line 1 column 73 can't be read into the type expected` |
 
 A `detail` never repeats what the client sent, so a password in the wrong place isn't echoed back. To answer values of the wrong type as issues, each at its JSON Pointer and all at once with the rest, put `#[annotated(collect_type_errors)]` on the struct.
+
+## Problem details of your own
+
+`ProblemDetails` answers an app's own problems too. Each member it leaves unset is left out of the JSON:
+
+```rust
+use annotated_axum::ProblemDetails;
+use axum::http::StatusCode;
+
+async fn add_member() -> Result<StatusCode, ProblemDetails> {
+    Err(ProblemDetails::new(StatusCode::CONFLICT)
+        .with_type("https://example.com/problems/email-taken")
+        .with_detail("the email belongs to another member"))
+}
+```
+
+```json
+{
+  "type": "https://example.com/problems/email-taken",
+  "title": "Conflict",
+  "status": 409,
+  "detail": "the email belongs to another member"
+}
+```
+
+`with_title` and `with_instance` set the other two members RFC 9457 defines. The title is the status's reason phrase unless the app sets its own.
 
 ## A response of your own
 

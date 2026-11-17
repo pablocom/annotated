@@ -77,13 +77,13 @@ async fn every_issue_in_a_body_is_answered_with_422_as_problem_details() {
             "title": "Unprocessable Content",
             "status": 422,
             "errors": [
-                { "pointer": "/fullName", "code": "required", "params": {}, "message": "is required" },
-                { "pointer": "/email", "code": "missing", "params": {}, "message": "is missing" },
+                { "pointer": "/fullName", "code": "required", "params": {}, "detail": "is required" },
+                { "pointer": "/email", "code": "missing", "params": {}, "detail": "is missing" },
                 {
                     "pointer": "/age",
                     "code": "range",
                     "params": { "min": 18, "max": 120 },
-                    "message": "must be between 18 and 120"
+                    "detail": "must be between 18 and 120"
                 }
             ]
         })
@@ -101,14 +101,14 @@ async fn a_bound_with_a_fraction_is_answered_as_a_number() {
             "title": "Unprocessable Content",
             "status": 422,
             "errors": [
-                { "pointer": "/amount", "code": "range", "params": { "min": 0.01 }, "message": "must be at least 0.01" }
+                { "pointer": "/amount", "code": "range", "params": { "min": 0.01 }, "detail": "must be at least 0.01" }
             ]
         })
     );
 }
 
 #[tokio::test]
-async fn a_rule_s_own_message_is_answered_as_the_issue_s_message() {
+async fn a_rule_s_own_message_is_answered_as_the_issue_s_detail() {
     let response = post_json::<NewExpense>(r#"{ "description": " ", "amount": 12.5 }"#).await;
 
     assert_eq!(
@@ -118,7 +118,7 @@ async fn a_rule_s_own_message_is_answered_as_the_issue_s_message() {
             "title": "Unprocessable Content",
             "status": 422,
             "errors": [
-                { "pointer": "/description", "code": "required", "params": {}, "message": "needs a description" }
+                { "pointer": "/description", "code": "required", "params": {}, "detail": "needs a description" }
             ]
         })
     );
@@ -141,7 +141,7 @@ async fn a_value_of_the_wrong_type_is_answered_as_an_issue_when_its_struct_colle
                     "pointer": "/amount",
                     "code": "invalid_type",
                     "params": { "expected": "f64", "found": "string" },
-                    "message": "must be f64, found string"
+                    "detail": "must be f64, found string"
                 }
             ]
         })
