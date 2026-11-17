@@ -905,9 +905,8 @@ impl<'a> DeserializeExpansion<'a> {
         quote!(::core::option::Option::map(#value, |#wrapper| #wrapper.value))
     }
 
-    // Always inlined into `visit_map` and `visit_seq`: left a call taking every slot, reading a valid 8-field body
-    // without LTO ran 7987 instructions against 7918, and `serde_json::from_str` then `validate()` 7977. Emitting the
-    // checks in each instead would compile every `pattern` twice.
+    // Never inlined, so the frame a nested body's recursion repeats doesn't hold the checks' locals: a MessagePack tree
+    // takes 25–32% less stack per level and 200 structs compile in 10.2 s, not 17.6, for up to 2.9% more instructions.
     fn checked_value(&self) -> TokenStream {
         let Self {
             deserialized,
@@ -958,7 +957,7 @@ impl<'a> DeserializeExpansion<'a> {
             )
         };
         quote! {
-            #[inline(always)]
+            #[inline(never)]
             fn checked_value(
                 self,
                 (#(#slots,)*): (#(#slot_types,)*),
