@@ -171,6 +171,7 @@ struct Shipment {
     #[serde(flatten)]
     notes: BTreeMap<String, String>,
     #[serde(flatten)]
+    #[validate(nested)]
     address: Address,
 }
 
@@ -467,6 +468,7 @@ fn a_complete_body_with_flattened_fields_is_reported_as_serde_then_validate_repo
 #[derive(Deserialize, Debug, PartialEq)]
 struct Listing {
     #[serde(flatten)]
+    #[validate(nested)]
     address: Address,
     #[serde(flatten)]
     extras: BTreeMap<String, String>,

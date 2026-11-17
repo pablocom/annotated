@@ -40,6 +40,18 @@ pub struct ValidatedField<'a> {
     pub is_optional: bool,
     pub requires_its_key: bool,
     pub rules: Vec<FieldRule>,
+    pub nesting: Nesting,
+}
+
+// What a field says of the rules of its own its value may have.
+#[derive(Clone, Copy)]
+pub enum Nesting {
+    // `nested`, alone or inside `each(...)`, checks them with the field's.
+    Nested,
+    // `not_nested` leaves them unchecked on purpose.
+    NotNested,
+    // Neither, so the derives ask whether there are any.
+    Unsaid,
 }
 
 // Where the value that a field's rules check comes from.
@@ -185,10 +197,12 @@ impl<'a> ValidatedField<'a> {
             .ident
             .clone()
             .map_or_else(|| Member::Unnamed(Index::from(index)), Member::Named);
-        let rules: Vec<_> = written_rules(&field.attrs)?
+        let (not_nested, written_rules) = not_nested_apart(written_rules(&field.attrs)?)?;
+        let rules: Vec<_> = written_rules
             .into_iter()
             .map(|written| FieldRule::from_written(written, Some(&field.ty)))
             .collect::<syn::Result<_>>()?;
+        let nesting = Nesting::of(not_nested.as_ref(), &rules)?;
         let is_optional = option_content(&field.ty).is_some();
         let is_read_by_its_key = matches!(place, Place::Named(_)) && !serde_field.is_skipped;
         Ok(Self {
@@ -202,6 +216,7 @@ impl<'a> ValidatedField<'a> {
             is_optional,
             requires_its_key: is_optional && is_read_by_its_key && required_rule_among(&rules).is_some(),
             rules,
+            nesting,
         })
     }
 
@@ -210,6 +225,40 @@ impl<'a> ValidatedField<'a> {
             return None;
         }
         required_rule_among(&self.rules)?.message.as_ref()
+    }
+}
+
+// `not_nested` checks nothing: it says what the field's rules leave out, so it is no rule of the field's.
+fn not_nested_apart(written_rules: Vec<WrittenRule>) -> syn::Result<(Option<Path>, Vec<WrittenRule>)> {
+    let mut not_nested = None;
+    let mut rules = Vec::new();
+    for written in written_rules {
+        match written {
+            WrittenRule::Call(call) if call.path.is_ident("not_nested") => {
+                if call.has_arguments() {
+                    return Err(Error::new_spanned(&call.path, "`not_nested` takes no arguments"));
+                }
+                not_nested = Some(call.path);
+            }
+            rule => rules.push(rule),
+        }
+    }
+    Ok((not_nested, rules))
+}
+
+impl Nesting {
+    fn of(not_nested: Option<&Path>, rules: &[FieldRule]) -> syn::Result<Self> {
+        let is_nested = !nested_rules_in(rules).is_empty();
+        match (not_nested, is_nested) {
+            (Some(not_nested), true) => Err(Error::new_spanned(
+                not_nested,
+                "`not_nested` leaves the rules of the field's type unchecked, so it can't stand beside `nested`, \
+                 which checks them",
+            )),
+            (Some(_), false) => Ok(Self::NotNested),
+            (None, true) => Ok(Self::Nested),
+            (None, false) => Ok(Self::Unsaid),
+        }
     }
 }
 
@@ -235,7 +284,7 @@ pub fn option_content(checked_type: &Type) -> Option<&Type> {
     content_of("Option", checked_type)
 }
 
-fn content_of<'a>(wrapper: &str, checked_type: &'a Type) -> Option<&'a Type> {
+pub fn content_of<'a>(wrapper: &str, checked_type: &'a Type) -> Option<&'a Type> {
     let Type::Path(type_path) = ungrouped(checked_type) else {
         return None;
     };
@@ -246,7 +295,7 @@ fn content_of<'a>(wrapper: &str, checked_type: &'a Type) -> Option<&'a Type> {
     type_arguments(type_path).next()
 }
 
-fn element_type(collection: &Type) -> Option<&Type> {
+pub fn element_type(collection: &Type) -> Option<&Type> {
     if let Some(boxed_collection) = content_of("Box", collection) {
         return element_type(boxed_collection);
     }
@@ -269,7 +318,7 @@ pub fn ungrouped(written_type: &Type) -> &Type {
     }
 }
 
-fn is_map(type_path: &TypePath) -> bool {
+pub fn is_map(type_path: &TypePath) -> bool {
     type_path
         .path
         .segments
@@ -277,7 +326,7 @@ fn is_map(type_path: &TypePath) -> bool {
         .is_some_and(|last_segment| last_segment.ident.to_string().ends_with("Map"))
 }
 
-fn type_arguments(type_path: &TypePath) -> impl Iterator<Item = &Type> {
+pub fn type_arguments(type_path: &TypePath) -> impl Iterator<Item = &Type> {
     let arguments = match type_path
         .path
         .segments
@@ -353,8 +402,8 @@ impl ValidatedField<'_> {
         }
     }
 
-    pub fn has_nested_values(&self) -> bool {
-        !nested_rules_in(&self.rules).is_empty()
+    pub const fn has_nested_values(&self) -> bool {
+        matches!(self.nesting, Nesting::Nested)
     }
 
     pub fn joins_nested_issues_element_by_element(&self) -> bool {
@@ -380,6 +429,12 @@ impl FieldRule {
     }
 
     fn each(element_rules: Vec<WrittenRule>, checked_type: Option<&Type>, span: Span) -> syn::Result<Self> {
+        if let Some(not_nested) = element_rules.iter().find_map(|rule| rule.call_named("not_nested")) {
+            return Err(Error::new_spanned(
+                &not_nested.path,
+                "`not_nested` goes on the field, not inside `each`",
+            ));
+        }
         let collection = checked_type.map(|checked_type| option_content(checked_type).unwrap_or(checked_type));
         let element = collection.and_then(element_type);
         Ok(Self::Each {

@@ -51,6 +51,7 @@ struct AuditedProduct {
     #[validate(prefix = "SKU-", suffix = "-X")]
     sku: String,
     #[serde(flatten)]
+    #[validate(nested)]
     audited: Audited,
 }
 

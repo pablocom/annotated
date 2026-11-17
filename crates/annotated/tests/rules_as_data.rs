@@ -391,6 +391,32 @@ fn nested_values_and_rules_across_fields_add_no_problem() {
 }
 
 #[test]
+fn not_nested_describes_no_rule() {
+    #[derive(Validate)]
+    struct Address {
+        #[validate(required)]
+        street: String,
+    }
+
+    #[derive(Validate)]
+    struct Member {
+        #[validate(not_nested)]
+        #[allow(dead_code)]
+        address: Address,
+        #[validate(not_nested, required)]
+        billing_address: Option<Address>,
+    }
+
+    assert_eq!(
+        Member::rules(),
+        Rules::of_fields([FieldRules::new(
+            "billing_address",
+            ValueRules::optional().with_problem(Problem::Required)
+        )])
+    );
+}
+
+#[test]
 fn a_struct_without_rules_has_none_as_data() {
     #[derive(Validate)]
     struct Member {

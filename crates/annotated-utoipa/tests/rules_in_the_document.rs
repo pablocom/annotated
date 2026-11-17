@@ -81,6 +81,7 @@ struct AuditedInvitation {
     #[validate(email)]
     email: String,
     #[serde(flatten)]
+    #[validate(nested)]
     audited: Audited,
 }
 

@@ -1,7 +1,8 @@
 //! Both derives compile on shapes meant to break a macro, with every warning denied: raw identifiers, names the
 //! generated code uses for its own, user types shadowing std's, a module without the prelude, generics of every kind,
 //! `Self`, items and types passed through `macro_rules!`, a crate re-exporting annotated, lints a crate may deny, and
-//! every struct and enum the derives accept in every serde tagging. A shape the derives rightly refuse is a
+//! every struct and enum the derives accept in every serde tagging. Each of them has fields whose types the derives
+//! ask about rules of their own, and fields marked `not_nested`. A shape the derives rightly refuse is a
 //! compile-fail case under `tests/ui/` instead.
 
 #![cfg(feature = "serde")]
@@ -16,6 +17,10 @@ struct Address {
     #[validate(required)]
     street: String,
 }
+
+// A type of the user's without rules of its own: the derives ask about it, and find none.
+#[derive(Debug, Default, serde::Deserialize)]
+struct Tier;
 
 mod raw_identifiers {
     use annotated::{Deserialize, Problem, Validate};
@@ -235,6 +240,9 @@ mod names_shadowing_std_s {
         #[serde(default)]
         #[validate(range(max = 3))]
         pub count: ::core::primitive::u8,
+        pub tier: super::Tier,
+        #[validate(not_nested)]
+        pub previous_address: super::Address,
     }
 
     #[derive(Debug, annotated::Validate, annotated::Deserialize)]
@@ -294,6 +302,11 @@ mod without_the_prelude {
         #[serde(flatten)]
         #[validate(nested)]
         pub address: super::Address,
+        #[allow(dead_code, reason = "only read, never used")]
+        pub tier: super::Tier,
+        #[validate(not_nested)]
+        #[allow(dead_code, reason = "only read, never used")]
+        pub previous_address: super::Address,
     }
 
     #[derive(Debug, ::annotated::Validate, ::annotated::Deserialize)]
@@ -356,7 +369,12 @@ mod generics {
         #[serde(default)]
         #[validate(required)]
         pub unit: Option<U>,
+        #[allow(dead_code, reason = "only read, never used")]
+        pub dimensions: Dimensions<N>,
     }
+
+    #[derive(Debug, serde::Deserialize)]
+    pub struct Dimensions<const N: usize>;
 
     #[derive(Debug, Validate, Deserialize)]
     pub struct Catalog<K: Eq + Hash + Display + Clone, V> {
@@ -373,6 +391,15 @@ mod generics {
         pub note: Cow<'b, str>,
         #[validate(required)]
         pub value: Option<T>,
+        #[serde(borrow)]
+        #[allow(dead_code, reason = "only read, never used")]
+        pub excerpt: Excerpt<'a>,
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    pub struct Excerpt<'a> {
+        #[allow(dead_code, reason = "only read, never used")]
+        pub text: &'a str,
     }
 
     #[derive(Debug, Validate, Deserialize)]
@@ -535,8 +562,11 @@ mod self_in_the_input {
         pub age: u8,
         #[validate(length(max = Self::MAX_FRIENDS), each(nested))]
         pub friends: Vec<Self>,
-        #[validate(required)]
+        #[validate(required, nested)]
         pub mentor: Option<Box<Self>>,
+        #[validate(not_nested)]
+        #[allow(dead_code, reason = "only read, never used")]
+        pub rival: Option<Box<Self>>,
         #[validate(custom(|name: &String| Self::is_a_name(name)))]
         pub name: String,
     }
@@ -568,6 +598,8 @@ mod self_in_the_input {
     {
         #[validate(length(max = Self::MOST))]
         pub ranks: Vec<T>,
+        #[allow(dead_code, reason = "only read, never used")]
+        pub previous: Option<Box<Self>>,
     }
 
     impl<T: Clone> Ranked<T> {
@@ -657,7 +689,7 @@ mod through_macros {
     }
 
     macro_rules! with_fields_of_types {
-        ($name:ident, $text:ty, $address:ty) => {
+        ($name:ident, $text:ty, $address:ty, $tier:ty) => {
             #[derive(Debug, Validate, Deserialize)]
             pub struct $name {
                 #[validate(length(max = 3))]
@@ -669,11 +701,16 @@ mod through_macros {
                 #[serde(flatten)]
                 #[validate(nested)]
                 pub billing: Option<$address>,
+                #[allow(dead_code, reason = "only read, never used")]
+                pub tier: $tier,
+                #[validate(not_nested)]
+                #[allow(dead_code, reason = "only read, never used")]
+                pub previous_address: $address,
             }
         };
     }
 
-    with_fields_of_types!(Note, Option<String>, Address);
+    with_fields_of_types!(Note, Option<String>, Address, super::Tier);
 }
 
 #[test]
@@ -787,6 +824,13 @@ mod linted {
         #[serde(flatten)]
         #[validate(nested)]
         address: Friend,
+        /// Its tier.
+        #[expect(dead_code, reason = "only read, never used")]
+        tier: super::Tier,
+        /// Its best friend.
+        #[validate(not_nested)]
+        #[expect(dead_code, reason = "only read, never used")]
+        best_friend: Friend,
     }
 
     /// Checks a member.
@@ -849,6 +893,8 @@ mod linted {
         },
         /// Two.
         Two(#[validate(range(max = 3_u8))] u8, #[validate(range(max = 3_u8))] u8),
+        /// Three.
+        Three(super::Tier),
     }
 
     /// Untagged.
@@ -907,6 +953,11 @@ mod through_a_re_export {
         #[serde(flatten)]
         #[validate(nested)]
         pub friend: Friend,
+        #[allow(dead_code, reason = "only read, never used")]
+        pub tier: super::Tier,
+        #[validate(not_nested)]
+        #[allow(dead_code, reason = "only read, never used")]
+        pub best_friend: Friend,
     }
 
     #[derive(Debug, facade::checks::Validate, facade::checks::Deserialize)]
@@ -977,6 +1028,13 @@ mod every_shape {
         #[serde(deserialize_with = "upper_case")]
         #[validate(required)]
         pub shouted: String,
+        #[serde(skip)]
+        #[allow(dead_code, reason = "only read, never used")]
+        pub tier: super::Tier,
+        #[serde(skip)]
+        #[validate(not_nested)]
+        #[allow(dead_code, reason = "only read, never used")]
+        pub previous_address: Address,
     }
 
     #[derive(Debug, Validate, Deserialize)]

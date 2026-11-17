@@ -3,7 +3,9 @@ pub use regex::Regex;
 #[cfg(feature = "serde")]
 pub use serde;
 
-use crate::{Issue, Location, Problem, Report};
+use std::marker::PhantomData;
+
+use crate::{Issue, Location, Problem, Report, Validate};
 
 #[cfg(feature = "serde")]
 pub use crate::borrowed::{borrow_cow_bytes, borrow_cow_str};
@@ -34,6 +36,38 @@ pub fn record_issue(found: &mut Report, at: &Location<'_>, problem: Problem, mes
         Some(message) => found.push_with_message(at, problem, message),
         None => found.push(at, problem),
     }
+}
+
+/// Whether `T` has rules of its own, which a field holding it joins to its own with `nested`. The derives ask it of
+/// the types written in each field that has neither `nested` nor `not_nested`, in a constant that fails to compile
+/// when one has rules.
+///
+/// A derive can't ask whether a type implements a trait, but a constant can: an inherent associated constant exists
+/// only for the types its bound holds for, and then takes the place of the one [`NoOwnRules`] gives every type.
+pub struct OwnRules<T: ?Sized>(PhantomData<T>);
+
+/// What [`OwnRules`] answers for a type without rules of its own. Its constants are named through `OwnRules<T>`, with
+/// the trait in scope.
+pub trait NoOwnRules {
+    /// Whether the type implements [`Validate`].
+    const EXIST_FOR_VALIDATE: bool = false;
+
+    /// Whether the type implements annotated's [`Deserialize`](crate::Deserialize).
+    #[cfg(feature = "serde")]
+    const EXIST_FOR_DESERIALIZE: bool = false;
+}
+
+impl<T: ?Sized> NoOwnRules for OwnRules<T> {}
+
+impl<T: Validate + ?Sized> OwnRules<T> {
+    /// `T` implements [`Validate`].
+    pub const EXIST_FOR_VALIDATE: bool = true;
+}
+
+#[cfg(feature = "serde")]
+impl<T: crate::Deserialize<'static>> OwnRules<T> {
+    /// `T` implements annotated's [`Deserialize`](crate::Deserialize).
+    pub const EXIST_FOR_DESERIALIZE: bool = true;
 }
 
 /// The problem of a tag that names none of the `variants` of its enum.

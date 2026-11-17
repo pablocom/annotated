@@ -1,10 +1,12 @@
 //! `#[derive(Deserialize)]` reads a field checked with `nested`, or `each(nested)`, through `annotated::Deserialize`,
-//! so the issues inside it are found at their full path, in the order `validate()` reports them.
+//! so the issues inside it are found at their full path, in the order `validate()` reports them. A field marked
+//! `not_nested` is read as serde reads it.
 
 #![cfg(feature = "serde")]
 
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{BuildHasherDefault, DefaultHasher};
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -723,4 +725,92 @@ fn self_in_a_field_s_type_and_in_rule_arguments_is_the_struct() {
     let body = r#"{ "age": 30, "friends": [{ "age": 130, "friends": [] }, { "age": 30, "friends": [] }] }"#;
 
     assert_eq!(issues_reading::<Mentee>(body), ["friends[0].age: range", "a_twin"]);
+}
+
+fn format_error_reading<'de, T: Deserialize<'de> + std::fmt::Debug>(json: &'de str) -> String {
+    match deserialize::<T>(json) {
+        Err(error @ DeserializeError::Format(_)) => error.to_string(),
+        other => panic!("expected the format's error, got {other:?}"),
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct Envelope {
+    #[validate(required)]
+    #[allow(dead_code)]
+    reference: String,
+    #[validate(not_nested)]
+    #[allow(dead_code)]
+    sender: Address,
+}
+
+#[test]
+fn a_field_marked_not_nested_is_read_as_serde_reads_it_so_its_issues_are_the_format_s_error() {
+    let body = r#"{ "reference": "", "sender": { "street": "", "postalCode": "28013" } }"#;
+
+    assert_eq!(
+        format_error_reading::<Envelope>(body),
+        "street: is required at line 1 column 70"
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct CollectedEnvelope {
+    #[validate(required)]
+    #[allow(dead_code)]
+    reference: String,
+    #[validate(not_nested)]
+    #[allow(dead_code)]
+    sender: Address,
+}
+
+#[test]
+fn collecting_type_errors_a_field_marked_not_nested_that_its_type_refuses_must_be_that_type() {
+    let body = r#"{ "reference": "", "sender": { "street": "", "postalCode": "28013" } }"#;
+
+    let issues = issues_found_reading::<CollectedEnvelope>(body);
+
+    assert_eq!(
+        issues.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        ["reference: is required", "sender: must be Address, found map"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+struct Shelf<T> {
+    #[allow(dead_code)]
+    items: Vec<T>,
+}
+
+#[test]
+fn a_field_whose_type_mentions_a_type_parameter_needs_neither_nested_nor_not_nested() {
+    let body = r#"{ "items": [{ "street": "", "postalCode": "28013" }] }"#;
+
+    assert_eq!(
+        format_error_reading::<Shelf<Address>>(body),
+        "street: is required at line 1 column 52"
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct Carrier {
+    name: String,
+    #[serde(default)]
+    delivers_to: PhantomData<Address>,
+}
+
+#[test]
+fn a_marker_of_a_type_with_rules_of_its_own_holds_no_value_and_needs_neither_nested_nor_not_nested() {
+    let body = r#"{ "name": "Correos" }"#;
+
+    let carrier = deserialize::<Carrier>(body).unwrap();
+
+    assert_eq!(
+        carrier,
+        Carrier {
+            name: "Correos".to_owned(),
+            delivers_to: PhantomData,
+        }
+    );
 }

@@ -1,0 +1,5 @@
+error: `not_nested` goes on the field, not inside `each`
+  --> tests/ui/not_nested_inside_each.rs:11:21
+   |
+11 |     #[validate(each(not_nested))]
+   |                     ^^^^^^^^^^

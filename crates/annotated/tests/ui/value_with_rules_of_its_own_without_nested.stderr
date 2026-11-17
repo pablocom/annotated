@@ -1,0 +1,87 @@
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and nothing checks them here: add `#[validate(nested)]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:15:23
+   |
+11 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+...
+15 |     shipping_address: Address,
+   |                       ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and nothing checks them here: add `#[validate(nested)]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:20:22
+   |
+18 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+19 | struct Invoice {
+20 |     billing_address: Option<Address>,
+   |                      ^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field's elements have rules of their own, and nothing checks them here: add `#[validate(each(nested))]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:26:12
+   |
+23 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+...
+26 |     stops: Vec<Address>,
+   |            ^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and nothing checks them here: add `#[validate(nested)]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:31:13
+   |
+29 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+30 | enum Delivery {
+31 |     Courier(Address),
+   |             ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and nothing checks them here: add `#[validate(nested)]`, or `each(nested)` for the elements of a collection, to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:37:24
+   |
+35 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+36 | struct Directory {
+37 |     addresses_by_city: HashMap<String, Vec<Address>>,
+   |                        ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and nothing checks them here: add `#[validate(nested)]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:42:22
+   |
+40 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+41 | struct Warehouse {
+42 |     manager_address: Box<Address>,
+   |                      ^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field's elements have rules of their own, and nothing checks them here: add `#[validate(each(nested))]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:43:12
+   |
+40 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+...
+43 |     docks: HashMap<String, Address>,
+   |            ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field's elements have rules of their own, and nothing checks them here: add `#[validate(each(nested))]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:44:12
+   |
+40 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+...
+44 |     gates: &'static [Address],
+   |            ^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)

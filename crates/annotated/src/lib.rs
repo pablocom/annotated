@@ -139,6 +139,13 @@ pub use validate::Validate;
 /// - `each(...)` applies its rules to every element of a collection, reported at its index, or to every value of a map,
 ///   reported at its key. It works on anything that implements [`rules::HasElements`]. `each(nested)` validates every
 ///   element.
+/// - A field whose type implements [`Validate`], or holds a type that does, as `Option<Address>`, `Vec<Address>` or
+///   `HashMap<String, Vec<Address>>` do, needs `nested` or `each(nested)`. Without either, nothing would check the
+///   rules inside, so the field is a compile error, which says which of the two fits its type. `not_nested` on the
+///   field leaves them unchecked on purpose: it checks nothing itself, takes no arguments, can stand beside other rules,
+///   but not beside `nested`, and goes on the field rather than inside `each`.
+/// - A field whose type mentions a type, const or lifetime parameter of the struct needs neither: whether a `T` has
+///   rules of its own is known only where the struct is used, so the derive can't tell.
 /// - On a generic struct or enum, the impl bounds the type parameters of each nested value by [`Validate`], as serde's
 ///   derive bounds those of a field it reads. The nested value's type is found as `each` finds an element's type, so a
 ///   `HashMap<K, V>` with `each(nested)` bounds `V` alone. A type parameter used only in the type deriving, as in a
@@ -382,6 +389,13 @@ pub use annotated_derive::Validate;
 ///     sequences and maps among them.
 ///   - When its value couldn't be built, its issues are reported and its other rules are skipped.
 ///   - A field's rules can name `nested` only once.
+/// - A field whose type implements [`Deserialize`](trait@Deserialize), or holds a type that does, needs `nested` or
+///   `each(nested)`. Without either, serde would read it through the serde `Deserialize` this derive generated for that
+///   type, and its issues would end deserialization as one error, at paths inside the value, so the field is a compile
+///   error. `#[validate(not_nested)]` has serde read it on purpose. A field annotated doesn't read, because it is
+///   skipped or read by a function, needs `nested` when its type implements [`Validate`] instead, since `nested`
+///   checks it with `Validate` and nothing else does. As for [`Validate`](macro@Validate), a field whose type mentions
+///   a type, const or lifetime parameter needs neither: the derive can't tell.
 /// - Struct-level rules run last, as with [`Validate`], once every field was present and could be built. Otherwise they
 ///   are skipped, since there is no struct to check.
 ///

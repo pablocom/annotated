@@ -23,6 +23,7 @@ mod deserialized_struct;
 mod expansion;
 mod generated;
 mod options;
+mod own_rules;
 mod pattern;
 mod receiver;
 mod reserved_names;

@@ -9,6 +9,7 @@ use crate::deserialized_enum::{DeserializedEnum, DeserializedVariant};
 use crate::deserialized_struct::Form;
 use crate::expansion::Expansion;
 use crate::generated::{CratePaths, in_a_scope_of_its_own};
+use crate::own_rules;
 use crate::serde_names::Tag;
 use crate::validated_struct::{Place, patterns_compiled_once};
 
@@ -113,7 +114,17 @@ impl<'a> EnumExpansion<'a> {
             .iter()
             .flat_map(|variant| &variant.content)
             .flat_map(|content| &content.validated.fields);
-        in_a_scope_of_its_own(input, paths, &patterns_compiled_once(fields), &impls)
+        let refusals_of_unchecked_own_rules = own_rules::refusals(
+            &input.generics,
+            self.contents_read()
+                .flat_map(DeserializeExpansion::fields_without_nested),
+        );
+        in_a_scope_of_its_own(
+            input,
+            paths,
+            &patterns_compiled_once(fields),
+            &quote!(#impls #refusals_of_unchecked_own_rules),
+        )
     }
 
     // The bounds of the fields of every variant read, as each variant's own reading needs them, and those the enum's

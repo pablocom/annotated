@@ -22,6 +22,7 @@ Use these words, with these meanings, in code, docs and conversation.
 - **Path:** where in the value an issue was found: a field, an element's index, a map's key, or the value itself.
 - **Issues:** the issues found in one validation, at most the limit of its report. This is the error type, and it is never empty.
 - **Report:** the issues found so far, while a value is being checked. It can be empty, and it keeps at most its limit: 1,000 by default, and only its first issue when it fails fast. At the end it becomes `Issues`, or `Ok(())` when it is empty.
+- **Nested value:** a field's value whose type has rules of its own: it implements `Validate`, or annotated's `Deserialize`. `nested` checks it with the field's rules, `each(nested)` checks each element so, and `not_nested` leaves its rules unchecked on purpose. A field holding one needs one of the three.
 - **Validation:** checking a value that already exists against its rules, with `Validate::validate`.
 - **Collecting deserialization:** deserializing through `annotated::Deserialize`. It reports missing fields and broken rules together, and values of the wrong type too when the struct opts in.
 
@@ -149,10 +150,22 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
 - **`nested`** validates a field whose type implements `Validate`. The field's segment is added to the location, so issues inside it are reported at their full path.
   - The crate implements `Validate` for `Box<T>`, `Rc<T>`, `Arc<T>`, `&T`, `&mut T` and `Cow<'_, T>`, which check the value they point to at their own location and answer its `rules()`, and for tuples of up to 16 elements, which check each element at its index. So a nested value can be behind a pointer, and the elements of a tuple are reported as a list's are: `leg[1].street`.
   - It isn't implemented for collections: their elements are checked with `each(nested)`, which goes through `HasElements`. That keeps a single way to reach elements, and `each` can hold other rules beside `nested`.
+- **`not_nested`** says that the rules of the field's type are left unchecked on purpose. It is no rule: it checks nothing, describes nothing in `rules()`, and takes no arguments. It goes on the field, not inside `each`, and beside `nested` it is a compile error. `Validate` doesn't check the value's rules, and `Deserialize` reads the value as serde does, so a type deriving annotated's `Deserialize` still ends deserialization with its issues as one error.
 - **`each(...)`** applies its rules to every element of a collection, reported at the element's index, or to every value of a map, reported at its key. `each(nested)` validates every element as a struct.
   - It works on anything that implements the `HasElements` capability trait: `Vec`, `VecDeque`, arrays, slices, `HashMap` and `BTreeMap`, and any of these behind a reference or a `Box`, like `&'a [T]` or `Box<[T]>`.
   - Elements that are `Option`s are treated like `Option` fields. To find the element type, the derive again goes by how the collection's type is written, looking through `&` and `Box`. A map's values are its second type argument, whatever comes after it (`HashMap<K, V, S>`). Any other collection's elements are its first type argument. A type counts as a map when its name ends in `Map`.
 - **Struct-level `#[validate(custom(f))]`** takes an `Fn(&Self) -> Result<(), Problem>` and reports at the struct's own location. `custom(f, field = repeated_password)` reports at that field instead, under its serde name. It accepts `message` like any rule. On the struct, `#[validate(...)]` accepts only `custom(...)` rules and `report_all`, in one attribute or in several. Any other rule there is a compile error.
+
+### A nested value needs `nested`
+
+A field holding a [nested value](#terms) without `nested` would compile and go wrong without a word: `Validate` would never check the value's rules, and `Deserialize` would have serde read the value through the serde `Deserialize` generated for its type, so its issues would end deserialization as one error, at paths inside the value, and the struct's own issues would be lost. So such a field is a compile error, unless `not_nested` says to leave its rules unchecked.
+
+- **Asking in a constant.** A derive sees tokens, and can't ask whether a type implements a trait. The code it generates can: for each field with neither `nested` nor `not_nested`, a `const` asserts that no type it asks about has rules of its own. `annotated::__private::OwnRules<T>` has an inherent associated constant for each question, `EXIST_FOR_VALIDATE` where `T: Validate` and `EXIST_FOR_DESERIALIZE` where `T: Deserialize<'static>`, and the trait `NoOwnRules` gives every `OwnRules<T>` the same constants, `false`. An inherent item is found before a trait's, but only where its bounds hold, so the constant is `true` exactly for a type with rules of its own. This is the `impls` crate's technique.
+- **Which question.** `Validate` asks whether a type implements `Validate`. `Deserialize` asks whether it implements annotated's `Deserialize` for a field serde reads, and whether it implements `Validate` for a field it doesn't, one skipped or read by a function, whose `nested` rule checks it with `Validate`. A skipped variant is never read, and `Deserialize` asks nothing of its fields.
+- **Which types.** The field's type, and each type written in it: a path's generic arguments, the elements of a tuple, an array or a slice, and what a reference points to, through groups and parentheses. So `Address`, `Option<Address>`, `Vec<Address>`, `Box<Address>`, `(Address, u8)` and `HashMap<String, Vec<Address>>` are each refused, with one error for the field, whichever type inside it has rules.
+- **What is left alone.** A type that mentions a type, const or lifetime parameter of the item, after `Self` is replaced by the type's name, since a constant can't name them: the derive can't tell, and asks nothing about it, though it still asks about the types written inside it that mention none. A `PhantomData<T>` holds no value, so neither it nor its `T` is asked about. A trait object, a function pointer, a raw pointer, `impl Trait` and a macro in type position are not looked into.
+- **What isn't asked, to save compile time.** A type named as a primitive or `String`, which has no rules, and one named `Option`, `Box`, `Rc`, `Arc`, `Cow`, `Vec`, `VecDeque`, `HashMap`, `BTreeMap`, `HashSet` or `BTreeSet`, which has rules only through the types it holds, which are asked about. A field with nothing left to ask about gets no constant, so a struct of plain fields compiles as before. A type of the user's named like one of these isn't asked about either, and is left as it was before.
+- **Where the error points.** The constant is generated at the field's type, so the error is there, and there is one for each field, so a build reports every field that needs `nested`. Its message says which of `nested` and `each(nested)` fits, from how the type is written: `nested` for a type without type arguments, alone, in an `Option` or behind a `Box`, an `Rc`, an `Arc` or a reference, `each(nested)` for a collection `each` goes through whose elements are such a type, and both otherwise. A struct deriving both traits gives two errors for one such field.
 
 ### The generated code
 
@@ -306,7 +319,7 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 
 **A serde visitor for the struct.** It has a field identifier that matches the serde names and aliases (read with `serde_derive_internals`, as the `Validate` derive reads them), `visit_map` and `visit_seq`, and one slot per field.
 
-- A field without `nested` is read with serde's `Deserialize`.
+- A field without `nested` is read with serde's `Deserialize`: its type has no rules of its own, or `not_nested` says to read it so.
 - A field with `nested`, or with `each(...)` holding `nested` at any depth, is read through `annotated::Deserialize`, with a `DeserializeSeed` at `at.field(name)`. Its issues go into a `Report` of the field's own, where they wait until the field's turn in declaration order. The buffer allocates only if something inside the field fails.
 
 **A checking pass after the last field is read.** The pass goes through the fields in declaration order. It runs inside the visitor, where the slots are, so the struct is built straight from them.
@@ -563,7 +576,7 @@ What the data leaves out:
 
 - **A field whose rules don't check what the input holds.** A field read by a function (`deserialize_with`, `with`) has rules that check what the function returned, and a skipped field isn't in the input. Neither is listed.
 - **A flattened field**, for now. Its rules belong in its parent's schema. Nor the field of a transparent struct, which has no name of its own: its rules belong in the struct's schema itself.
-- **`nested`, `custom(...)`, a rule across fields and `message`.** A nested type has rules of its own, under its own `rules()`.
+- **`nested`, `not_nested`, `custom(...)`, a rule across fields and `message`.** A nested type has rules of its own, under its own `rules()`.
 - **Enums**, for now. `rules()` answers no fields for one.
 
 A type that implements `Validate` or `Deserialize` by hand answers no fields, unless it implements `rules()` too. The function is on both traits because a type can derive either. A type that derives both answers the same from each, and a call that could mean either says which: `<Member as Validate>::rules()`.

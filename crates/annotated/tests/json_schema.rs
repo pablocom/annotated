@@ -369,9 +369,9 @@ fn required_on_an_option_leaves_null_among_its_alternatives() {
 
     #[derive(Validate)]
     struct Member {
-        #[validate(required)]
+        #[validate(required, nested)]
         address: Option<Address>,
-        #[validate(required)]
+        #[validate(required, nested)]
         billing: Option<Address>,
     }
 

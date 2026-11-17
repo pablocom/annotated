@@ -84,7 +84,9 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 | `custom(function)` | Your function, any `Fn(&T) -> Result<(), Problem>`, returns `Ok(())` |
 | `nested` | The field is a struct or an enum with rules of its own, and it passes them. It can be behind a `Box`, an `Rc`, an `Arc` or a reference, and a tuple's elements are each checked at their index |
 | `each(...)` | Every element of the collection, or every value of the map, passes the rules inside: `each(length(max = 20))`, `each(nested)` |
+| `not_nested` | Always: it checks nothing, and says that the rules of the field's type are left unchecked on purpose |
 
+- **Nested values.** A field whose type has rules of its own, a struct deriving `Validate` or `Deserialize`, or an `Option`, a `Vec` or a map of one, needs `nested`, or `each(nested)` for a collection's elements. Without it, the field is a compile error: `validate()` would never check those rules, and deserializing would have serde read the value, so its issues would end deserialization as one error. `#[validate(not_nested)]` leaves them unchecked on purpose: `validate()` doesn't check them, and deserializing reads the field as serde does. For a type that mentions a type parameter, the derives can't tell, as [Generic types](#generic-types-and-re-exports) says.
 - **Order.** A field's rules run in the order written, and the field stops at its first broken rule. So a blank name isn't also reported as too short. Put `#[validate(report_all)]` on the struct to report every broken rule instead.
 - **`Option` fields.** `required` asks for the field's key. Deserializing reports an absent key as `missing`, as for a field of any other type, even when serde would give it a `default`, and reads `null` as `None`. A value that already exists can't say whether its key was there, so `validate()` checks nothing for `required` on an `Option`. To refuse `null` too, declare the field as `T` instead. Every other rule checks the value inside, and is skipped when the field is `None`.
 - **Arguments.** A rule takes each named argument once. Bounds that contradict each other, such as `length(min = 10, max = 5)` or `equal` beside `min`, are a compile error when they are written as literals. Written as constants, they compile, and the rule refuses every value.
@@ -152,7 +154,7 @@ A value of the wrong type, like `"age": "twelve"`, ends deserialization with the
 
 ## Generic types and re-exports
 
-- **Generic types.** As serde's derive does, both derives bound each type parameter a field reads or checks: by `annotated::Validate` for the values `nested` checks, by `annotated::Deserialize<'de>` for those it reads, and by serde's `Deserialize<'de>` for the rest. When a bound asks more than a type needs, give `Deserialize`'s bounds with `#[serde(bound = "...")]`, as with serde.
+- **Generic types.** As serde's derive does, both derives bound each type parameter a field reads or checks: by `annotated::Validate` for the values `nested` checks, by `annotated::Deserialize<'de>` for those it reads, and by serde's `Deserialize<'de>` for the rest. When a bound asks more than a type needs, give `Deserialize`'s bounds with `#[serde(bound = "...")]`, as with serde. Whether a `T` has rules of its own is known only where the type is used, so the derives can't tell: a field such as `items: Vec<T>` compiles without `nested`, whatever `T` is.
 - **Re-exports.** A crate that re-exports annotated, so that its users don't depend on it, puts `#[annotated(crate = "my_api::checks")]` on each type deriving through it. `#[serde(crate = "...")]` names another path to serde, as with serde's derive.
 
 ## Web frameworks

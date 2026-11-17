@@ -1,0 +1,65 @@
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and serde would read it here, so its issues would be one error instead of issues at this field: add `#[validate(nested)]` to report them at this field, or `#[validate(not_nested)]` to read it as serde does
+  --> tests/ui/deserialize/value_with_rules_of_its_own_without_nested.rs:15:23
+   |
+11 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+...
+15 |     shipping_address: Address,
+   |                       ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and serde would read it here, so its issues would be one error instead of issues at this field: add `#[validate(nested)]` to report them at this field, or `#[validate(not_nested)]` to read it as serde does
+  --> tests/ui/deserialize/value_with_rules_of_its_own_without_nested.rs:20:22
+   |
+18 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+19 | struct Invoice {
+20 |     billing_address: Option<Address>,
+   |                      ^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field's elements have rules of their own, and serde would read them here, so their issues would be one error instead of issues at this field: add `#[validate(each(nested))]` to report them at this field, or `#[validate(not_nested)]` to read them as serde does
+  --> tests/ui/deserialize/value_with_rules_of_its_own_without_nested.rs:27:12
+   |
+23 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+...
+27 |     stops: Vec<Address>,
+   |            ^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and serde would read it here, so its issues would be one error instead of issues at this field: add `#[validate(nested)]` to report them at this field, or `#[validate(not_nested)]` to read it as serde does
+  --> tests/ui/deserialize/value_with_rules_of_its_own_without_nested.rs:32:13
+   |
+30 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+31 | enum Delivery {
+32 |     Courier(Address),
+   |             ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and serde would read it here, so its issues would be one error instead of issues at this field: add `#[validate(nested)]`, or `each(nested)` for the elements of a collection, to report them at this field, or `#[validate(not_nested)]` to read it as serde does
+  --> tests/ui/deserialize/value_with_rules_of_its_own_without_nested.rs:38:24
+   |
+36 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+37 | struct Directory {
+38 |     addresses_by_city: HashMap<String, Vec<Address>>,
+   |                        ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field holds a value with rules of its own, and nothing checks them here: add `#[validate(nested)]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/deserialize/value_with_rules_of_its_own_without_nested.rs:44:14
+   |
+41 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+...
+44 |     address: Address,
+   |              ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -5,6 +5,7 @@ use syn::{DeriveInput, Expr, Generics, Ident};
 use crate::bounds::{Bounds, Used};
 use crate::described_rules::rules_function;
 use crate::generated::{CratePaths, in_a_scope_of_its_own};
+use crate::own_rules::{self, WithoutNested};
 use crate::validated_enum::{ValidatedEnum, ValidatedVariant};
 use crate::validated_struct::{
     FieldRule, Place, RuleCheck, StructCheck, ValidatedField, ValidatedStruct, nested_rules_in, patterns_compiled_once,
@@ -48,6 +49,8 @@ pub fn validate_impl(validated_struct: &ValidatedStruct, paths: &CratePaths) -> 
     let generics = generics_validating(input, &validated_struct.fields);
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let (_, type_generics, _) = input.generics.split_for_impl();
+    let refusals_of_unchecked_own_rules =
+        own_rules::refusals(&input.generics, without_nested(&validated_struct.fields));
     let validate_impl = quote! {
         #[automatically_derived]
         impl #impl_generics _annotated::Validate for #name #type_generics #where_clause {
@@ -58,6 +61,8 @@ pub fn validate_impl(validated_struct: &ValidatedStruct, paths: &CratePaths) -> 
 
             #rules_function
         }
+
+        #refusals_of_unchecked_own_rules
     };
     in_a_scope_of_its_own(
         input,
@@ -85,6 +90,7 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum, paths: &CratePaths) ->
     let generics = generics_validating(input, fields.iter().copied());
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let (_, type_generics, _) = input.generics.split_for_impl();
+    let refusals_of_unchecked_own_rules = own_rules::refusals(&input.generics, without_nested(fields.iter().copied()));
     let validate_impl = quote! {
         #[automatically_derived]
         impl #impl_generics _annotated::Validate for #name #type_generics #where_clause {
@@ -95,8 +101,17 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum, paths: &CratePaths) ->
                 #(#enum_checks)*
             }
         }
+
+        #refusals_of_unchecked_own_rules
     };
     in_a_scope_of_its_own(input, paths, &patterns_compiled_once(fields), &validate_impl)
+}
+
+// `Validate` checks a value as it is, so nothing checks the rules of its own a field's value has without `nested`.
+fn without_nested<'a>(
+    fields: impl IntoIterator<Item = &'a ValidatedField<'a>>,
+) -> impl Iterator<Item = (&'a ValidatedField<'a>, WithoutNested)> {
+    fields.into_iter().map(|field| (field, WithoutNested::Unchecked))
 }
 
 // As serde's derive bounds the type parameters a field reads, the type parameters of each nested value are bounded by

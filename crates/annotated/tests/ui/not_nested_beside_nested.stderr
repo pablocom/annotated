@@ -1,0 +1,11 @@
+error: `not_nested` leaves the rules of the field's type unchecked, so it can't stand beside `nested`, which checks them
+  --> tests/ui/not_nested_beside_nested.rs:11:24
+   |
+11 |     #[validate(nested, not_nested)]
+   |                        ^^^^^^^^^^
+
+error: `not_nested` leaves the rules of the field's type unchecked, so it can't stand beside `nested`, which checks them
+  --> tests/ui/not_nested_beside_nested.rs:17:16
+   |
+17 |     #[validate(not_nested, each(nested))]
+   |                ^^^^^^^^^^

@@ -1,8 +1,10 @@
-//! `nested` validates a field that implements `Validate`, under the field's name.
+//! `nested` validates a field that implements `Validate`, under the field's name, and `not_nested` leaves its rules
+//! unchecked.
 
 mod support;
 
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -322,4 +324,66 @@ fn a_recursive_generic_struct_is_validated_whatever_its_type_parameter() {
     };
 
     assert_eq!(issues_of(&tree), ["children[0].children: length"]);
+}
+
+#[derive(Validate)]
+struct Parcel {
+    #[validate(not_nested)]
+    #[allow(dead_code)]
+    sender: Address,
+}
+
+#[test]
+fn a_field_marked_not_nested_is_not_checked_by_its_type_s_rules() {
+    let parcel = Parcel {
+        sender: without_a_street(),
+    };
+
+    assert_eq!(parcel.validate(), Ok(()));
+}
+
+#[derive(Validate)]
+#[serde(rename_all = "camelCase")]
+struct ParcelReturn {
+    #[validate(not_nested, custom(not_a_known_address))]
+    return_address: Address,
+}
+
+#[test]
+fn the_other_rules_of_a_field_marked_not_nested_still_check_it() {
+    let parcel_return = ParcelReturn {
+        return_address: without_a_street(),
+    };
+
+    assert_eq!(issues_of(&parcel_return), ["returnAddress: unknown_address"]);
+}
+
+#[derive(Validate)]
+struct Shelf<T> {
+    #[allow(dead_code)]
+    items: Vec<T>,
+}
+
+#[test]
+fn a_field_whose_type_mentions_a_type_parameter_needs_neither_nested_nor_not_nested() {
+    let shelf = Shelf {
+        items: vec![without_a_street()],
+    };
+
+    assert_eq!(shelf.validate(), Ok(()));
+}
+
+#[derive(Validate)]
+struct Carrier {
+    #[allow(dead_code)]
+    delivers_to: PhantomData<Address>,
+}
+
+#[test]
+fn a_marker_of_a_type_with_rules_of_its_own_holds_no_value_and_needs_neither_nested_nor_not_nested() {
+    let carrier = Carrier {
+        delivers_to: PhantomData,
+    };
+
+    assert_eq!(carrier.validate(), Ok(()));
 }

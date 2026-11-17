@@ -9,6 +9,7 @@ use crate::described_rules::rules_function;
 use crate::deserialized_struct::{DeserializedStruct, Form};
 use crate::expansion::{Expansion, message_override, validity_of};
 use crate::generated::{CratePaths, in_a_scope_of_its_own};
+use crate::own_rules::{self, WithoutNested};
 use crate::serde_names::{DefaultValue, SerdeField};
 use crate::validated_struct::{
     FieldRule, Place, ValidatedField, nested_rules_in, option_content, patterns_compiled_once,
@@ -139,7 +140,30 @@ impl<'a> DeserializeExpansion<'a> {
                 }
             }
         };
-        in_a_scope_of_its_own(input, paths, &patterns_compiled_once(self.fields()), &impls)
+        let refusals_of_unchecked_own_rules = own_rules::refusals(&input.generics, self.fields_without_nested());
+        in_a_scope_of_its_own(
+            input,
+            paths,
+            &patterns_compiled_once(self.fields()),
+            &quote!(#impls #refusals_of_unchecked_own_rules),
+        )
+    }
+
+    // Each field, with what would become of its value's own rules without `nested`: serde would read a field it reads
+    // through the `Deserialize` generated for the value's type, and nothing would check a field annotated doesn't read,
+    // which `nested` checks with `Validate`.
+    pub fn fields_without_nested(&self) -> Vec<(&'a ValidatedField<'a>, WithoutNested)> {
+        self.fields()
+            .iter()
+            .map(|field| {
+                let without_nested = if self.is_read_by_serde(field) {
+                    WithoutNested::ReadBySerde
+                } else {
+                    WithoutNested::Unchecked
+                };
+                (field, without_nested)
+            })
+            .collect()
     }
 
     pub fn new_visitor(&self) -> TokenStream {

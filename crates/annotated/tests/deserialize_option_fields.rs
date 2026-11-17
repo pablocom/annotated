@@ -317,7 +317,7 @@ struct Address {
 #[derive(Deserialize, Debug, PartialEq)]
 struct Parcel {
     #[serde(flatten)]
-    #[validate(required)]
+    #[validate(required, nested)]
     destination: Option<Address>,
 }
 

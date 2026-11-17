@@ -79,6 +79,15 @@ fn validate_attributes(attributes: &[Attribute]) -> impl Iterator<Item = &Attrib
         .filter(|attribute| attribute.path().is_ident("validate"))
 }
 
+impl WrittenRule {
+    pub fn call_named(&self, name: &str) -> Option<&RuleCall> {
+        match self {
+            Self::Call(call) if call.path.is_ident(name) => Some(call),
+            Self::Call(_) | Self::Each { .. } => None,
+        }
+    }
+}
+
 impl Parse for WrittenRule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let path = input.call(Path::parse_mod_style)?;
