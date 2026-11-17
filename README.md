@@ -140,7 +140,7 @@ Each way keeps at most 1,000 issues, `Report::DEFAULT_LIMIT`, since a body can h
 
 ## Values of the wrong type
 
-A value of the wrong type, like `"age": "twelve"`, ends deserialization with the format's own error, as it does with serde. Put `#[annotated(collect_type_errors)]` on the struct to get it as one more issue instead, with the code `invalid_type` and the message `must be u8, found string`. The issue names the kind of value found, never the value itself, so nothing a client sent is echoed back. A key given twice, or an unknown key a struct denies, is still the format's error. This needs a self-describing format, such as JSON.
+A value of the wrong type, like `"age": "twelve"`, ends deserialization with the format's own error, as it does with serde. Put `#[annotated(collect_type_errors)]` on the struct to get it as one more issue instead, with the code `invalid_type` and the message `must be u8, found string`. The issue names the kind of value found, never the value itself, so nothing a client sent is echoed back. A key given twice, or an unknown key a struct denies, is still the format's error. This needs a self-describing format, such as JSON. The struct buffers each value before it reads it, and a buffer holds the value, not the input's text, so a few values a format reads only for their own type are of the wrong type: an integer beyond 64 bits in JSON, unless `serde_json`'s `arbitrary_precision` feature is on, a 128-bit integer in MessagePack, and `serde_json`'s `RawValue`.
 
 ## Features
 

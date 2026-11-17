@@ -527,6 +527,8 @@ A key given twice, or an unknown key a struct denies, isn't a value of the wrong
 
 JSON writes every map key as a string. So a key written as a string is read as the integer or boolean its type asks for, as `serde_json` reads it. A well-typed body therefore reads the same with the option as without it.
 
+**What the buffer can't hold.** `Content` holds a value as the format hands it to any type, and not the input's text. A format that reads a value otherwise for its own type hands it over in another form, which that type refuses in the buffer, as a value of the wrong type. `serde_json` hands over an integer beyond 64 bits as a float, which loses its digits, unless its `arbitrary_precision` feature is on. `rmp-serde` writes a 128-bit integer as 16 bytes, which only its own reader takes for one. `serde_json`'s `RawValue` reads the text of a value in the input, which the buffer doesn't keep. A test pins each.
+
 `serde_json`, with its `arbitrary_precision` feature, hands any type a number that isn't a 64-bit integer as a map of one entry, a key of its own and the number's text, and reads the number as usual for a type that asks for one. annotated's buffer, standing for the format, does the same: it reads that map as the number a type asks for, a 128-bit integer whole, and hands it as a map to a type that keeps the text, such as `serde_json::Number`. Standing for serde's buffer, it refuses the map where a number is asked for, as serde's buffer does. Either way the map is found as the number it holds.
 
 `Content` and `ContentDeserializer` are the crate's own and are kept private. serde has an equivalent, but it is private to serde.

@@ -31,7 +31,7 @@ fn fail_fast_issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<Str
     ))
 }
 
-fn described_outcome<T>(outcome: Result<T, DeserializeError<serde_json::Error>>) -> Vec<String> {
+fn described_outcome<T, E: std::fmt::Display>(outcome: Result<T, DeserializeError<E>>) -> Vec<String> {
     match outcome {
         Ok(_) => Vec::new(),
         Err(DeserializeError::Issues(issues)) => issues.iter().map(described).collect(),
@@ -579,6 +579,38 @@ fn a_unit_is_read_from_null_alone_as_the_format_reads_it() {
     assert_eq!(
         issues_reading::<Heartbeat>(r#"{ "beat": {} }"#),
         ["beat: invalid_type(expected: unit, found: map)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct Ledger {
+    #[allow(dead_code)]
+    total: u128,
+}
+
+#[derive(serde::Serialize)]
+struct LedgerWritten {
+    total: u128,
+}
+
+#[test]
+fn an_integer_beyond_64_bits_is_of_the_wrong_type_as_serde_json_buffers_it_as_a_float() {
+    assert_eq!(
+        issues_reading::<Ledger>(r#"{ "total": 1180591620717411303424 }"#),
+        ["total: invalid_type(expected: u128, found: float)"]
+    );
+}
+
+#[test]
+fn a_128_bit_integer_is_of_the_wrong_type_as_message_pack_buffers_it_as_bytes() {
+    let bytes = rmp_serde::to_vec_named(&LedgerWritten { total: 12 }).unwrap();
+
+    assert_eq!(
+        described_outcome(annotated::from_deserializer::<Ledger, _>(
+            &mut rmp_serde::Deserializer::from_read_ref(&bytes)
+        )),
+        ["total: invalid_type(expected: u128, found: bytes)"]
     );
 }
 

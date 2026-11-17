@@ -451,6 +451,10 @@ pub use annotated_derive::Validate;
 /// - The buffer borrows the strings and bytes the format lends.
 /// - With `serde_json`'s `arbitrary_precision` feature, a number is read as `serde_json` reads it, a 128-bit integer
 ///   whole.
+/// - The buffer holds a value as the format hands it to any type, not the input's text, so a value the format reads
+///   otherwise for its own type is of the wrong type there. `serde_json` hands over an integer beyond 64 bits as a
+///   float, unless its `arbitrary_precision` feature is on. MessagePack, as `rmp-serde` writes it, holds a 128-bit
+///   integer as bytes. `serde_json`'s `RawValue` reads the input's text.
 /// - It needs a self-describing format, such as JSON.
 ///
 /// ```
