@@ -17,6 +17,7 @@ utoipa = "6.0.0"
 
 [dev-dependencies]
 annotated = { path = "../annotated", features = ["json-schema", "regex"] }
+utoipa = { version = "6.0.0", features = ["debug"] }
 
 [lints]
 workspace = true

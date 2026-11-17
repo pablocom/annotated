@@ -79,6 +79,8 @@ It reads as one sentence, such as:
 `ip` can't be written at `/properties/address` in the schema `Server`: no keyword says what the rule requires
 ```
 
+An empty result means that every rule annotated describes as data is in the document. It doesn't mean that the document says everything the type requires: annotated describes the rules on a struct's fields only, and not those of an enum, of a flattened field or of a `nested` type, nor a rule across fields or `custom(...)`.
+
 ## Other types
 
 `write_rules` takes the rules and the name of the schema, for the types `write_rules_of` can't name:
@@ -97,16 +99,17 @@ It reads as one sentence, such as:
 
 ## How the schema is written
 
-utoipa's schema becomes JSON, annotated writes the rules into it, and utoipa reads it back. utoipa's schema of a string has room for one `pattern` and no `allOf`, so a second pattern, as `prefix` and `suffix` on one field write, is required through an `allOf` of its own: the field's keywords are its first member, and the second pattern its second.
+annotated is the one place that knows what keyword each rule writes, and it writes into JSON. So utoipa's schema becomes JSON, annotated writes the rules into a copy, and each keyword the copy adds or tightens is set in utoipa's own schema, at the same place: in a property, the `items` of a list, the `additionalProperties` of a map, or a member of the `allOf` that utoipa documents a struct with a flattened field as. Nothing else in the document changes, whatever utoipa wrote there.
 
-```json
-"sku": {
-  "allOf": [
-    { "type": "string", "maxLength": 20, "pattern": "^SKU-" },
-    { "type": "string", "pattern": "-X$" }
-  ]
-}
-```
+- **A keyword utoipa's schema has no field for** is left out and returned. One is the `allOf` that annotated requires a second pattern through, as `prefix` and `suffix` on one field write, since utoipa's schema of a string has room for one `pattern` and no `allOf`. The property stays a string with its first pattern, which every client generated from the document reads, and the second is returned as `NotHeld` at `/properties/sku/allOf`:
+
+  ```json
+  "sku": { "type": "string", "maxLength": 20, "pattern": "^SKU-" }
+  ```
+
+- **The result is checked.** Once the keywords are set, utoipa's schema becomes JSON again and is compared with annotated's copy, numbers as numbers, since utoipa writes `1.0` as `1`. Whatever still differs is returned too.
+
+Writing the same rules a second time changes nothing, and returns what the first time returned.
 
 ## Versions
 

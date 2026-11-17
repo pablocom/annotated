@@ -8,7 +8,8 @@
 use annotated::Deserialize;
 use annotated_utoipa::{Reason, Unwritten, write_rules, write_rules_of};
 use serde_json::json;
-use utoipa::openapi::OpenApi as Document;
+use utoipa::openapi::extensions::Extensions;
+use utoipa::openapi::{ComponentsBuilder, ObjectBuilder, OpenApi as Document, OpenApiBuilder, Type};
 use utoipa::{OpenApi, ToSchema};
 
 #[derive(Deserialize, ToSchema)]
@@ -57,6 +58,28 @@ struct Nickname {
     nickname: Option<String>,
 }
 
+#[derive(Deserialize, ToSchema)]
+struct Discount {
+    #[validate(range(min = 0.0, max = 1.0))]
+    share: f64,
+}
+
+#[derive(Deserialize, ToSchema)]
+struct NewProduct {
+    #[validate(length(max = 20), prefix = "SKU-", suffix = "-X")]
+    sku: String,
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(Discount, NewProduct)))]
+struct ProductsApi;
+
+#[derive(Deserialize)]
+struct Member {
+    #[validate(length(max = 50))]
+    name: String,
+}
+
 /// A document whose schema `name` has one property, `property`, which is a string or a list of strings. utoipa reads
 /// it as the schema of a list, which has no room for `maxLength`.
 fn document_with_a_string_or_a_list(name: &str, property: &str) -> Document {
@@ -74,6 +97,18 @@ fn document_with_a_string_or_a_list(name: &str, property: &str) -> Document {
         }
     }))
     .expect("utoipa reads the document")
+}
+
+/// A document whose schema `Member` has one property, `name`, a string with a `maxLength` of 100 among its extensions.
+/// utoipa writes an extension after the keywords its schema has fields for, so it hides the `maxLength` of the field.
+fn document_with_a_maximum_length_among_the_extensions() -> Document {
+    let name = ObjectBuilder::new()
+        .schema_type(Type::String)
+        .extensions(Some(Extensions::from_iter([("maxLength", 100)])));
+    let member = ObjectBuilder::new().property("name", name);
+    OpenApiBuilder::new()
+        .components(Some(ComponentsBuilder::new().schema("Member", member).build()))
+        .build()
 }
 
 #[test]
@@ -130,12 +165,46 @@ fn what_utoipa_s_schema_can_not_hold_is_returned() {
 }
 
 #[test]
-fn what_utoipa_leaves_out_of_its_own_schema_is_not_returned() {
+fn what_utoipa_s_schema_does_not_write_as_it_was_set_is_returned() {
+    let mut document = document_with_a_maximum_length_among_the_extensions();
+
+    let unwritten = write_rules(&Member::rules(), &mut document, "Member");
+
+    assert_eq!(
+        unwritten.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        [
+            "what was written at `/properties/name/maxLength` in the schema `Member` is left out: utoipa's schema \
+             can't hold it"
+        ]
+    );
+}
+
+#[test]
+fn a_default_of_null_utoipa_wrote_is_not_returned() {
     let mut document = NicknamesApi::openapi();
 
     let unwritten = write_rules_of::<Nickname>(&mut document);
 
     assert_eq!(unwritten, []);
+}
+
+#[test]
+fn a_range_between_decimal_numbers_is_not_returned() {
+    let mut document = ProductsApi::openapi();
+
+    let unwritten = write_rules_of::<Discount>(&mut document);
+
+    assert_eq!(unwritten, []);
+}
+
+#[test]
+fn a_second_call_returns_what_the_first_returned() {
+    let mut document = ProductsApi::openapi();
+    let unwritten_by_the_first_call = write_rules_of::<NewProduct>(&mut document);
+
+    let unwritten = write_rules_of::<NewProduct>(&mut document);
+
+    assert_eq!(unwritten, unwritten_by_the_first_call);
 }
 
 #[test]

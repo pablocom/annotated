@@ -48,13 +48,26 @@
 //! choice. An app that wants every rule in its document can panic on any, so a rule missing from the document is
 //! noticed when the app starts.
 //!
+//! An empty result means that every rule annotated describes as data is in the document. It doesn't mean that the
+//! document says everything the type requires: annotated describes the rules on a struct's fields only, and not those
+//! of an enum, of a flattened field or of a `nested` type, nor a rule across fields or `custom(...)`.
+//!
 //! # How the schema is written
 //!
-//! utoipa's schema becomes JSON, annotated writes the rules into it, and utoipa reads it back. A schema of utoipa's
-//! has room for one `pattern` and no `allOf` beside its `type`, so a second pattern, which annotated requires
-//! through `allOf`, is required through an `allOf` of its own instead: the schema's keywords are its first member,
-//! and each other member takes the schema's `type`. Whatever utoipa still leaves out when it reads the schema back is
-//! returned, for [`Reason::NotHeld`].
+//! annotated's [`json_schema::write_rules`] is the one place that knows what keyword each rule writes, and it writes
+//! into JSON. So the schema utoipa generated becomes JSON, annotated writes the rules into a copy, and each keyword
+//! the copy adds or tightens is set in utoipa's own schema, at the same place: in the [`Object`] of a property, the
+//! `items` of an [`Array`], the `additionalProperties` of a map, or a member of an [`AllOf`], which is how utoipa
+//! documents a struct with a flattened field. Nothing else in the document changes.
+//!
+//! - **A keyword utoipa's schema has no field for** is left out, and returned for [`Reason::NotHeld`]. One is the
+//!   `allOf` that annotated requires a second `pattern` through, since utoipa's schema of a string has room for one
+//!   `pattern` and no `allOf`. The property stays a string with its first pattern, which every client generated from
+//!   the document reads.
+//! - **The result is checked.** Once the keywords are set, utoipa's schema becomes JSON again and is compared with
+//!   annotated's copy, numbers as numbers, since utoipa writes `1.0` as `1`. Whatever still differs is returned too.
+//!
+//! Writing the same rules a second time changes nothing, and returns what the first time returned.
 //!
 //! # Other types
 //!
@@ -68,21 +81,30 @@
 //! # Versions
 //!
 //! This crate works with utoipa 6. A new major version of utoipa comes with a new version of this crate.
+//!
+//! [`Object`]: utoipa::openapi::schema::Object
+//! [`Array`]: utoipa::openapi::schema::Array
+//! [`AllOf`]: utoipa::openapi::schema::AllOf
 
 use std::fmt;
 
 use annotated::Rules;
 use annotated::json_schema::{self, UnwrittenRule};
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 use utoipa::ToSchema;
-use utoipa::openapi::schema::Schema;
+use utoipa::openapi::schema::{AdditionalProperties, AllOf, Array, ArrayItems, Object, Schema, SchemaFormat};
 use utoipa::openapi::{OpenApi, RefOr};
 
 /// Writes the rules of `T` into the schema utoipa generated for it, among the components of `openapi`, and returns
 /// what the document still doesn't say about them.
 ///
 /// The schema is the one named [`ToSchema::name`], and the rules are those `annotated::Deserialize::rules` describes.
-/// Writing the same rules a second time changes nothing.
+/// Only the keywords the rules add or tighten change in the document. Writing the same rules a second time changes
+/// nothing, and returns what the first time returned.
+///
+/// An empty result means that every rule annotated describes as data is in the document. It doesn't mean that the
+/// document says everything the type requires: annotated describes the rules on a struct's fields only, and not those
+/// of an enum, of a flattened field or of a `nested` type, nor a rule across fields or `custom(...)`.
 #[must_use = "a rule left out of the document is only reported here"]
 pub fn write_rules_of<T>(openapi: &mut OpenApi) -> Vec<Unwritten>
 where
@@ -93,6 +115,13 @@ where
 
 /// Writes `rules` into the schema named `schema_name` among the components of `openapi`, and returns what the
 /// document still doesn't say about them.
+///
+/// Only the keywords the rules add or tighten change in the document. Writing the same rules a second time changes
+/// nothing, and returns what the first time returned.
+///
+/// An empty result means that every rule annotated describes as data is in the document. It doesn't mean that the
+/// document says everything the type requires: annotated describes the rules on a struct's fields only, and not those
+/// of an enum, of a flattened field or of a `nested` type, nor a rule across fields or `custom(...)`.
 ///
 /// It is [`write_rules_of`] for a schema that isn't named after its type, such as a generic type's, which is named
 /// after its arguments:
@@ -156,23 +185,19 @@ pub fn write_rules(rules: &Rules, openapi: &mut OpenApi, schema_name: &str) -> V
     else {
         return vec![Unwritten::new(schema_name, String::new(), Reason::NoSchema)];
     };
-    let mut with_rules = json_as_utoipa_reads_it(schema);
+    let as_generated = json_of(schema);
+    let mut with_rules = as_generated.clone();
     let unwritten_rules = json_schema::write_rules(rules, &mut with_rules);
-    require_all_of_on_its_own(&mut with_rules);
-    let with_rules = Value::Object(with_rules);
+    let mut not_held = write_changes(&as_generated, &with_rules, schema);
+    not_held.extend(places_still_different(schema, &with_rules, &not_held));
 
-    if let Some(schema_with_rules) = read_back(&with_rules) {
-        *schema = schema_with_rules;
-    }
-    let mut left_out_pointers = Vec::new();
-    left_out(&with_rules, Some(&json_of(schema)), "", &mut left_out_pointers);
     let unwritten_rules = unwritten_rules
         .into_iter()
         .map(|rule| Unwritten::new(schema_name, rule.pointer().to_owned(), Reason::Rule(rule)));
-    let left_out = left_out_pointers
-        .into_iter()
-        .map(|pointer| Unwritten::new(schema_name, pointer, Reason::NotHeld));
-    unwritten_rules.chain(left_out).collect()
+    let not_held = not_held
+        .iter()
+        .map(|place| Unwritten::new(schema_name, json_pointer(place), Reason::NotHeld));
+    unwritten_rules.chain(not_held).collect()
 }
 
 /// Something the document doesn't say about a type's rules, which [`write_rules_of`] and [`write_rules`] return: the
@@ -229,8 +254,8 @@ impl Unwritten {
     }
 
     /// Where in that schema, as an RFC 6901 JSON Pointer: where a rule's keyword belongs, `/properties/address`, or
-    /// what utoipa's schema can't hold, `/properties/tags/maxLength`. It is empty, which points at the whole schema,
-    /// when the document has no schema of that name.
+    /// what annotated wrote that utoipa's schema can't hold, `/properties/sku/allOf`. It is empty, which points at the
+    /// whole schema, when the document has no schema of that name.
     #[must_use]
     pub fn pointer(&self) -> &str {
         &self.pointer
@@ -276,78 +301,238 @@ pub enum Reason {
     NoSchema,
     /// annotated couldn't write the rule into the schema. [`UnwrittenRule::reason`] says why.
     Rule(UnwrittenRule),
-    /// annotated wrote a keyword there that utoipa's schema can't hold, so the document leaves it out.
+    /// annotated wrote a keyword there that utoipa's schema has no room for, or writes otherwise than it was set, so
+    /// the document leaves it out.
     NotHeld,
 }
 
-// utoipa leaves a few things out of its own schemas when it reads them back, such as a `default` of `null`. Starting
-// from what it reads back keeps those from being reported as rules left out.
-fn json_as_utoipa_reads_it(schema: &RefOr<Schema>) -> Map<String, Value> {
-    let json = json_of(schema);
-    let Value::Object(json) = read_back(&json).map_or(json, |schema| json_of(&schema)) else {
-        unreachable!("utoipa writes a schema as a JSON object");
-    };
-    json
+/// Where something is in a schema: the keys and indices that lead to it from the schema's root.
+type Place = Vec<String>;
+
+/// A place where two schemas differ, and what the second one has there.
+struct Difference<'a> {
+    place: Place,
+    value: Option<&'a Value>,
 }
 
-fn json_of(schema: &RefOr<Schema>) -> Value {
-    serde_json::to_value(schema).expect("utoipa's schema becomes JSON")
-}
+/// utoipa's schema has nowhere to hold a keyword: no field for it, no subschema to walk to, or a value of another
+/// type than its field's.
+struct NoRoom;
 
-fn read_back(json: &Value) -> Option<RefOr<Schema>> {
-    serde_json::from_value(json.clone()).ok()
-}
-
-/// utoipa reads a schema with a `type` as a schema of that type, which has no `allOf`. So an `allOf` beside a `type`
-/// is made to stand on its own: the schema's other keywords become its first member, and each member takes the
-/// `type`, which an `allOf` member needs to be read.
-fn require_all_of_on_its_own(schema: &mut Map<String, Value>) {
-    for subschema in subschemas(schema) {
-        require_all_of_on_its_own(subschema);
+fn json_of(schema: &RefOr<Schema>) -> Map<String, Value> {
+    match serde_json::to_value(schema) {
+        Ok(Value::Object(json)) => json,
+        _ => unreachable!("utoipa writes a schema as a JSON object"),
     }
-    let Some(schema_type) = schema.get("type").cloned() else {
-        return;
-    };
-    let Some(Value::Array(members)) = schema.get_mut("allOf") else {
-        return;
-    };
-    let mut members = std::mem::take(members);
-    schema.remove("allOf");
-    for member in &mut members {
-        if let Value::Object(member) = member {
-            member.entry("type").or_insert_with(|| schema_type.clone());
+}
+
+/// Sets in `schema` each keyword that `with_rules` adds to `as_generated` or changes in it, and returns the places of
+/// those it has no room for.
+fn write_changes(
+    as_generated: &Map<String, Value>,
+    with_rules: &Map<String, Value>,
+    schema: &mut RefOr<Schema>,
+) -> Vec<Place> {
+    let mut not_held = Vec::new();
+    for change in differences(as_generated, with_rules) {
+        let is_held = change
+            .value
+            .is_some_and(|value| write_at(&change.place, value, schema).is_ok());
+        if !is_held {
+            not_held.push(change.place);
         }
     }
-    members.insert(0, Value::Object(std::mem::take(schema)));
-    schema.insert("allOf".to_owned(), Value::Array(members));
+    not_held
 }
 
-/// The subschemas annotated writes rules into: the properties, the `allOf` members, and the schema of the elements.
-fn subschemas(schema: &mut Map<String, Value>) -> Vec<&mut Map<String, Value>> {
-    let mut subschemas = Vec::new();
-    for (keyword, value) in schema {
-        match (keyword.as_str(), value) {
-            ("properties", Value::Object(properties)) => {
-                subschemas.extend(properties.values_mut().filter_map(Value::as_object_mut));
+/// The places where `schema`, as JSON, still differs from `with_rules`, apart from those in `not_held` already.
+fn places_still_different(schema: &RefOr<Schema>, with_rules: &Map<String, Value>, not_held: &[Place]) -> Vec<Place> {
+    differences(&json_of(schema), with_rules)
+        .into_iter()
+        .map(|difference| difference.place)
+        .filter(|place| !not_held.iter().any(|returned| place.starts_with(returned)))
+        .collect()
+}
+
+fn json_pointer(place: &[String]) -> String {
+    let mut pointer = String::new();
+    for key in place {
+        pointer.push('/');
+        pointer.push_str(&key.replace('~', "~0").replace('/', "~1"));
+    }
+    pointer
+}
+
+/// Each place where `left` and `right` differ, as deep as both are objects, or arrays of the same length. Numbers are
+/// compared as numbers, since utoipa writes `1.0` as `1`.
+fn differences<'a>(left: &Map<String, Value>, right: &'a Map<String, Value>) -> Vec<Difference<'a>> {
+    let mut differences = Vec::new();
+    collect_differences_in_keys(left, right, &mut Vec::new(), &mut differences);
+    differences
+}
+
+fn collect_differences_in_keys<'a>(
+    left: &Map<String, Value>,
+    right: &'a Map<String, Value>,
+    place: &mut Place,
+    differences: &mut Vec<Difference<'a>>,
+) {
+    let keys_only_on_the_right = right.keys().filter(|key| !left.contains_key(*key));
+    for key in left.keys().chain(keys_only_on_the_right) {
+        place.push(key.clone());
+        match (left.get(key), right.get(key)) {
+            (Some(left), Some(right)) => collect_differences(left, right, place, differences),
+            (_, value) => differences.push(Difference {
+                place: place.clone(),
+                value,
+            }),
+        }
+        place.pop();
+    }
+}
+
+fn collect_differences<'a>(left: &Value, right: &'a Value, place: &mut Place, differences: &mut Vec<Difference<'a>>) {
+    match (left, right) {
+        (Value::Object(left), Value::Object(right)) => collect_differences_in_keys(left, right, place, differences),
+        (Value::Array(left), Value::Array(right)) if left.len() == right.len() => {
+            for (index, (left, right)) in left.iter().zip(right).enumerate() {
+                place.push(index.to_string());
+                collect_differences(left, right, place, differences);
+                place.pop();
             }
-            ("allOf", Value::Array(members)) => subschemas.extend(members.iter_mut().filter_map(Value::as_object_mut)),
-            ("items" | "additionalProperties", Value::Object(elements)) => subschemas.push(elements),
-            _ => {}
         }
+        (Value::Number(left), Value::Number(right)) if is_same_number(left, right) => {}
+        _ if left == right => {}
+        _ => differences.push(Difference {
+            place: place.clone(),
+            value: Some(right),
+        }),
     }
-    subschemas
 }
 
-/// Adds each JSON Pointer, from `pointer` down, where `written` has something that `held` doesn't.
-fn left_out(written: &Value, held: Option<&Value>, pointer: &str, left_out_pointers: &mut Vec<String>) {
-    match (written, held) {
-        (Value::Object(written), Some(Value::Object(held))) => {
-            for (keyword, value) in written {
-                let pointer = format!("{pointer}/{}", keyword.replace('~', "~0").replace('/', "~1"));
-                left_out(value, held.get(keyword), &pointer, left_out_pointers);
+fn is_same_number(left: &Number, right: &Number) -> bool {
+    match (left.as_i128(), right.as_i128()) {
+        (Some(left), Some(right)) => left == right,
+        _ => left.as_f64() == right.as_f64(),
+    }
+}
+
+/// Sets what is at `place` in `schema` to `value`, through the typed subschemas that lead there.
+fn write_at(place: &[String], value: &Value, schema: &mut RefOr<Schema>) -> Result<(), NoRoom> {
+    let RefOr::T(schema) = schema else {
+        return Err(NoRoom);
+    };
+    match schema {
+        Schema::Object(object) => write_into_object(place, value, object),
+        Schema::Array(array) => write_into_array(place, value, array),
+        Schema::AllOf(all_of) => write_into_member(place, value, all_of),
+        _ => Err(NoRoom),
+    }
+}
+
+fn write_into_object(place: &[String], value: &Value, object: &mut Object) -> Result<(), NoRoom> {
+    match place {
+        [keyword] => set_keyword_of_object(keyword, value, object),
+        [properties, name, place @ ..] if properties == "properties" => {
+            let property = object.properties.get_mut(name.as_str()).ok_or(NoRoom)?;
+            write_at(place, value, property)
+        }
+        [additional_properties, place @ ..] if additional_properties == "additionalProperties" => {
+            match object.additional_properties.as_deref_mut() {
+                Some(AdditionalProperties::RefOr(values)) => write_at(place, value, values),
+                Some(AdditionalProperties::FreeForm(_)) | None => Err(NoRoom),
             }
         }
-        (written, Some(held)) if written == held => {}
-        _ => left_out_pointers.push(pointer.to_owned()),
+        _ => Err(NoRoom),
     }
+}
+
+fn write_into_array(place: &[String], value: &Value, array: &mut Array) -> Result<(), NoRoom> {
+    match place {
+        [keyword] => set_keyword_of_array(keyword, value, array),
+        [items, place @ ..] if items == "items" => match &mut array.items {
+            ArrayItems::RefOrSchema(elements) => write_at(place, value, elements),
+            ArrayItems::False => Err(NoRoom),
+        },
+        _ => Err(NoRoom),
+    }
+}
+
+fn write_into_member(place: &[String], value: &Value, all_of: &mut AllOf) -> Result<(), NoRoom> {
+    let [all_of_keyword, index, place @ ..] = place else {
+        return Err(NoRoom);
+    };
+    if all_of_keyword != "allOf" {
+        return Err(NoRoom);
+    }
+    let member = index
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| all_of.items.get_mut(index))
+        .ok_or(NoRoom)?;
+    write_at(place, value, member)
+}
+
+/// Sets each keyword annotated writes that utoipa's `Object` has a field for.
+fn set_keyword_of_object(keyword: &str, value: &Value, object: &mut Object) -> Result<(), NoRoom> {
+    match keyword {
+        "minLength" => object.min_length = Some(count(value)?),
+        "maxLength" => object.max_length = Some(count(value)?),
+        "pattern" => object.pattern = Some(text(value)?),
+        "format" => object.format = Some(format(value)?),
+        "minimum" => object.minimum = Some(number(value)?),
+        "maximum" => object.maximum = Some(number(value)?),
+        "minProperties" => object.min_properties = Some(count(value)?),
+        "maxProperties" => object.max_properties = Some(count(value)?),
+        "required" => object.required = names(value)?,
+        _ => return Err(NoRoom),
+    }
+    Ok(())
+}
+
+/// Sets each keyword annotated writes that utoipa's `Array` has a field for.
+fn set_keyword_of_array(keyword: &str, value: &Value, array: &mut Array) -> Result<(), NoRoom> {
+    match keyword {
+        "minItems" => array.min_items = Some(count(value)?),
+        "maxItems" => array.max_items = Some(count(value)?),
+        _ => return Err(NoRoom),
+    }
+    Ok(())
+}
+
+fn count(value: &Value) -> Result<usize, NoRoom> {
+    value
+        .as_u64()
+        .and_then(|count| usize::try_from(count).ok())
+        .ok_or(NoRoom)
+}
+
+fn number(value: &Value) -> Result<utoipa::Number, NoRoom> {
+    let Value::Number(number) = value else {
+        return Err(NoRoom);
+    };
+    if let Some(natural) = number.as_u64() {
+        return usize::try_from(natural).map(utoipa::Number::UInt).map_err(|_| NoRoom);
+    }
+    if let Some(integer) = number.as_i64() {
+        return isize::try_from(integer).map(utoipa::Number::Int).map_err(|_| NoRoom);
+    }
+    number.as_f64().map(utoipa::Number::Float).ok_or(NoRoom)
+}
+
+fn text(value: &Value) -> Result<String, NoRoom> {
+    value.as_str().map(str::to_owned).ok_or(NoRoom)
+}
+
+// utoipa's `SchemaFormat` reads any string, as one of its known formats when it is one and as a format of its own
+// otherwise, so it holds a format as utoipa holds one it generated. That loses nothing, unlike reading a schema.
+fn format(value: &Value) -> Result<SchemaFormat, NoRoom> {
+    serde_json::from_value(value.clone()).map_err(|_| NoRoom)
+}
+
+fn names(value: &Value) -> Result<Vec<String>, NoRoom> {
+    let Value::Array(names) = value else {
+        return Err(NoRoom);
+    };
+    names.iter().map(text).collect()
 }

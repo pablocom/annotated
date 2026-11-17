@@ -1,5 +1,5 @@
 //! `write_rules_of` writes the rules of a type into the schema that utoipa generated for it, and utoipa keeps every
-//! keyword annotated writes.
+//! keyword annotated writes. Nothing else in the document changes.
 
 // The types here are only documented, never read.
 #![allow(dead_code)]
@@ -12,7 +12,7 @@ use annotated::{Deserialize, Validate};
 use annotated_utoipa::{write_rules, write_rules_of};
 use serde_json::json;
 use support::schema_named;
-use utoipa::openapi::OpenApi as Document;
+use utoipa::openapi::{KnownFormat, ObjectBuilder, OpenApi as Document, RefOr, Schema, SchemaFormat, Type};
 use utoipa::{Modify, OpenApi, ToSchema};
 
 #[derive(Deserialize, ToSchema)]
@@ -38,7 +38,7 @@ struct NewShop {
     rating: f64,
     #[validate(length(min = 1, max = 5), each(length(max = 20)))]
     tags: Vec<String>,
-    #[validate(length(max = 7), each(required))]
+    #[validate(length(min = 1, max = 7), each(required))]
     opening_hours: HashMap<String, String>,
     #[validate(required)]
     owner_name: Option<String>,
@@ -108,6 +108,57 @@ struct Member {
 #[openapi(components(schemas(Member)))]
 struct MembersApi;
 
+#[derive(Deserialize, ToSchema)]
+struct Catalogue {
+    #[schema(max_items = 5)]
+    #[validate(each(length(max = 20)))]
+    tags: Vec<String>,
+    #[schema(max_items = 5)]
+    #[validate(length(min = 1))]
+    attributes: Vec<serde_json::Value>,
+}
+
+#[derive(Deserialize, ToSchema)]
+struct Event {
+    #[validate(length(max = 20))]
+    name: String,
+    payload: serde_json::Value,
+}
+
+#[derive(Deserialize, ToSchema)]
+struct Discount {
+    #[validate(range(min = 0.0, max = 1.0))]
+    share: f64,
+}
+
+#[derive(Deserialize, ToSchema)]
+struct Ledger {
+    #[validate(range(min = -9_007_199_254_740_993))]
+    balance: i64,
+    #[validate(range(max = 18_446_744_073_709_551_615))]
+    total: u64,
+}
+
+#[derive(Deserialize, ToSchema)]
+struct NewProduct {
+    #[validate(length(max = 20), prefix = "SKU-", suffix = "-X")]
+    sku: String,
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(Catalogue, Event, Discount, Ledger, NewProduct)))]
+struct CatalogueApi;
+
+#[derive(Deserialize, ToSchema)]
+struct Invitation {
+    #[validate(email)]
+    email: String,
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(Invitation)))]
+struct InvitationApi;
+
 #[test]
 fn every_keyword_annotated_writes_is_kept_in_the_document() {
     let mut document = ShopsApi::openapi();
@@ -142,6 +193,7 @@ fn every_keyword_annotated_writes_is_kept_in_the_document() {
                     "type": "object",
                     "additionalProperties": { "type": "string", "minLength": 1 },
                     "propertyNames": { "type": "string" },
+                    "minProperties": 1,
                     "maxProperties": 7
                 },
                 "ownerName": { "type": ["string", "null"] },
@@ -236,5 +288,101 @@ fn the_rules_of_a_type_that_only_derives_validate_are_written_by_naming_its_sche
             "required": ["name"],
             "properties": { "name": { "type": "string", "maxLength": 50 } }
         })
+    );
+}
+
+#[test]
+fn what_utoipa_wrote_is_kept_beside_the_rules() {
+    let mut document = CatalogueApi::openapi();
+
+    let _ = write_rules_of::<Catalogue>(&mut document);
+
+    assert_eq!(
+        schema_named("Catalogue", &document),
+        json!({
+            "type": "object",
+            "required": ["tags", "attributes"],
+            "properties": {
+                "tags": { "type": "array", "items": { "type": "string", "maxLength": 20 }, "maxItems": 5 },
+                "attributes": { "type": "array", "items": {}, "maxItems": 5, "minItems": 1 }
+            }
+        })
+    );
+}
+
+#[test]
+fn the_rules_of_a_struct_with_a_field_of_any_value_are_written_and_that_field_is_left_as_it_is() {
+    let mut document = CatalogueApi::openapi();
+
+    let _ = write_rules_of::<Event>(&mut document);
+
+    assert_eq!(
+        schema_named("Event", &document),
+        json!({
+            "type": "object",
+            "required": ["name", "payload"],
+            "properties": {
+                "name": { "type": "string", "maxLength": 20 },
+                "payload": {}
+            }
+        })
+    );
+}
+
+#[test]
+fn a_range_between_decimal_numbers_is_written() {
+    let mut document = CatalogueApi::openapi();
+
+    let _ = write_rules_of::<Discount>(&mut document);
+
+    assert_eq!(
+        schema_named("Discount", &document)["properties"]["share"],
+        json!({ "type": "number", "format": "double", "minimum": 0, "maximum": 1 })
+    );
+}
+
+#[test]
+fn a_range_is_written_exactly_where_its_bounds_are_beyond_what_a_decimal_number_holds() {
+    let mut document = CatalogueApi::openapi();
+
+    let _ = write_rules_of::<Ledger>(&mut document);
+
+    assert_eq!(
+        schema_named("Ledger", &document)["properties"],
+        json!({
+            "balance": { "type": "integer", "format": "int64", "minimum": -9_007_199_254_740_993_i64 },
+            "total": { "type": "integer", "format": "int64", "minimum": 0, "maximum": 18_446_744_073_709_551_615_u64 }
+        })
+    );
+}
+
+#[test]
+fn a_format_is_held_as_the_one_utoipa_knows_by_that_name() {
+    let mut document = InvitationApi::openapi();
+
+    let _ = write_rules_of::<Invitation>(&mut document);
+
+    let email = ObjectBuilder::new()
+        .schema_type(Type::String)
+        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Email)));
+    assert_eq!(
+        document.components.expect("the document has components").schemas["Invitation"],
+        RefOr::T(Schema::Object(
+            ObjectBuilder::new().property("email", email).required("email").build()
+        ))
+    );
+}
+
+#[test]
+fn a_second_call_changes_nothing_in_the_document() {
+    let mut document = CatalogueApi::openapi();
+    let _ = write_rules_of::<NewProduct>(&mut document);
+    let after_the_first_call = serde_json::to_value(&document).expect("the document becomes JSON");
+
+    let _ = write_rules_of::<NewProduct>(&mut document);
+
+    assert_eq!(
+        serde_json::to_value(&document).expect("the document becomes JSON"),
+        after_the_first_call
     );
 }
