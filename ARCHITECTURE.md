@@ -559,10 +559,10 @@ Where a schema says something a little different from the rule:
 
 [`annotated-utoipa`](crates/annotated-utoipa) writes the rules into an OpenAPI document that utoipa 6 generated. `json_schema` keeps to JSON Schema, and what is particular to utoipa stays in that crate:
 
-- **Finding the schema.** `write_rules_of::<T>` looks among the document's components for the schema named `T::name()`. utoipa names a generic type's schema after its arguments, `Page_Address`, which `name()` doesn't know, so `write_rules` takes the name and the rules.
+- **Finding the schema.** `write_rules_of::<T>` looks among the document's components for the schema named `T::name()`, and writes `annotated::Deserialize::rules`. utoipa names a generic type's schema after its arguments, `Page_Address`, which `name()` doesn't know, and a type that only derives `Validate` has its rules there, so `write_rules` takes the rules and the name, in the order `json_schema::write_rules` takes the rules and the schema.
 - **Writing into it.** utoipa's schema becomes JSON, `json_schema::write_rules` writes into it, and utoipa reads it back. utoipa reads a schema with a `type` as a schema of that type, which holds no `allOf`. So before it is read back, an `allOf` beside a `type`, which a second `pattern` makes, is made to stand on its own: the schema's other keywords become its first member, and each member takes the `type`, without which utoipa can't read it.
 - **Checking what utoipa kept.** The schema utoipa holds afterwards is compared with what was written, and each keyword it left out is reported at its JSON Pointer. The comparison starts from the schema as utoipa reads it back, since utoipa leaves a `default` of `null` out of its own schemas, and that isn't a rule left out.
-- **The report.** Each `Unwritten` is a rule annotated couldn't write, a type the document has no schema for, or a keyword utoipa left out. Like `json_schema::write_rules`, the crate never panics or logs for them: the caller decides.
+- **The report.** Each `Unwritten` names the schema it is about and the JSON Pointer of the place in it, since a caller writes the rules of many types and reports them together. Its `Reason` is a rule annotated couldn't write, a type the document has no schema for, or a keyword utoipa left out. Like `json_schema::write_rules`, the crate never panics or logs for them: the caller decides.
 - Each type is named once, where the document is built. With utoipa-axum, that is after the routes have added their schemas.
 
 ## Crates and features

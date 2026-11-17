@@ -1,11 +1,12 @@
 //! What the document still doesn't say about a type's rules is returned, for the caller to decide about: a rule
-//! annotated couldn't write, a type the document has no schema for, and what utoipa's schema can't hold.
+//! annotated couldn't write, a type the document has no schema for, and what utoipa's schema can't hold. Each names
+//! the schema it is about and where in it.
 
 // The types here are only documented, never read.
 #![allow(dead_code)]
 
 use annotated::Deserialize;
-use annotated_utoipa::{Unwritten, write_rules, write_rules_of};
+use annotated_utoipa::{Reason, Unwritten, write_rules, write_rules_of};
 use serde_json::json;
 use utoipa::openapi::OpenApi as Document;
 use utoipa::{OpenApi, ToSchema};
@@ -83,7 +84,9 @@ fn a_rule_annotated_could_not_write_is_returned() {
 
     assert_eq!(
         unwritten.iter().map(ToString::to_string).collect::<Vec<_>>(),
-        ["`ip` can't be written at `/properties/address`: no keyword says what the rule requires"]
+        [
+            "`ip` can't be written at `/properties/address` in the schema `Server`: no keyword says what the rule requires"
+        ]
     );
 }
 
@@ -93,7 +96,10 @@ fn a_type_the_document_has_no_schema_for_is_returned() {
 
     let unwritten = write_rules_of::<Invitation>(&mut document);
 
-    assert_eq!(unwritten, [Unwritten::NoSchema("Invitation".to_owned())]);
+    assert_eq!(
+        unwritten.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        ["the document has no schema named `Invitation`"]
+    );
 }
 
 #[test]
@@ -102,27 +108,24 @@ fn a_generic_type_is_not_found_by_the_name_of_its_type_alone() {
 
     let unwritten = write_rules_of::<Page<Server>>(&mut document);
 
-    assert_eq!(unwritten, [Unwritten::NoSchema("Page".to_owned())]);
+    assert_eq!(
+        unwritten.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        ["the document has no schema named `Page`"]
+    );
 }
 
 #[test]
 fn what_utoipa_s_schema_can_not_hold_is_returned() {
     let mut document = document_with_a_string_or_a_list("Labels", "tags");
 
-    let unwritten = write_rules(&mut document, "Labels", &Labels::rules());
-
-    assert_eq!(unwritten, [Unwritten::LeftOut("/properties/tags/maxLength".to_owned())]);
-}
-
-#[test]
-fn a_property_name_in_the_pointer_of_what_utoipa_can_not_hold_is_escaped() {
-    let mut document = document_with_a_string_or_a_list("Shelf", "tags/all");
-
-    let unwritten = write_rules(&mut document, "Shelf", &Shelf::rules());
+    let unwritten = write_rules(&Labels::rules(), &mut document, "Labels");
 
     assert_eq!(
-        unwritten,
-        [Unwritten::LeftOut("/properties/tags~1all/maxLength".to_owned())]
+        unwritten.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        [
+            "what was written at `/properties/tags/maxLength` in the schema `Labels` is left out: utoipa's schema \
+             can't hold it"
+        ]
     );
 }
 
@@ -136,18 +139,70 @@ fn what_utoipa_leaves_out_of_its_own_schema_is_not_returned() {
 }
 
 #[test]
-fn a_type_the_document_has_no_schema_for_reads_as_such() {
-    let unwritten = Unwritten::NoSchema("Invitation".to_owned());
+fn each_unwritten_rule_names_the_schema_it_is_about() {
+    let mut document = ServersApi::openapi();
 
-    assert_eq!(unwritten.to_string(), "the document has no schema named `Invitation`");
+    let unwritten = write_rules_of::<Server>(&mut document);
+
+    assert_eq!(
+        unwritten.iter().map(Unwritten::schema_name).collect::<Vec<_>>(),
+        ["Server"]
+    );
 }
 
 #[test]
-fn what_utoipa_s_schema_can_not_hold_reads_as_such() {
-    let unwritten = Unwritten::LeftOut("/properties/tags/maxLength".to_owned());
+fn where_an_unwritten_rule_belongs_is_a_json_pointer() {
+    let mut document = ServersApi::openapi();
+
+    let unwritten = write_rules_of::<Server>(&mut document);
 
     assert_eq!(
-        unwritten.to_string(),
-        "what was written at `/properties/tags/maxLength` is left out: utoipa's schema can't hold it"
+        unwritten.iter().map(Unwritten::pointer).collect::<Vec<_>>(),
+        ["/properties/address"]
+    );
+}
+
+#[test]
+fn a_property_name_in_the_pointer_of_what_utoipa_can_not_hold_is_escaped() {
+    let mut document = document_with_a_string_or_a_list("Shelf", "tags/all");
+
+    let unwritten = write_rules(&Shelf::rules(), &mut document, "Shelf");
+
+    assert_eq!(
+        unwritten.iter().map(Unwritten::pointer).collect::<Vec<_>>(),
+        ["/properties/tags~1all/maxLength"]
+    );
+}
+
+#[test]
+fn the_whole_schema_is_unwritten_when_the_document_has_none_of_that_name() {
+    let mut document = ServersApi::openapi();
+
+    let unwritten = write_rules_of::<Invitation>(&mut document);
+
+    assert_eq!(unwritten.iter().map(Unwritten::pointer).collect::<Vec<_>>(), [""]);
+}
+
+#[test]
+fn a_type_the_document_has_no_schema_for_is_unwritten_for_that_reason() {
+    let mut document = ServersApi::openapi();
+
+    let unwritten = write_rules_of::<Invitation>(&mut document);
+
+    assert_eq!(
+        unwritten.iter().map(Unwritten::reason).collect::<Vec<_>>(),
+        [&Reason::NoSchema]
+    );
+}
+
+#[test]
+fn what_utoipa_s_schema_can_not_hold_is_unwritten_for_that_reason() {
+    let mut document = document_with_a_string_or_a_list("Labels", "tags");
+
+    let unwritten = write_rules(&Labels::rules(), &mut document, "Labels");
+
+    assert_eq!(
+        unwritten.iter().map(Unwritten::reason).collect::<Vec<_>>(),
+        [&Reason::NotHeld]
     );
 }

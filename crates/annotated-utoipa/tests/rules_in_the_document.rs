@@ -8,7 +8,7 @@ mod support;
 
 use std::collections::HashMap;
 
-use annotated::Deserialize;
+use annotated::{Deserialize, Validate};
 use annotated_utoipa::{write_rules, write_rules_of};
 use serde_json::json;
 use support::schema_named;
@@ -97,6 +97,16 @@ struct Page<T> {
 #[derive(OpenApi)]
 #[openapi(components(schemas(Page<Address>, Address)))]
 struct PagesApi;
+
+#[derive(Validate, ToSchema)]
+struct Member {
+    #[validate(length(max = 50))]
+    name: String,
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(Member)))]
+struct MembersApi;
 
 #[test]
 fn every_keyword_annotated_writes_is_kept_in_the_document() {
@@ -188,7 +198,7 @@ fn the_rules_of_a_struct_with_a_flattened_field_are_written_beside_its_other_fie
 fn the_rules_of_a_generic_type_are_written_into_the_schema_named_after_its_arguments() {
     let mut document = PagesApi::openapi();
 
-    let _ = write_rules(&mut document, "Page_Address", &<Page<Address> as Deserialize>::rules());
+    let _ = write_rules(&<Page<Address> as Deserialize>::rules(), &mut document, "Page_Address");
 
     assert_eq!(
         schema_named("Page_Address", &document),
@@ -209,6 +219,22 @@ fn the_rules_of_a_generic_type_are_written_into_the_schema_named_after_its_argum
                     "maxItems": 100
                 }
             }
+        })
+    );
+}
+
+#[test]
+fn the_rules_of_a_type_that_only_derives_validate_are_written_by_naming_its_schema() {
+    let mut document = MembersApi::openapi();
+
+    let _ = write_rules(&<Member as Validate>::rules(), &mut document, "Member");
+
+    assert_eq!(
+        schema_named("Member", &document),
+        json!({
+            "type": "object",
+            "required": ["name"],
+            "properties": { "name": { "type": "string", "maxLength": 50 } }
         })
     );
 }

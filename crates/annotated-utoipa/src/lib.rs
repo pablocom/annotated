@@ -42,10 +42,11 @@
 //!
 //! # What the document still doesn't say
 //!
-//! Each call returns what the document doesn't say about the type's rules, as an [`Unwritten`]: a rule that no
-//! keyword says, such as `ip`, a type the document has no schema for, or a keyword utoipa's schema can't hold. Which
-//! of them a document can do without is the caller's choice. An app that wants every rule in its document can
-//! panic on any, so a rule missing from the document is noticed when the app starts.
+//! Each call returns what the document doesn't say about the type's rules, each as an [`Unwritten`]: the schema it is
+//! about, where in it, and the [`Reason`]. It is a rule that no keyword says, such as `ip`, a type the document has no
+//! schema for, or a keyword utoipa's schema can't hold. Which of them a document can do without is the caller's
+//! choice. An app that wants every rule in its document can panic on any, so a rule missing from the document is
+//! noticed when the app starts.
 //!
 //! # How the schema is written
 //!
@@ -53,14 +54,16 @@
 //! has room for one `pattern` and no `allOf` beside its `type`, so a second pattern, which annotated requires
 //! through `allOf`, is required through an `allOf` of its own instead: the schema's keywords are its first member,
 //! and each other member takes the schema's `type`. Whatever utoipa still leaves out when it reads the schema back is
-//! returned as [`Unwritten::LeftOut`].
+//! returned, for [`Reason::NotHeld`].
 //!
 //! # Other types
 //!
+//! [`write_rules`] takes the rules and the name of the schema, for the types [`write_rules_of`] can't name:
+//!
 //! - **A generic type** is named after its arguments in the document, `Page_Address` for `Page<Address>`, and
-//!   [`ToSchema::name`] only knows `Page`. Name its schema with [`write_rules`].
+//!   [`ToSchema::name`] only knows `Page`.
 //! - **A type that derives `annotated::Validate`** and is read by serde's own `Deserialize` has its rules in
-//!   `Validate::rules`. Pass them to [`write_rules`].
+//!   `Validate::rules`.
 //!
 //! # Versions
 //!
@@ -78,28 +81,80 @@ use utoipa::openapi::{OpenApi, RefOr};
 /// Writes the rules of `T` into the schema utoipa generated for it, among the components of `openapi`, and returns
 /// what the document still doesn't say about them.
 ///
-/// The schema is the one named [`ToSchema::name`]. Writing the same rules a second time changes nothing.
+/// The schema is the one named [`ToSchema::name`], and the rules are those `annotated::Deserialize::rules` describes.
+/// Writing the same rules a second time changes nothing.
 #[must_use = "a rule left out of the document is only reported here"]
 pub fn write_rules_of<T>(openapi: &mut OpenApi) -> Vec<Unwritten>
 where
     T: ToSchema + for<'de> annotated::Deserialize<'de>,
 {
-    write_rules(openapi, &T::name(), &<T as annotated::Deserialize>::rules())
+    write_rules(&<T as annotated::Deserialize>::rules(), openapi, &T::name())
 }
 
 /// Writes `rules` into the schema named `schema_name` among the components of `openapi`, and returns what the
 /// document still doesn't say about them.
 ///
-/// It is [`write_rules_of`] for a schema that isn't named after its type, such as a generic type's
-/// (`Page_Address`), and for rules from elsewhere, such as `Validate::rules`.
+/// It is [`write_rules_of`] for a schema that isn't named after its type, such as a generic type's, which is named
+/// after its arguments:
+///
+/// ```
+/// use annotated::Deserialize;
+/// use utoipa::{OpenApi, ToSchema};
+///
+/// #[derive(Deserialize, ToSchema)]
+/// struct Page<T> {
+///     #[validate(length(max = 100))]
+///     items: Vec<T>,
+/// }
+///
+/// #[derive(Deserialize, ToSchema)]
+/// struct Address {
+///     street: String,
+/// }
+///
+/// #[derive(OpenApi)]
+/// #[openapi(components(schemas(Page<Address>, Address)))]
+/// struct AddressesApi;
+///
+/// let mut document = AddressesApi::openapi();
+///
+/// let rules = <Page<Address> as Deserialize>::rules();
+/// let unwritten = annotated_utoipa::write_rules(&rules, &mut document, "Page_Address");
+///
+/// assert_eq!(unwritten, []);
+/// ```
+///
+/// And for rules from elsewhere, such as those of a type that derives `annotated::Validate` and is read by serde's own
+/// `Deserialize`:
+///
+/// ```
+/// use annotated::Validate;
+/// use utoipa::{OpenApi, ToSchema};
+///
+/// #[derive(Validate, ToSchema)]
+/// struct NewMember {
+///     #[validate(length(max = 50))]
+///     name: String,
+/// }
+///
+/// #[derive(OpenApi)]
+/// #[openapi(components(schemas(NewMember)))]
+/// struct MembersApi;
+///
+/// let mut document = MembersApi::openapi();
+///
+/// let unwritten = annotated_utoipa::write_rules(&<NewMember as Validate>::rules(), &mut document, "NewMember");
+///
+/// assert_eq!(unwritten, []);
+/// ```
 #[must_use = "a rule left out of the document is only reported here"]
-pub fn write_rules(openapi: &mut OpenApi, schema_name: &str, rules: &Rules) -> Vec<Unwritten> {
+pub fn write_rules(rules: &Rules, openapi: &mut OpenApi, schema_name: &str) -> Vec<Unwritten> {
     let Some(schema) = openapi
         .components
         .as_mut()
         .and_then(|components| components.schemas.get_mut(schema_name))
     else {
-        return vec![Unwritten::NoSchema(schema_name.to_owned())];
+        return vec![Unwritten::new(schema_name, String::new(), Reason::NoSchema)];
     };
     let mut with_rules = json_as_utoipa_reads_it(schema);
     let unwritten_rules = json_schema::write_rules(rules, &mut with_rules);
@@ -109,37 +164,120 @@ pub fn write_rules(openapi: &mut OpenApi, schema_name: &str, rules: &Rules) -> V
     if let Some(schema_with_rules) = read_back(&with_rules) {
         *schema = schema_with_rules;
     }
-    let mut unwritten: Vec<Unwritten> = unwritten_rules.into_iter().map(Unwritten::Rule).collect();
-    left_out(&with_rules, Some(&json_of(schema)), "", &mut unwritten);
-    unwritten
+    let mut left_out_pointers = Vec::new();
+    left_out(&with_rules, Some(&json_of(schema)), "", &mut left_out_pointers);
+    let unwritten_rules = unwritten_rules
+        .into_iter()
+        .map(|rule| Unwritten::new(schema_name, rule.pointer().to_owned(), Reason::Rule(rule)));
+    let left_out = left_out_pointers
+        .into_iter()
+        .map(|pointer| Unwritten::new(schema_name, pointer, Reason::NotHeld));
+    unwritten_rules.chain(left_out).collect()
 }
 
-/// Something the document doesn't say about a type's rules, which [`write_rules_of`] and [`write_rules`] return.
+/// Something the document doesn't say about a type's rules, which [`write_rules_of`] and [`write_rules`] return: the
+/// schema it is about, where in it, and why.
 ///
-/// New kinds may be added without a breaking change, so a `match` on it needs a wildcard arm.
+/// ```
+/// use annotated::Deserialize;
+/// use annotated_utoipa::Reason;
+/// use utoipa::{OpenApi, ToSchema};
+///
+/// #[derive(Deserialize, ToSchema)]
+/// struct Server {
+///     #[validate(ip)]
+///     address: String,
+/// }
+///
+/// #[derive(OpenApi)]
+/// #[openapi(components(schemas(Server)))]
+/// struct ServersApi;
+///
+/// let mut document = ServersApi::openapi();
+///
+/// let unwritten = annotated_utoipa::write_rules_of::<Server>(&mut document);
+///
+/// assert_eq!(unwritten[0].schema_name(), "Server");
+/// assert_eq!(unwritten[0].pointer(), "/properties/address");
+/// assert!(matches!(unwritten[0].reason(), Reason::Rule(rule) if rule.problem().code() == "ip"));
+/// assert_eq!(
+///     unwritten[0].to_string(),
+///     "`ip` can't be written at `/properties/address` in the schema `Server`: no keyword says what the rule requires"
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
-pub enum Unwritten {
-    /// The document has no schema of this name among its components, so it says none of the type's rules.
-    NoSchema(String),
-    /// A rule annotated couldn't write into the type's schema: where its keyword belongs, and why it isn't there.
-    Rule(UnwrittenRule),
-    /// What annotated wrote at this JSON Pointer in the type's schema, which utoipa's schema can't hold, so the
-    /// document leaves it out.
-    LeftOut(String),
+pub struct Unwritten {
+    schema_name: String,
+    pointer: String,
+    reason: Reason,
+}
+
+impl Unwritten {
+    fn new(schema_name: &str, pointer: String, reason: Reason) -> Self {
+        Self {
+            schema_name: schema_name.to_owned(),
+            pointer,
+            reason,
+        }
+    }
+
+    /// The name of the schema it is about, among the document's components: the one [`write_rules_of`] looked for,
+    /// or the one given to [`write_rules`].
+    #[must_use]
+    pub fn schema_name(&self) -> &str {
+        &self.schema_name
+    }
+
+    /// Where in that schema, as an RFC 6901 JSON Pointer: where a rule's keyword belongs, `/properties/address`, or
+    /// what utoipa's schema can't hold, `/properties/tags/maxLength`. It is empty, which points at the whole schema,
+    /// when the document has no schema of that name.
+    #[must_use]
+    pub fn pointer(&self) -> &str {
+        &self.pointer
+    }
+
+    /// Why the document doesn't say it.
+    #[must_use]
+    pub fn reason(&self) -> &Reason {
+        &self.reason
+    }
 }
 
 impl fmt::Display for Unwritten {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoSchema(name) => write!(formatter, "the document has no schema named `{name}`"),
-            Self::Rule(rule) => rule.fmt(formatter),
-            Self::LeftOut(pointer) => write!(
+        let Self {
+            schema_name,
+            pointer,
+            reason,
+        } = self;
+        match reason {
+            Reason::NoSchema => write!(formatter, "the document has no schema named `{schema_name}`"),
+            Reason::Rule(rule) => write!(
                 formatter,
-                "what was written at `{pointer}` is left out: utoipa's schema can't hold it"
+                "`{}` can't be written at `{pointer}` in the schema `{schema_name}`: {}",
+                rule.problem().code(),
+                rule.reason()
+            ),
+            Reason::NotHeld => write!(
+                formatter,
+                "what was written at `{pointer}` in the schema `{schema_name}` is left out: utoipa's schema can't hold it"
             ),
         }
     }
+}
+
+/// Why the document doesn't say something about a type's rules.
+///
+/// New reasons may be added without a breaking change, so a `match` on it needs a wildcard arm.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum Reason {
+    /// The document has no schema of that name among its components, so it says none of the type's rules.
+    NoSchema,
+    /// annotated couldn't write the rule into the schema. [`UnwrittenRule::reason`] says why.
+    Rule(UnwrittenRule),
+    /// annotated wrote a keyword there that utoipa's schema can't hold, so the document leaves it out.
+    NotHeld,
 }
 
 // utoipa leaves a few things out of its own schemas when it reads them back, such as a `default` of `null`. Starting
@@ -200,17 +338,16 @@ fn subschemas(schema: &mut Map<String, Value>) -> Vec<&mut Map<String, Value>> {
     subschemas
 }
 
-/// Adds a [`Unwritten::LeftOut`] for each JSON Pointer, from `pointer` down, where `written` has something that
-/// `held` doesn't.
-fn left_out(written: &Value, held: Option<&Value>, pointer: &str, unwritten: &mut Vec<Unwritten>) {
+/// Adds each JSON Pointer, from `pointer` down, where `written` has something that `held` doesn't.
+fn left_out(written: &Value, held: Option<&Value>, pointer: &str, left_out_pointers: &mut Vec<String>) {
     match (written, held) {
         (Value::Object(written), Some(Value::Object(held))) => {
             for (keyword, value) in written {
                 let pointer = format!("{pointer}/{}", keyword.replace('~', "~0").replace('/', "~1"));
-                left_out(value, held.get(keyword), &pointer, unwritten);
+                left_out(value, held.get(keyword), &pointer, left_out_pointers);
             }
         }
         (written, Some(held)) if written == held => {}
-        _ => unwritten.push(Unwritten::LeftOut(pointer.to_owned())),
+        _ => left_out_pointers.push(pointer.to_owned()),
     }
 }

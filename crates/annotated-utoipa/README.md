@@ -67,21 +67,33 @@ A type `nested` in another has rules of its own, so it takes a call of its own.
 
 ## What the document still doesn't say
 
-Each call returns what the document still doesn't say about the type's rules, and leaves the choice to you. An app that wants every rule in its document panics on any, as above, so a rule missing from the document is noticed when the app starts. An app that can do without some lets those through. Each is an `Unwritten`:
+Each call returns what the document still doesn't say about the type's rules, and leaves the choice to you. An app that wants every rule in its document panics on any, as above, so a rule missing from the document is noticed when the app starts. An app that can do without some lets those through. Each is an `Unwritten`, which names the schema it is about, the JSON Pointer of the place in it, and its `Reason`:
 
-- **`Rule`**: a rule annotated couldn't write, with the JSON Pointer where its keyword belongs and why. `ip` is one, since no keyword says "an IPv4 or IPv6 address". So is a rule on a field whose schema is a `$ref`.
-- **`NoSchema`**: the document has no schema by the type's name, so it says none of its rules.
-- **`LeftOut`**: a keyword annotated wrote that utoipa's schema can't hold, with its JSON Pointer.
+- **`Rule`**: a rule annotated couldn't write, at the place its keyword belongs, with annotated's own reason. `ip` is one, since no keyword says "an IPv4 or IPv6 address". So is a rule on a field whose schema is a `$ref`.
+- **`NoSchema`**: the document has no schema by that name, so it says none of the type's rules.
+- **`NotHeld`**: a keyword annotated wrote that utoipa's schema can't hold, at the place it was written.
+
+It reads as one sentence, such as:
+
+```text
+`ip` can't be written at `/properties/address` in the schema `Server`: no keyword says what the rule requires
+```
 
 ## Other types
 
-- **A generic type** is named after its arguments in the document, `Page_Address` for `Page<Address>`, and utoipa only gives its type's name, `Page`. Name its schema with `write_rules`:
+`write_rules` takes the rules and the name of the schema, for the types `write_rules_of` can't name:
+
+- **A generic type** is named after its arguments in the document, `Page_Address` for `Page<Address>`, and utoipa only gives its type's name, `Page`:
 
   ```rust
-  let unwritten = annotated_utoipa::write_rules(&mut document, "Page_Address", &<Page<Address> as Deserialize>::rules());
+  let unwritten = annotated_utoipa::write_rules(&<Page<Address> as Deserialize>::rules(), &mut document, "Page_Address");
   ```
 
-- **A type that derives `annotated::Validate`** and is read by serde's own `Deserialize` has its rules in `Validate::rules`. Pass them to `write_rules` the same way.
+- **A type that derives `annotated::Validate`** and is read by serde's own `Deserialize` has its rules in `Validate::rules`:
+
+  ```rust
+  let unwritten = annotated_utoipa::write_rules(&<NewMember as Validate>::rules(), &mut document, "NewMember");
+  ```
 
 ## How the schema is written
 
