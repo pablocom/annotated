@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, Visitor};
 
-use crate::collecting_type_errors::problem_of;
+use crate::collecting_type_errors::problem_or_error;
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{BufferedEnum, ContentDeserializer, ReadAs, WrongType};
 use crate::{Location, Report};
@@ -51,17 +51,21 @@ impl<'de> Leftovers<'de> {
 
     /// Reads a flattened `T`, and pushes into `found`, at `at`, a [`Problem::InvalidType`](crate::Problem) when the
     /// entries don't fit it. `type_name` says what was expected when serde's error doesn't.
-    pub fn flattened_collecting_type_errors<T: serde::Deserialize<'de>>(
+    ///
+    /// # Errors
+    ///
+    /// The format's error `E`, for a key the `T` refuses: given twice, or one it denies.
+    pub fn flattened_collecting_type_errors<T: serde::Deserialize<'de>, E: de::Error>(
         &mut self,
         type_name: &'static str,
         at: &Location<'_>,
         found: &mut Report,
-    ) -> Option<T> {
+    ) -> Result<Option<T>, E> {
         match T::deserialize(self.flattened::<WrongType>()) {
-            Ok(value) => Some(value),
+            Ok(value) => Ok(Some(value)),
             Err(wrong_type) => {
-                found.push(at, problem_of(wrong_type, type_name, ValueKind::Map));
-                None
+                found.push(at, problem_or_error(wrong_type, type_name, ValueKind::Map)?);
+                Ok(None)
             }
         }
     }

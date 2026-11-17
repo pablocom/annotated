@@ -877,12 +877,12 @@ impl<'a> DeserializeExpansion<'a> {
             (false, None) if self.deserialized_struct.collects_type_errors => {
                 let type_name = type_name_of(field_type);
                 let read = quote_at! {field_type.span()=>
-                    _annotated::__private::Leftovers::flattened_collecting_type_errors::<#read_type>(
+                    _annotated::__private::Leftovers::flattened_collecting_type_errors::<#read_type, __A::Error>(
                         &mut #leftovers,
                         #type_name,
                         self.#at,
                         &mut #read_issues,
-                    )
+                    )?
                 };
                 if is_read_by_a_function {
                     quote!(::core::option::Option::map(#read, |#wrapper| #wrapper.value))

@@ -6,7 +6,7 @@ use serde::Deserialize as _;
 use serde::de::{self, DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Visitor};
 
 use crate::Problem;
-use crate::collecting_type_errors::problem_of;
+use crate::collecting_type_errors::problem_or_error;
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, ReadAs, TypeError, WrongType};
 use crate::content_ref_deserializer::ContentRefDeserializer;
@@ -203,14 +203,20 @@ impl<'de> Buffered<'de> {
     ///
     /// # Errors
     ///
-    /// The problem, when the value doesn't fit what `seed` reads.
-    pub fn read_collecting_type_errors<S, T>(self, seed: S, type_name: &'static str) -> Result<Option<T>, Problem>
+    /// The format's error `E`, for a key a struct in the value refuses: given twice, or one it denies.
+    pub fn read_collecting_type_errors<S, T, E: de::Error>(
+        self,
+        seed: S,
+        type_name: &'static str,
+    ) -> Result<Result<Option<T>, Problem>, E>
     where
         S: DeserializeSeed<'de, Value = Option<T>>,
     {
         let kind_found = self.content.kind();
-        seed.deserialize(ContentDeserializer::<TypeError>::new(self.content, self.read_as))
-            .map_err(|error| problem_of(error.into_wrong_type(), type_name, kind_found))
+        match seed.deserialize(ContentDeserializer::<TypeError>::new(self.content, self.read_as)) {
+            Ok(value) => Ok(Ok(value)),
+            Err(error) => problem_or_error(error.into_wrong_type(), type_name, kind_found).map(Err),
+        }
     }
 }
 

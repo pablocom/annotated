@@ -4,7 +4,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use serde::Deserializer;
-use serde::de::{DeserializeSeed, EnumAccess, Error as _, VariantAccess, Visitor};
+use serde::de::{self, DeserializeSeed, EnumAccess, Error as _, VariantAccess, Visitor};
 
 use crate::content::{Content, ValueKind};
 use crate::content_deserializer::{
@@ -17,7 +17,8 @@ use crate::{Deserialize, Location, Problem, Report};
 ///
 /// It reads a `T` at a location in two steps: first into a buffer that holds any well-formed value, then from the
 /// buffer as a `T`. A value of the wrong type is then pushed into a report as a [`Problem::InvalidType`], instead of
-/// ending deserialization.
+/// ending deserialization. A key a struct in the `T` refuses, given twice or one it denies, isn't a value of the wrong
+/// type, and still ends deserialization with the format's error.
 pub struct CollectingTypeErrorsAt<'a, 'l, T> {
     type_name: &'static str,
     at: &'a Location<'l>,
@@ -131,8 +132,8 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
         match T::deserialize(buffered) {
             Ok(value) => Ok(Some(value)),
             Err(FunctionError::WrongType(wrong_type)) => {
-                self.found
-                    .push(self.at, problem_of(wrong_type, self.type_name, kind_found));
+                let problem = problem_or_error(wrong_type, self.type_name, kind_found)?;
+                self.found.push(self.at, problem);
                 Ok(None)
             }
             Err(FunctionError::Message(message)) => Err(D::Error::custom(message)),
@@ -149,8 +150,8 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
 ///
 /// # Errors
 ///
-/// The format's own error, when the value isn't well-formed, or when no entry left names a variant of a flattened
-/// enum.
+/// The format's own error, when the value isn't well-formed, when a struct in it refuses a key, given twice or one it
+/// denies, or when no entry left names a variant of a flattened enum.
 pub fn deserialize_enum_collecting_type_errors<'de, D, V, T>(
     deserializer: D,
     name: &'static str,
@@ -184,9 +185,10 @@ where
 {
     let read_as = ReadAs::of_a_value_from(&deserializer);
     let entry = deserializer.deserialize_enum(reading_the_enum.name, reading_the_enum.variants, EntryNamingAVariant)?;
-    Ok(reading_the_enum
-        .deserialize(ContentDeserializer::<TypeError>::new(entry, read_as))
-        .map_err(|error| problem_of(error.into_wrong_type(), type_name, ValueKind::Map)))
+    match reading_the_enum.deserialize(ContentDeserializer::<TypeError>::new(entry, read_as)) {
+        Ok(value) => Ok(Ok(value)),
+        Err(error) => problem_or_error(error.into_wrong_type(), type_name, ValueKind::Map).map(Err),
+    }
 }
 
 /// Takes the entry a flattened enum is read from, as a map of that entry alone.
@@ -211,7 +213,8 @@ impl<'de> Visitor<'de> for EntryNamingAVariant {
 ///
 /// # Errors
 ///
-/// The format's own error, when the value isn't well-formed.
+/// The format's own error, when the value isn't well-formed, or when the enum or a struct in it refuses a key, given
+/// twice or one it denies.
 pub fn deserialize_adjacently_tagged_collecting_type_errors<'de, D, V, T>(
     deserializer: D,
     name: &'static str,
@@ -294,9 +297,10 @@ where
     S: DeserializeSeed<'de>,
 {
     let (buffered, kind_found) = buffered::<D, TypeError>(deserializer)?;
-    Ok(seed
-        .deserialize(buffered)
-        .map_err(|error| problem_of(error.into_wrong_type(), type_name, kind_found)))
+    match seed.deserialize(buffered) {
+        Ok(value) => Ok(Ok(value)),
+        Err(error) => problem_or_error(error.into_wrong_type(), type_name, kind_found).map(Err),
+    }
 }
 
 /// Reads with `seed` the value annotated's buffer offers to read in place, as an enum whose variant is the kind of the
@@ -318,7 +322,9 @@ impl<'de, S: DeserializeSeed<'de>> Visitor<'de> for ReadInPlace<S> {
         match value.newtype_variant_seed(self.seed) {
             Ok(value) => Ok(Ok(value)),
             Err(error) => match (TypeError::take_wrong_type(&error), ValueKind::named(kind_found)) {
-                (Some(wrong_type), Some(kind_found)) => Ok(Err(problem_of(wrong_type, self.type_name, kind_found))),
+                (Some(wrong_type), Some(kind_found)) => {
+                    problem_or_error(wrong_type, self.type_name, kind_found).map(Err)
+                }
                 _ => Err(error),
             },
         }
@@ -339,14 +345,21 @@ fn buffered<'de, D: Deserializer<'de>, E>(
     Ok((ContentDeserializer::new(content, read_as), kind))
 }
 
+/// The problem to report for a value that doesn't fit its type, or the format's error for a key its type refuses,
+/// which isn't a value of the wrong type. `type_name` says what was expected when serde's error doesn't.
 #[cold]
-pub(crate) fn problem_of(wrong_type: WrongType, type_name: &'static str, kind_found: ValueKind) -> Problem {
+pub(crate) fn problem_or_error<E: de::Error>(
+    wrong_type: WrongType,
+    type_name: &'static str,
+    kind_found: ValueKind,
+) -> Result<Problem, E> {
     match wrong_type {
-        WrongType::Mismatched { expected, found } => Problem::InvalidType {
+        WrongType::Mismatched { expected, found } => Ok(Problem::InvalidType {
             expected: expected.map_or(Cow::Borrowed(type_name), Cow::Owned),
             found: found.unwrap_or(kind_found).name(),
-        },
-        WrongType::UnknownVariant { expected } => Problem::UnknownVariant { expected },
+        }),
+        WrongType::UnknownVariant { expected } => Ok(Problem::UnknownVariant { expected }),
+        WrongType::RefusedKey(key) => Err((*key).into_error()),
     }
 }
 

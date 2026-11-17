@@ -599,6 +599,150 @@ fn an_unknown_field_is_still_the_format_s_error_when_the_struct_denies_unknown_f
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct Street {
+    #[allow(dead_code)]
+    name: String,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct Postcode {
+    #[allow(dead_code)]
+    code: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct Delivery {
+    #[validate(nested)]
+    #[allow(dead_code)]
+    street: Street,
+    #[allow(dead_code)]
+    postcode: Option<Postcode>,
+}
+
+#[test]
+fn a_key_given_twice_in_a_nested_struct_is_still_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<Delivery>(r#"{ "street": { "name": "Gran Vía", "name": "Alcalá" } }"#),
+        "duplicate field `name` at line 1 column 56"
+    );
+}
+
+#[test]
+fn a_key_refused_in_a_buffered_value_is_placed_past_that_value() {
+    assert_eq!(
+        format_error_reading::<Delivery>(r#"{ "street": { "name": "Gran Vía", "name": "Alcalá" }, "postcode": null }"#),
+        "duplicate field `name` at line 1 column 54"
+    );
+}
+
+#[test]
+fn a_key_a_nested_struct_denies_is_still_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<Delivery>(r#"{ "street": { "name": "Gran Vía", "zip": 1 } }"#),
+        "unknown field `zip`, expected `name` at line 1 column 47"
+    );
+}
+
+#[test]
+fn a_key_given_twice_in_a_value_serde_reads_is_still_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<Delivery>(
+            r#"{ "street": { "name": "Gran Vía" }, "postcode": { "code": "28013", "code": "28014" } }"#
+        ),
+        "duplicate field `code` at line 1 column 87"
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct Shipment {
+    #[allow(dead_code)]
+    weight: u8,
+    #[serde(flatten)]
+    #[allow(dead_code)]
+    postcode: Postcode,
+}
+
+#[test]
+fn a_key_given_twice_for_a_flattened_struct_is_still_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<Shipment>(r#"{ "weight": 1, "code": "28013", "code": "28014" }"#),
+        "duplicate field `code` at line 1 column 49"
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+enum Payment {
+    Card {
+        #[allow(dead_code)]
+        number: String,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+struct Checkout {
+    #[serde(flatten)]
+    #[validate(nested)]
+    #[allow(dead_code)]
+    payment: Payment,
+}
+
+#[test]
+fn a_key_given_twice_in_a_flattened_enum_s_variant_is_still_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<Checkout>(r#"{ "Card": { "number": "4111", "number": "5500" } }"#),
+        "duplicate field `number` at line 1 column 50"
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type", content = "data", deny_unknown_fields)]
+#[annotated(collect_type_errors)]
+enum Instruction {
+    Deliver {
+        #[allow(dead_code)]
+        to: String,
+    },
+}
+
+#[test]
+fn a_key_given_twice_in_content_before_its_tag_is_still_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<Instruction>(r#"{ "data": { "to": "Gran Vía", "to": "Alcalá" }, "type": "Deliver" }"#),
+        "duplicate field `to`"
+    );
+}
+
+#[test]
+fn a_key_beside_the_tag_and_the_content_is_still_the_format_s_error_when_the_enum_denies_unknown_fields() {
+    assert_eq!(
+        format_error_reading::<Instruction>(r#"{ "type": "Deliver", "data": { "to": "Gran Vía" }, "at": "noon" }"#),
+        "unknown field `at`, expected `type` or `data`"
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct DeliveryRound {
+    #[validate(nested)]
+    #[allow(dead_code)]
+    stops: Vec<Delivery>,
+}
+
+#[test]
+fn a_key_given_twice_in_a_value_read_where_it_is_in_the_buffer_is_still_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<DeliveryRound>(
+            r#"{ "stops": [{ "street": { "name": "Gran Vía", "name": "Alcalá" } }] }"#
+        ),
+        "duplicate field `name` at line 1 column 71"
+    );
+}
+
+#[derive(Deserialize, Debug)]
 #[annotated(collect_type_errors)]
 struct Page<T> {
     #[validate(length(max = 2))]

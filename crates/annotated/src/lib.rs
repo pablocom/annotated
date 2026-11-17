@@ -445,6 +445,9 @@ pub use annotated_derive::Validate;
 /// - A value of the wrong type is checked by no other rule, and the struct-level rules are skipped, as when a field is
 ///   missing.
 /// - A nested struct that collects type errors too reports the ones inside it at their full paths.
+/// - A key given twice, or an unknown key a struct denies, is still the format's error, at any depth: it isn't a value
+///   of the wrong type. It is found once the value is read from the buffer, so `serde_json` places it past that value
+///   rather than at the key, and nowhere when that value is the whole body.
 /// - The buffer borrows the strings and bytes the format lends.
 /// - It needs a self-describing format, such as JSON.
 ///

@@ -1160,7 +1160,11 @@ impl EnumExpansion<'_> {
             let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(&mut #read_issues));
             quote! {
                 let mut #read_issues = self.#found.new_alike();
-                match _annotated::__private::Buffered::read_collecting_type_errors(content, #variant_seed, #type_name) {
+                match _annotated::__private::Buffered::read_collecting_type_errors::<_, _, __E>(
+                    content,
+                    #variant_seed,
+                    #type_name,
+                )? {
                     ::core::result::Result::Ok(read) => {
                         self.#found.append(&mut #read_issues);
                         ::core::result::Result::Ok(read)

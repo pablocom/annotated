@@ -642,6 +642,9 @@ impl<'de, E: de::Error> IntoDeserializer<'de, E> for MapKeyDeserializer<'de, E> 
 
 /// Why a [`Content`] couldn't be read as a type: what the type expects and the kind of value found, when serde says,
 /// or the names an enum accepts. It never holds the value, nor a message that might quote it.
+///
+/// Or a key the type refuses, given twice or one it denies, which isn't a value of the wrong type: it stays the
+/// format's error, as it is without `collect_type_errors`, and never becomes an issue.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum WrongType {
     Mismatched {
@@ -651,6 +654,27 @@ pub(crate) enum WrongType {
     UnknownVariant {
         expected: &'static [&'static str],
     },
+    // Boxed, so that the error of reading from the buffer is no larger for it.
+    RefusedKey(Box<RefusedKey>),
+}
+
+/// A key a struct refuses, kept to end deserialization with the format's own error for it.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RefusedKey {
+    Duplicate(&'static str),
+    Unknown {
+        key: Box<str>,
+        expected: &'static [&'static str],
+    },
+}
+
+impl RefusedKey {
+    pub(crate) fn into_error<E: de::Error>(self) -> E {
+        match self {
+            Self::Duplicate(field) => E::duplicate_field(field),
+            Self::Unknown { key, expected } => E::unknown_field(&key, expected),
+        }
+    }
 }
 
 impl WrongType {
@@ -688,6 +712,17 @@ impl de::Error for WrongType {
     fn unknown_variant(_variant: &str, expected: &'static [&'static str]) -> Self {
         Self::UnknownVariant { expected }
     }
+
+    fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
+        Self::RefusedKey(Box::new(RefusedKey::Unknown {
+            key: field.into(),
+            expected,
+        }))
+    }
+
+    fn duplicate_field(field: &'static str) -> Self {
+        Self::RefusedKey(Box::new(RefusedKey::Duplicate(field)))
+    }
 }
 
 impl Display for WrongType {
@@ -705,6 +740,18 @@ impl Display for WrongType {
             }
             Self::UnknownVariant { expected } => {
                 write!(formatter, "unknown variant, expected one of {}", expected.join(", "))
+            }
+            Self::RefusedKey(key) => key.fmt(formatter),
+        }
+    }
+}
+
+impl Display for RefusedKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Duplicate(field) => write!(formatter, "duplicate field `{field}`"),
+            Self::Unknown { expected, .. } => {
+                write!(formatter, "unknown field, expected one of {}", expected.join(", "))
             }
         }
     }
@@ -763,6 +810,14 @@ impl de::Error for TypeError {
 
     fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
         Self::new(WrongType::unknown_variant(variant, expected))
+    }
+
+    fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
+        Self::new(WrongType::unknown_field(field, expected))
+    }
+
+    fn duplicate_field(field: &'static str) -> Self {
+        Self::new(WrongType::duplicate_field(field))
     }
 }
 
