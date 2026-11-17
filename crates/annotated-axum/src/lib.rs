@@ -120,7 +120,7 @@ use annotated::{DeserializeError, Issue, Issues, ParamValue};
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::rejection::{BytesRejection, FailedToBufferBody, MissingJsonContentType};
-use axum::extract::{FromRequest, Request};
+use axum::extract::{FromRequest, OptionalFromRequest, Request};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::{Serialize, Serializer};
@@ -129,6 +129,31 @@ use serde_json::error::Category;
 /// A JSON body that could be read as a `T` and breaks none of its rules, read with [`annotated::json::from_slice`].
 ///
 /// A request it doesn't read is refused with a [`ValidJsonRejection`], answered as [`ProblemDetails`].
+///
+/// `Option<ValidJson<T>>` takes a body only when the request has one: it is `None` for a request without a
+/// `Content-Type`, as axum's `Option<Json<T>>` is, and refuses any other request `ValidJson` refuses.
+///
+/// ```
+/// use annotated::Deserialize;
+/// use annotated_axum::ValidJson;
+/// use axum::Router;
+/// use axum::routing::post;
+///
+/// #[derive(Deserialize)]
+/// struct Filter {
+///     #[validate(length(max = 50))]
+///     name: String,
+/// }
+///
+/// async fn search(filter: Option<ValidJson<Filter>>) -> String {
+///     match filter {
+///         Some(ValidJson(filter)) => format!("members named {}", filter.name),
+///         None => "every member".to_owned(),
+///     }
+/// }
+///
+/// let app: Router = Router::new().route("/members/search", post(search));
+/// ```
 #[derive(Debug)]
 pub struct ValidJson<T>(pub T);
 
@@ -151,6 +176,21 @@ where
         annotated::json::from_slice(&body)
             .map(Self)
             .map_err(ValidJsonRejection::Deserialize)
+    }
+}
+
+impl<T, S> OptionalFromRequest<S> for ValidJson<T>
+where
+    T: for<'de> annotated::Deserialize<'de>,
+    S: Send + Sync,
+{
+    type Rejection = ValidJsonRejection;
+
+    async fn from_request(request: Request, state: &S) -> Result<Option<Self>, Self::Rejection> {
+        if !request.headers().contains_key(header::CONTENT_TYPE) {
+            return Ok(None);
+        }
+        <Self as FromRequest<S>>::from_request(request, state).await.map(Some)
     }
 }
 

@@ -78,6 +78,19 @@ Every refusal is problem details, with the status axum's own `Json` answers the 
 
 A `detail` never repeats what the client sent, so a password in the wrong place isn't echoed back. To answer values of the wrong type as issues, each at its JSON Pointer and all at once with the rest, put `#[annotated(collect_type_errors)]` on the struct.
 
+## An optional body
+
+`Option<ValidJson<T>>` takes a body only when the request has one. As axum's `Option<Json<T>>`, it is `None` for a request without a `Content-Type`, and refuses any other request `ValidJson` refuses:
+
+```rust
+async fn search(filter: Option<ValidJson<Filter>>) -> String {
+    match filter {
+        Some(ValidJson(filter)) => format!("members named {}", filter.name),
+        None => "every member".to_owned(),
+    }
+}
+```
+
 ## Problem details of your own
 
 `ProblemDetails` answers an app's own problems too. Each member it leaves unset is left out of the JSON:
