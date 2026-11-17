@@ -229,6 +229,8 @@ A `char` is a Unicode scalar value.
 
 With no `#[serde(...)]` attributes, a field's name is its name in the struct, without `r#`.
 
+The field of a struct with `#[serde(transparent)]` has no name: serde reads the struct as that field, so `Validate` reports the field's issues at the struct's own location, as for a flattened field. A skipped field beside it keeps its name. `#[derive(Deserialize)]` refuses `transparent`, for now.
+
 ### A URL is RFC 3986's, with RFC 3987's characters
 
 `url` accepts an absolute URI with an authority, as [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986) defines it in section 3 and appendix A:
@@ -552,7 +554,7 @@ With the feature on, `Validate` and `Deserialize` each have a `rules()` function
 What the data leaves out:
 
 - **A field whose rules don't check what the input holds.** A field read by a function (`deserialize_with`, `with`) has rules that check what the function returned, and a skipped field isn't in the input. Neither is listed.
-- **A flattened field**, for now. Its rules belong in its parent's schema.
+- **A flattened field**, for now. Its rules belong in its parent's schema. Nor the field of a transparent struct, which has no name of its own: its rules belong in the struct's schema itself.
 - **`nested`, `custom(...)`, a rule across fields and `message`.** A nested type has rules of its own, under its own `rules()`.
 - **Enums**, for now. `rules()` answers no fields for one.
 

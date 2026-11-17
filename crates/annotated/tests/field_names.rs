@@ -88,3 +88,43 @@ fn a_field_with_an_alias_is_reported_by_its_name() {
 
     assert_eq!(issues_of(&invite), ["email: required"]);
 }
+
+#[derive(Validate)]
+#[serde(transparent)]
+struct EmailAddress {
+    #[validate(required)]
+    address: String,
+    #[serde(skip)]
+    #[validate(length(max = 0))]
+    verified_by: Vec<String>,
+}
+
+#[derive(Validate)]
+struct Recipient {
+    #[validate(nested)]
+    email: EmailAddress,
+}
+
+#[test]
+fn the_field_of_a_transparent_struct_is_reported_where_the_struct_is() {
+    let recipient = Recipient {
+        email: EmailAddress {
+            address: String::new(),
+            verified_by: Vec::new(),
+        },
+    };
+
+    assert_eq!(issues_of(&recipient), ["email: required"]);
+}
+
+#[test]
+fn a_skipped_field_of_a_transparent_struct_is_reported_by_its_name() {
+    let recipient = Recipient {
+        email: EmailAddress {
+            address: "lucia@example.com".to_owned(),
+            verified_by: vec!["admin".to_owned()],
+        },
+    };
+
+    assert_eq!(issues_of(&recipient), ["email.verified_by: length"]);
+}

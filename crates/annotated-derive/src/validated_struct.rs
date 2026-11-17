@@ -54,7 +54,8 @@ pub enum CheckedValue {
 pub enum Place {
     Named(String),
     Indexed(usize),
-    // A flattened field's keys sit in its parent's own map, and a newtype variant's value is the variant's content.
+    // A flattened field's keys sit in its parent's own map, a newtype variant's value is the variant's content, and the
+    // value of a transparent struct is its field's.
     OfItsParent,
 }
 
@@ -87,13 +88,18 @@ impl<'a> ValidatedStruct<'a> {
             return Err(Error::new_spanned(&input.ident, refusal));
         };
         let serde_struct = SerdeStruct::from_input(input)?;
+        let is_transparent = serde_struct.is_transparent;
         let fields = fields
             .named
             .iter()
             .zip(serde_struct.fields)
             .enumerate()
             .map(|(index, (field, serde_field))| {
-                let place = Place::of_a_named_field(&serde_field);
+                let place = if is_transparent && !serde_field.is_skipped {
+                    Place::OfItsParent
+                } else {
+                    Place::of_a_named_field(&serde_field)
+                };
                 ValidatedField::from_field(field, index, serde_field, place)
             })
             .collect::<syn::Result<Vec<_>>>()?;

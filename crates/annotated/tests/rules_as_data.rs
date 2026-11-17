@@ -402,6 +402,19 @@ fn a_struct_without_rules_has_none_as_data() {
 }
 
 #[test]
+fn the_field_of_a_transparent_struct_has_no_name_to_be_described_under() {
+    #[derive(Validate)]
+    #[serde(transparent)]
+    struct EmailAddress {
+        #[validate(email)]
+        #[allow(dead_code)]
+        address: String,
+    }
+
+    assert_eq!(EmailAddress::rules(), Rules::default());
+}
+
+#[test]
 fn an_enum_has_no_rules_as_data_yet() {
     #[derive(Validate)]
     #[allow(dead_code)]

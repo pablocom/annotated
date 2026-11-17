@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
-use crate::validated_struct::{CheckedValue, FieldRule, RuleCheck, ValidatedField, ValidatedStruct};
+use crate::validated_struct::{CheckedValue, FieldRule, Place, RuleCheck, ValidatedField, ValidatedStruct};
 
 // Nothing for a struct with no field to describe: the trait's own `rules()` already answers that.
 pub fn rules_function(validated_struct: &ValidatedStruct) -> TokenStream {
@@ -48,13 +48,13 @@ impl Description {
         }
     }
 
-    // A flattened field has no name to be described under, and a value that isn't in the input is not what a schema
-    // of the input describes.
+    // A flattened field, or a transparent struct's, has no name to be described under, and a value that isn't in the
+    // input is not what a schema of the input describes.
     fn field_rules(&self, field: &ValidatedField, has_its_struct_a_default: bool) -> Option<TokenStream> {
         let CheckedValue::FromTheInput { has_default } = field.checked_value else {
             return None;
         };
-        if field.rules.is_empty() || field.is_flattened {
+        if field.rules.is_empty() || !matches!(field.place, Place::Named(_)) {
             return None;
         }
         let name = &field.name;

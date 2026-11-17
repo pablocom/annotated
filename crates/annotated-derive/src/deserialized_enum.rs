@@ -104,6 +104,7 @@ impl<'a> DeserializedEnum<'a> {
                             name: name.clone(),
                             fields: serde_variant.fields,
                             is_denying_unknown_fields,
+                            is_transparent: false,
                             expecting: Some(format!("{kind} variant {}::{}", input.ident, variant.ident)),
                             default: None,
                             borrowed_lifetimes: borrowed_lifetimes.clone(),
