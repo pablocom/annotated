@@ -1,10 +1,11 @@
 //! `#[derive(Deserialize)]` reads a struct however a format presents it: by the name serde gives the struct, and
-//! with its fields named in text, in bytes or by their index.
+//! with its fields named in text, in bytes or by their index. A tag names its variant however the format hands its name
+//! over.
 
 #![cfg(feature = "serde")]
 
 use annotated::Deserialize;
-use serde_test::{Token, assert_de_tokens, assert_de_tokens_error};
+use serde_test::{Configure, Token, assert_de_tokens, assert_de_tokens_error};
 
 #[derive(Deserialize, Debug, PartialEq)]
 #[serde(rename = "Member")]
@@ -122,5 +123,80 @@ fn an_unknown_field_index_is_the_format_s_error_when_the_struct_denies_unknown_f
     assert_de_tokens_error::<LogIn>(
         &[Token::Struct { name: "LogIn", len: 1 }, Token::U64(1)],
         "invalid value: integer `1`, expected field index 0 <= i < 1",
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type")]
+enum Payment {
+    Cash {
+        #[validate(range(min = 1))]
+        amount: u32,
+    },
+}
+
+#[test]
+fn an_internal_tag_the_format_copies_names_its_variant() {
+    assert_de_tokens(
+        &Payment::Cash { amount: 5 }.readable(),
+        &[
+            Token::Map { len: Some(2) },
+            Token::Str("type"),
+            Token::Str("Cash"),
+            Token::Str("amount"),
+            Token::U32(5),
+            Token::MapEnd,
+        ],
+    );
+}
+
+#[test]
+fn an_internal_tag_the_format_hands_over_names_its_variant() {
+    assert_de_tokens(
+        &Payment::Cash { amount: 5 }.readable(),
+        &[
+            Token::Map { len: Some(2) },
+            Token::Str("type"),
+            Token::String("Cash"),
+            Token::Str("amount"),
+            Token::U32(5),
+            Token::MapEnd,
+        ],
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", content = "data")]
+enum Plan {
+    Paid(#[validate(range(min = 1))] u32),
+}
+
+#[test]
+fn an_adjacent_tag_the_format_copies_names_its_variant() {
+    assert_de_tokens(
+        &Plan::Paid(3).readable(),
+        &[
+            Token::Struct { name: "Plan", len: 2 },
+            Token::Str("type"),
+            Token::Str("Paid"),
+            Token::Str("data"),
+            Token::U32(3),
+            Token::StructEnd,
+        ],
+    );
+}
+
+#[test]
+fn an_adjacent_tag_the_format_hands_over_names_its_variant() {
+    assert_de_tokens(
+        &Plan::Paid(3).readable(),
+        &[
+            Token::Struct { name: "Plan", len: 2 },
+            Token::Str("type"),
+            Token::String("Paid"),
+            Token::Str("data"),
+            Token::U32(3),
+            Token::StructEnd,
+        ],
     );
 }

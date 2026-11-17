@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
 
+use serde::de::value::{BorrowedStrDeserializer, StrDeserializer, StringDeserializer};
 use serde::de::{
     self, DeserializeSeed, Deserializer, EnumAccess, Error as _, IgnoredAny, MapAccess, SeqAccess, Unexpected,
     VariantAccess, Visitor,
@@ -9,7 +10,7 @@ use serde::de::{
 
 use crate::Problem;
 use crate::collecting_type_errors::problem_or_error;
-use crate::content::{Content, ValueKind};
+use crate::content::{Content, ContentVisitor, ValueKind};
 use crate::content_deserializer::{ContentDeserializer, ReadAs, TypeError, WrongType, is_annotated_s_buffer};
 use crate::content_ref_deserializer::ContentRefDeserializer;
 use crate::deserialize_containers::room_for;
@@ -442,8 +443,8 @@ impl<'de, V: serde::Deserialize<'de>> DeserializeSeed<'de> for TagName<V> {
 }
 
 /// Reads a tag with `naming`, as `tag` reads it, or as `None` when `naming` refuses it. A format can't go on past a
-/// value it refused, so a tag from a format is buffered first, and read as the format reads it. annotated's buffers
-/// read it where it is, as the reader they stand for.
+/// value it refused, so a tag from a format that isn't a name is buffered first, and read as the format reads it.
+/// annotated's buffers read it where it is, as the reader they stand for.
 fn variant_named_by<'de, D, S, V>(tag: D, naming: S) -> Result<Option<V>, D::Error>
 where
     D: Deserializer<'de>,
@@ -456,17 +457,104 @@ where
     let read_as = ReadAs::TheFormat {
         is_human_readable: tag.is_human_readable(),
     };
-    let tag = <Content as serde::Deserialize>::deserialize(tag)?;
-    let is_a_name = matches!(tag, Content::Str(_) | Content::String(_));
-    let tag = ContentDeserializer::<WrongType>::new(tag, read_as);
-    // A name reads as the variant it names whatever `naming` reads, a unit variant included, so it skips the enum
-    // access a unit variant is read through.
-    let variant = if is_a_name {
-        V::deserialize(tag)
-    } else {
-        naming.deserialize(tag)
+    tag.deserialize_any(TagFromTheFormat {
+        naming,
+        read_as,
+        variant: PhantomData,
+    })
+}
+
+/// Reads a tag from a format. A name reads as the variant it names whatever `naming` reads, a unit variant included,
+/// so it is read straight away. Any other value is buffered, then read with `naming` as the format would read it.
+struct TagFromTheFormat<S, V> {
+    naming: S,
+    read_as: ReadAs,
+    variant: PhantomData<fn() -> V>,
+}
+
+impl<'de, S: DeserializeSeed<'de, Value = V>, V: serde::Deserialize<'de>> TagFromTheFormat<S, V> {
+    fn named_by(name: impl Deserializer<'de, Error = WrongType>) -> Option<V> {
+        V::deserialize(name).ok()
+    }
+
+    fn read_buffered(self, tag: Content<'de>) -> Option<V> {
+        self.naming
+            .deserialize(ContentDeserializer::<WrongType>::new(tag, self.read_as))
+            .ok()
+    }
+}
+
+macro_rules! buffered_then_read {
+    ($($method:ident($($argument:ident: $argument_type:ty),*)),* $(,)?) => {
+        $(
+            fn $method<E: de::Error>(self, $($argument: $argument_type),*) -> Result<Self::Value, E> {
+                let tag = ContentVisitor.$method::<E>($($argument),*)?;
+                Ok(self.read_buffered(tag))
+            }
+        )*
     };
-    Ok(variant.ok())
+}
+
+impl<'de, S: DeserializeSeed<'de, Value = V>, V: serde::Deserialize<'de>> Visitor<'de> for TagFromTheFormat<S, V> {
+    type Value = Option<V>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        ContentVisitor.expecting(formatter)
+    }
+
+    fn visit_str<E: de::Error>(self, name: &str) -> Result<Self::Value, E> {
+        Ok(Self::named_by(StrDeserializer::new(name)))
+    }
+
+    fn visit_borrowed_str<E: de::Error>(self, name: &'de str) -> Result<Self::Value, E> {
+        Ok(Self::named_by(BorrowedStrDeserializer::new(name)))
+    }
+
+    fn visit_string<E: de::Error>(self, name: String) -> Result<Self::Value, E> {
+        Ok(Self::named_by(StringDeserializer::new(name)))
+    }
+
+    buffered_then_read! {
+        visit_bool(boolean: bool),
+        visit_u8(integer: u8),
+        visit_u16(integer: u16),
+        visit_u32(integer: u32),
+        visit_u64(integer: u64),
+        visit_u128(integer: u128),
+        visit_i8(integer: i8),
+        visit_i16(integer: i16),
+        visit_i32(integer: i32),
+        visit_i64(integer: i64),
+        visit_i128(integer: i128),
+        visit_f32(float: f32),
+        visit_f64(float: f64),
+        visit_char(character: char),
+        visit_bytes(bytes: &[u8]),
+        visit_borrowed_bytes(bytes: &'de [u8]),
+        visit_byte_buf(bytes: Vec<u8>),
+        visit_none(),
+        visit_unit(),
+    }
+
+    fn visit_some<D: Deserializer<'de>>(self, held: D) -> Result<Self::Value, D::Error> {
+        let tag = ContentVisitor.visit_some(held)?;
+        Ok(self.read_buffered(tag))
+    }
+
+    fn visit_newtype_struct<D: Deserializer<'de>>(self, held: D) -> Result<Self::Value, D::Error> {
+        let tag = ContentVisitor.visit_newtype_struct(held)?;
+        Ok(self.read_buffered(tag))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, elements: A) -> Result<Self::Value, A::Error> {
+        let tag = ContentVisitor.visit_seq(elements)?;
+        Ok(self.read_buffered(tag))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, entries: A) -> Result<Self::Value, A::Error> {
+        let tag = ContentVisitor.visit_map(entries)?;
+        Ok(self.read_buffered(tag))
+    }
 }
 
 /// Reads a unit variant of an enum whose variants `V` names. Only annotated's buffers are asked, which read an enum

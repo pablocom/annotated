@@ -220,7 +220,7 @@ impl<'de> Deserialize<'de> for Content<'de> {
     }
 }
 
-struct ContentVisitor;
+pub(crate) struct ContentVisitor;
 
 impl<'de> Visitor<'de> for ContentVisitor {
     type Value = Content<'de>;
