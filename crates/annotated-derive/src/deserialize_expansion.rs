@@ -466,6 +466,7 @@ impl<'a> DeserializeExpansion<'a> {
         let (visit_seq, visit_map) = match form {
             _ if is_read_whole_by_a_function => (TokenStream::new(), TokenStream::new()),
             Form::Struct if has_flattened_fields => (TokenStream::new(), self.visit_map_keeping_leftovers()),
+            Form::Struct if !self.deserialized_struct.takes_a_sequence => (TokenStream::new(), self.visit_map()),
             Form::Struct => (self.visit_seq(), self.visit_map()),
             Form::Tuple => (self.visit_seq(), TokenStream::new()),
             Form::Newtype => (TokenStream::new(), TokenStream::new()),

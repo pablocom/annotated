@@ -749,13 +749,6 @@ mod an_adjacently_tagged_enum {
         in_both_formats(r#"{"type": {"Cash": null}}"#),
     ];
 
-    /// annotated reads a struct variant's content from a sequence, which serde refuses in an adjacently tagged enum.
-    const STRUCT_VARIANTS_AS_SEQUENCES: &[KnownDifference] = &[
-        in_both_formats(r#"{"type": "Transfer", "data": ["ES12"]}"#),
-        in_both_formats(r#"{"data": ["ES12"], "type": "Transfer"}"#),
-        in_both_formats(r#"["Transfer", ["ES12"]]"#),
-    ];
-
     /// annotated reads a unit variant from a sequence of its tag alone, which serde takes for a sequence of the wrong
     /// length.
     const CONTENT_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"["Cash"]"#)];
@@ -769,11 +762,7 @@ mod an_adjacently_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, by_annotated::Payment>(
             "an adjacently tagged enum",
             BODIES,
-            &[
-                TAGS_READ_FROM_THE_BUFFER,
-                STRUCT_VARIANTS_AS_SEQUENCES,
-                CONTENT_MISSING_FROM_A_SEQUENCE,
-            ],
+            &[TAGS_READ_FROM_THE_BUFFER, CONTENT_MISSING_FROM_A_SEQUENCE],
         );
     }
 
@@ -784,7 +773,6 @@ mod an_adjacently_tagged_enum {
             BODIES,
             &[
                 TAGS_READ_FROM_THE_BUFFER,
-                STRUCT_VARIANTS_AS_SEQUENCES,
                 CONTENT_MISSING_FROM_A_SEQUENCE,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
@@ -798,7 +786,6 @@ mod an_adjacently_tagged_enum {
             BODIES,
             &[
                 TAGS_READ_FROM_THE_BUFFER,
-                STRUCT_VARIANTS_AS_SEQUENCES,
                 CONTENT_MISSING_FROM_A_SEQUENCE,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
@@ -849,19 +836,12 @@ mod an_untagged_enum {
         "true",
     ];
 
-    /// annotated builds a struct variant from a sequence, which serde never tries in an untagged enum.
-    const STRUCT_VARIANTS_AS_SEQUENCES: &[KnownDifference] = &[
-        in_both_formats(r#"["ES12"]"#),
-        in_both_formats(r#"["ES12", "rent"]"#),
-        in_both_formats(r#"["4111"]"#),
-    ];
-
     #[test]
     fn an_untagged_enum_reads_each_body_as_serde_reads_it() {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, by_annotated::Payment>(
             "an untagged enum",
             BODIES,
-            &[STRUCT_VARIANTS_AS_SEQUENCES],
+            &[],
         );
     }
 
@@ -870,7 +850,7 @@ mod an_untagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_at_the_root::Payment>(
             "an untagged enum collecting type errors",
             BODIES,
-            &[STRUCT_VARIANTS_AS_SEQUENCES],
+            &[],
         );
     }
 
@@ -879,7 +859,7 @@ mod an_untagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_throughout::Payment>(
             "an untagged enum collecting type errors throughout",
             BODIES,
-            &[STRUCT_VARIANTS_AS_SEQUENCES],
+            &[],
         );
     }
 }
@@ -947,10 +927,6 @@ mod tagged_enums_in_a_struct {
         in_both_formats(r#"{"adjacent": {"type": {"Cash": null}}}"#),
     ];
 
-    /// annotated reads a struct variant's content from a sequence, which serde refuses in an adjacently tagged enum.
-    const STRUCT_VARIANTS_AS_SEQUENCES: &[KnownDifference] =
-        &[in_both_formats(r#"{"adjacent": {"type": "Card", "data": ["4111"]}}"#)];
-
     /// annotated's buffer reads a struct variant from a map only, where serde's reads it from a sequence too.
     const STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] =
         &[in_both_formats(r#"{"external": {"Card": ["4111"]}}"#)];
@@ -963,7 +939,7 @@ mod tagged_enums_in_a_struct {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, by_annotated::Order>(
             "tagged enums in a struct",
             BODIES,
-            &[TAGS_READ_FROM_THE_BUFFER, STRUCT_VARIANTS_AS_SEQUENCES],
+            &[TAGS_READ_FROM_THE_BUFFER],
         );
     }
 
@@ -974,7 +950,6 @@ mod tagged_enums_in_a_struct {
             BODIES,
             &[
                 TAGS_READ_FROM_THE_BUFFER,
-                STRUCT_VARIANTS_AS_SEQUENCES,
                 STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER,
                 INDICES_AS_TAGS_IN_THE_BUFFER,
             ],
@@ -988,7 +963,6 @@ mod tagged_enums_in_a_struct {
             BODIES,
             &[
                 TAGS_READ_FROM_THE_BUFFER,
-                STRUCT_VARIANTS_AS_SEQUENCES,
                 STRUCT_VARIANTS_AS_SEQUENCES_IN_THE_BUFFER,
                 INDICES_AS_TAGS_IN_THE_BUFFER,
             ],

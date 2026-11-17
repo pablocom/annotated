@@ -11,6 +11,9 @@ pub struct DeserializedStruct<'a> {
     pub collects_type_errors: bool,
     pub variant: Option<&'a Ident>,
     pub form: Form,
+    // A struct, and a struct variant serde reads with its tag or by name, also takes its fields from a sequence. An
+    // untagged struct variant, or one of an adjacently tagged enum, takes them from a map alone, as with serde.
+    pub takes_a_sequence: bool,
     pub read_whole_by: Option<ExprPath>,
 }
 
@@ -60,6 +63,7 @@ impl<'a> DeserializedStruct<'a> {
             collects_type_errors: options.collects_type_errors,
             variant: None,
             form: Form::Struct,
+            takes_a_sequence: true,
             read_whole_by: None,
         })
     }

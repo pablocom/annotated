@@ -1132,6 +1132,22 @@ fn under_collect_type_errors_struct_variant_content_of_the_wrong_type_is_an_issu
 }
 
 #[test]
+fn adjacently_tagged_struct_variant_content_given_as_a_sequence_is_the_format_s_error_as_with_serde() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": "signedUp", "data": ["ada@example.com"] }"#),
+        ["the format's error: invalid type: sequence, expected struct variant Event::SignedUp at line 1 column 31"]
+    );
+}
+
+#[test]
+fn under_collect_type_errors_struct_variant_content_given_as_a_sequence_is_an_issue_at_the_content_s_name() {
+    assert_eq!(
+        issues_reading::<Change>(r#"{ "type": "signedUp", "data": ["ada@example.com"] }"#),
+        ["data: invalid_type(expected: struct variant Change::SignedUp, found: sequence)"]
+    );
+}
+
+#[test]
 fn under_collect_type_errors_a_value_that_isn_t_an_adjacently_tagged_enum_is_an_issue_at_its_location() {
     assert_eq!(
         issues_reading::<Change>("12"),
@@ -1193,6 +1209,14 @@ fn an_untagged_newtype_variant_is_read_from_its_value() {
 #[test]
 fn an_untagged_newtype_variant_s_value_is_checked_at_the_enum_s_location() {
     assert_eq!(issues_reading::<Recipient>("0"), ["range(min: 1)"]);
+}
+
+#[test]
+fn an_untagged_struct_variant_is_not_read_from_a_sequence_as_with_serde() {
+    assert_eq!(
+        issues_reading::<Recipient>(r#"["ada@example.com"]"#),
+        ["invalid_type(expected: untagged enum Recipient, found: sequence)"]
+    );
 }
 
 #[test]

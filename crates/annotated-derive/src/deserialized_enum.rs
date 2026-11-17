@@ -85,6 +85,7 @@ impl<'a> DeserializedEnum<'a> {
             serde_path,
         } = serde;
         let is_untagged = matches!(tag, Tag::Untagged);
+        let is_adjacently_tagged = matches!(tag, Tag::Adjacent { .. });
         let variants = data
             .variants
             .iter()
@@ -97,6 +98,7 @@ impl<'a> DeserializedEnum<'a> {
                     Fields::Unnamed(fields) if fields.unnamed.len() == 1 => Some(Form::Newtype),
                     Fields::Unnamed(_) => Some(Form::Tuple),
                 };
+                let is_read_untagged = is_untagged || serde_variant.is_untagged;
                 let content = form.map(|form| {
                     let kind = if form == Form::Struct { "struct" } else { "tuple" };
                     DeserializedStruct {
@@ -116,13 +118,14 @@ impl<'a> DeserializedEnum<'a> {
                         collects_type_errors,
                         variant: Some(&variant.ident),
                         form,
+                        takes_a_sequence: !is_read_untagged && !is_adjacently_tagged,
                         read_whole_by: serde_variant.deserialize_with.clone(),
                     }
                 });
                 DeserializedVariant {
                     ident: &variant.ident,
                     names_read: serde_variant.names_read,
-                    is_untagged: is_untagged || serde_variant.is_untagged,
+                    is_untagged: is_read_untagged,
                     is_skipped: serde_variant.is_skipped,
                     is_other: serde_variant.is_other,
                     deserialize_with: serde_variant.deserialize_with,
