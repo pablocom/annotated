@@ -7,7 +7,7 @@ use serde::de::{self, Deserializer, Expected, IntoDeserializer, Visitor};
 
 use crate::content::Content;
 use crate::content_deserializer::{
-    ContentDeserializer, boolean_written_in, integer_written_in, visit_i128, visit_u128,
+    ContentDeserializer, ReadAs, boolean_written_in, integer_written_in, visit_i128, visit_u128,
 };
 
 /// Reads a [`Content`] by reference, so the same buffer can be read again: each variant of an untagged enum is tried
@@ -339,7 +339,14 @@ impl<'de, E: de::Error> MapKeyRefDeserializer<'_, 'de, E> {
             Content::String(text) => read_from_text(text),
             _ => None,
         };
-        read.map(|read| ContentDeserializer::new(read, self.key.is_human_readable))
+        read.map(|read| {
+            ContentDeserializer::new(
+                read,
+                ReadAs::SerdesBufferByReference {
+                    is_human_readable: self.key.is_human_readable,
+                },
+            )
+        })
     }
 }
 

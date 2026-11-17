@@ -20,20 +20,69 @@ pub(crate) const READ_IN_PLACE: &str = concat!("annotated ", env!("CARGO_PKG_VER
 /// Reads a [`Content`] again, as the type it's meant to be, accepting what a self-describing format accepts for it.
 pub(crate) struct ContentDeserializer<'de, E> {
     content: Content<'de>,
-    is_human_readable: bool,
+    read_as: ReadAs,
     error: PhantomData<E>,
 }
 
 impl<'de, E> ContentDeserializer<'de, E> {
-    /// Reads `content`, and reports `is_human_readable` as the format it came from does.
-    pub(crate) const fn new(content: Content<'de>, is_human_readable: bool) -> Self {
+    /// Reads `content` as `read_as` says.
+    pub(crate) const fn new(content: Content<'de>, read_as: ReadAs) -> Self {
         Self {
             content,
-            is_human_readable,
+            read_as,
             error: PhantomData,
         }
     }
 }
+
+/// What a buffered value is read as. serde's derive reads some values from the format and buffers others, and its
+/// buffer takes a few values the format doesn't: a unit from an empty map, say, which JSON refuses. So a value annotated
+/// buffers where serde's derive buffers it too is read as serde's buffer reads it, and one annotated buffers only to
+/// collect type errors is read as the format would read it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReadAs {
+    /// As the format the value came from reads it.
+    TheFormat { is_human_readable: bool },
+    /// As serde's buffer reads it when it takes the value out, as it does beside an internal tag.
+    SerdesBuffer { is_human_readable: bool },
+    /// As serde's buffer reads it by reference, as it does for each variant an untagged enum tries.
+    SerdesBufferByReference { is_human_readable: bool },
+}
+
+impl ReadAs {
+    /// As a value buffered again from `deserializer` is read: as serde's buffer when `deserializer` is one of
+    /// annotated's buffers, where serde's derive reads from its own, and as the format otherwise.
+    pub(crate) fn of_a_value_from<'de, D: Deserializer<'de>>(deserializer: &D) -> Self {
+        let is_human_readable = deserializer.is_human_readable();
+        let name = std::any::type_name::<D>();
+        if name.starts_with(BUFFER_TYPE_NAME) {
+            return Self::SerdesBuffer { is_human_readable };
+        }
+        if name.starts_with(BUFFER_BY_REFERENCE_TYPE_NAME) {
+            return Self::SerdesBufferByReference { is_human_readable };
+        }
+        Self::TheFormat { is_human_readable }
+    }
+
+    pub(crate) const fn is_human_readable(self) -> bool {
+        match self {
+            Self::TheFormat { is_human_readable }
+            | Self::SerdesBuffer { is_human_readable }
+            | Self::SerdesBufferByReference { is_human_readable } => is_human_readable,
+        }
+    }
+
+    // serde's buffer takes a unit and a unit struct from an empty map, so that an internally tagged newtype variant of
+    // one reads from its tag alone, and a unit struct from an empty sequence too. By reference, it doesn't.
+    const fn takes_a_unit_from_an_empty_value(self) -> bool {
+        matches!(self, Self::SerdesBuffer { .. })
+    }
+}
+
+// The names of the types of annotated's buffers, whatever their error. Rust can't ask whether a deserializer is one of
+// them, as `may_be_annotated_s_buffer` in `collecting_type_errors.rs` says, so the name of its type is compared.
+const BUFFER_TYPE_NAME: &str = concat!(module_path!(), "::ContentDeserializer<");
+const BUFFER_BY_REFERENCE_TYPE_NAME: &str = "annotated::content_ref_deserializer::ContentRefDeserializer<";
 
 impl<'de, E: de::Error> ContentDeserializer<'de, E> {
     #[cold]
@@ -67,14 +116,10 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
 
     fn visit_elements<V: Visitor<'de>>(
         elements: Vec<Content<'de>>,
-        is_human_readable: bool,
+        read_as: ReadAs,
         visitor: V,
     ) -> Result<V::Value, E> {
-        let mut elements = SeqDeserializer::new(
-            elements
-                .into_iter()
-                .map(|element| Self::new(element, is_human_readable)),
-        );
+        let mut elements = SeqDeserializer::new(elements.into_iter().map(|element| Self::new(element, read_as)));
         let value = visitor.visit_seq(&mut elements)?;
         elements.end()?;
         Ok(value)
@@ -82,10 +127,10 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
 
     fn visit_entries<V: Visitor<'de>>(
         entries: Vec<(Content<'de>, Content<'de>)>,
-        is_human_readable: bool,
+        read_as: ReadAs,
         visitor: V,
     ) -> Result<V::Value, E> {
-        let mut entries = Self::entries(entries, is_human_readable);
+        let mut entries = Self::entries(entries, read_as);
         let value = visitor.visit_map(&mut entries)?;
         entries.end()?;
         Ok(value)
@@ -93,13 +138,13 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
 
     fn entries(
         entries: Vec<(Content<'de>, Content<'de>)>,
-        is_human_readable: bool,
+        read_as: ReadAs,
     ) -> MapDeserializer<'de, impl Iterator<Item = (MapKeyDeserializer<'de, E>, Self)>, E> {
         MapDeserializer::new(entries.into_iter().map(move |(key, value)| {
             let key = MapKeyDeserializer {
-                key: Self::new(key, is_human_readable),
+                key: Self::new(key, read_as),
             };
-            (key, Self::new(value, is_human_readable))
+            (key, Self::new(value, read_as))
         }))
     }
 }
@@ -144,11 +189,11 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
             Content::ByteBuf(bytes) => visitor.visit_byte_buf(bytes),
             Content::Bytes(bytes) => visitor.visit_borrowed_bytes(bytes),
             Content::None => visitor.visit_none(),
-            Content::Some(inner) => visitor.visit_some(Self::new(*inner, self.is_human_readable)),
+            Content::Some(inner) => visitor.visit_some(Self::new(*inner, self.read_as)),
             Content::Unit => visitor.visit_unit(),
-            Content::Newtype(inner) => visitor.visit_newtype_struct(Self::new(*inner, self.is_human_readable)),
-            Content::Seq(elements) => Self::visit_elements(elements, self.is_human_readable, visitor),
-            Content::Map(entries) => Self::visit_entries(entries, self.is_human_readable, visitor),
+            Content::Newtype(inner) => visitor.visit_newtype_struct(Self::new(*inner, self.read_as)),
+            Content::Seq(elements) => Self::visit_elements(elements, self.read_as, visitor),
+            Content::Map(entries) => Self::visit_entries(entries, self.read_as, visitor),
         }
     }
 
@@ -240,7 +285,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
             Content::Bytes(bytes) => visitor.visit_borrowed_bytes(bytes),
             Content::String(string) => visitor.visit_byte_buf(string.into_bytes()),
             Content::Str(string) => visitor.visit_borrowed_bytes(string.as_bytes()),
-            Content::Seq(elements) => Self::visit_elements(elements, self.is_human_readable, visitor),
+            Content::Seq(elements) => Self::visit_elements(elements, self.read_as, visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -248,7 +293,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
         match self.content {
             Content::None | Content::Unit => visitor.visit_none(),
-            Content::Some(inner) => visitor.visit_some(Self::new(*inner, self.is_human_readable)),
+            Content::Some(inner) => visitor.visit_some(Self::new(*inner, self.read_as)),
             _ => visitor.visit_some(self),
         }
     }
@@ -256,12 +301,22 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
     fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
         match self.content {
             Content::Unit => visitor.visit_unit(),
+            Content::Map(ref entries) if entries.is_empty() && self.read_as.takes_a_unit_from_an_empty_value() => {
+                visitor.visit_unit()
+            }
             _ => Err(self.invalid_type(&visitor)),
         }
     }
 
     fn deserialize_unit_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, E> {
-        self.deserialize_unit(visitor)
+        if !self.read_as.takes_a_unit_from_an_empty_value() {
+            return self.deserialize_unit(visitor);
+        }
+        match self.content {
+            Content::Map(ref entries) if entries.is_empty() => visitor.visit_unit(),
+            Content::Seq(ref elements) if elements.is_empty() => visitor.visit_unit(),
+            _ => self.deserialize_any(visitor),
+        }
     }
 
     fn deserialize_newtype_struct<V: Visitor<'de>>(self, name: &'static str, visitor: V) -> Result<V::Value, E> {
@@ -269,14 +324,14 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
             return visitor.visit_enum(InPlace(self));
         }
         match self.content {
-            Content::Newtype(inner) => visitor.visit_newtype_struct(Self::new(*inner, self.is_human_readable)),
+            Content::Newtype(inner) => visitor.visit_newtype_struct(Self::new(*inner, self.read_as)),
             _ => visitor.visit_newtype_struct(self),
         }
     }
 
     fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
         match self.content {
-            Content::Seq(elements) => Self::visit_elements(elements, self.is_human_readable, visitor),
+            Content::Seq(elements) => Self::visit_elements(elements, self.read_as, visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -296,7 +351,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
 
     fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
         match self.content {
-            Content::Map(entries) => Self::visit_entries(entries, self.is_human_readable, visitor),
+            Content::Map(entries) => Self::visit_entries(entries, self.read_as, visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -308,7 +363,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
         visitor: V,
     ) -> Result<V::Value, E> {
         match self.content {
-            Content::Seq(elements) => Self::visit_elements(elements, self.is_human_readable, visitor),
+            Content::Seq(elements) => Self::visit_elements(elements, self.read_as, visitor),
             _ => self.deserialize_map(visitor),
         }
     }
@@ -322,9 +377,9 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
         match self.content {
             Content::Str(variant) => visitor.visit_enum(BorrowedStrDeserializer::new(variant)),
             Content::String(variant) => visitor.visit_enum(StringDeserializer::new(variant)),
-            Content::Map(entries) if entries.len() == 1 => visitor.visit_enum(MapAccessDeserializer::new(
-                Self::entries(entries, self.is_human_readable),
-            )),
+            Content::Map(entries) if entries.len() == 1 => {
+                visitor.visit_enum(MapAccessDeserializer::new(Self::entries(entries, self.read_as)))
+            }
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -343,7 +398,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
     }
 
     fn is_human_readable(&self) -> bool {
-        self.is_human_readable
+        self.read_as.is_human_readable()
     }
 }
 
@@ -397,17 +452,13 @@ struct MapKeyDeserializer<'de, E> {
 
 impl<'de, E> MapKeyDeserializer<'de, E> {
     fn written_as(self, read_from_text: fn(&str) -> Option<Content<'de>>) -> ContentDeserializer<'de, E> {
-        let ContentDeserializer {
-            content,
-            is_human_readable,
-            ..
-        } = self.key;
+        let ContentDeserializer { content, read_as, .. } = self.key;
         let read = match &content {
             Content::Str(text) => read_from_text(text),
             Content::String(text) => read_from_text(text),
             _ => None,
         };
-        ContentDeserializer::new(read.unwrap_or(content), is_human_readable)
+        ContentDeserializer::new(read.unwrap_or(content), read_as)
     }
 }
 
@@ -498,7 +549,7 @@ impl<'de, E: de::Error> Deserializer<'de> for MapKeyDeserializer<'de, E> {
     }
 
     fn is_human_readable(&self) -> bool {
-        self.key.is_human_readable
+        self.key.read_as.is_human_readable()
     }
 }
 
@@ -701,9 +752,15 @@ mod tests {
     use serde::de::{Error as _, IgnoredAny, Unexpected};
 
     use super::*;
+    use crate::content_ref_deserializer::ContentRefDeserializer;
 
     fn read<'de, T: Deserialize<'de>>(content: Content<'de>) -> Result<T, WrongType> {
-        T::deserialize(ContentDeserializer::new(content, true))
+        T::deserialize(ContentDeserializer::new(
+            content,
+            ReadAs::TheFormat {
+                is_human_readable: true,
+            },
+        ))
     }
 
     fn wrong_type(expected: &str, found: ValueKind) -> WrongType {
@@ -998,6 +1055,84 @@ mod tests {
     #[test]
     fn a_number_is_refused_as_unit() {
         assert_eq!(read::<()>(Content::U8(0)), Err(wrong_type("unit", ValueKind::Integer)));
+    }
+
+    fn read_as_serde_s_buffer<'de, T: Deserialize<'de>>(content: Content<'de>) -> Result<T, WrongType> {
+        T::deserialize(ContentDeserializer::new(
+            content,
+            ReadAs::SerdesBuffer {
+                is_human_readable: true,
+            },
+        ))
+    }
+
+    #[test]
+    fn an_empty_map_is_read_as_unit_or_a_unit_struct_as_serde_s_buffer_taking_it_reads_it() {
+        assert_eq!(
+            (
+                read_as_serde_s_buffer::<()>(Content::Map(Vec::new())),
+                read_as_serde_s_buffer::<Nothing>(Content::Map(Vec::new()))
+            ),
+            (Ok(()), Ok(Nothing))
+        );
+    }
+
+    #[test]
+    fn an_empty_sequence_is_read_as_a_unit_struct_as_serde_s_buffer_taking_it_reads_it() {
+        assert_eq!(read_as_serde_s_buffer::<Nothing>(Content::Seq(Vec::new())), Ok(Nothing));
+    }
+
+    #[test]
+    fn an_empty_map_or_sequence_is_refused_as_unit_or_a_unit_struct_as_the_format_refuses_it() {
+        assert_eq!(
+            (
+                read::<()>(Content::Map(Vec::new())),
+                read::<Nothing>(Content::Seq(Vec::new()))
+            ),
+            (
+                Err(wrong_type("unit", ValueKind::Map)),
+                Err(wrong_type("unit struct Nothing", ValueKind::Sequence))
+            )
+        );
+    }
+
+    #[test]
+    fn a_value_buffered_from_annotated_s_buffer_is_read_as_serde_s_buffer_reads_it() {
+        let buffer = ContentDeserializer::<WrongType>::new(
+            Content::Unit,
+            ReadAs::TheFormat {
+                is_human_readable: false,
+            },
+        );
+        let referenced = Content::Unit;
+        let buffer_by_reference = ContentRefDeserializer::<WrongType>::new(&referenced, false);
+
+        assert_eq!(
+            (
+                ReadAs::of_a_value_from(&buffer),
+                ReadAs::of_a_value_from(&buffer_by_reference)
+            ),
+            (
+                ReadAs::SerdesBuffer {
+                    is_human_readable: false
+                },
+                ReadAs::SerdesBufferByReference {
+                    is_human_readable: false
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn a_value_buffered_from_the_format_is_read_as_the_format_reads_it() {
+        let mut json = serde_json::Deserializer::from_str("null");
+
+        assert_eq!(
+            ReadAs::of_a_value_from(&&mut json),
+            ReadAs::TheFormat {
+                is_human_readable: true
+            }
+        );
     }
 
     #[test]
@@ -1310,7 +1445,12 @@ mod tests {
 
     #[test]
     fn the_format_s_human_readability_is_answered_for_the_value_and_everything_in_it() {
-        let deserializer = ContentDeserializer::<WrongType>::new(Content::Seq(vec![Content::Unit]), false);
+        let deserializer = ContentDeserializer::<WrongType>::new(
+            Content::Seq(vec![Content::Unit]),
+            ReadAs::TheFormat {
+                is_human_readable: false,
+            },
+        );
 
         assert_eq!(
             Vec::<HumanReadability>::deserialize(deserializer),
@@ -1321,7 +1461,12 @@ mod tests {
     #[test]
     fn the_format_s_human_readability_is_answered_for_a_map_s_keys() {
         let entries = Content::Map(vec![(Content::Str("key"), Content::U8(1))]);
-        let deserializer = ContentDeserializer::<WrongType>::new(entries, false);
+        let deserializer = ContentDeserializer::<WrongType>::new(
+            entries,
+            ReadAs::TheFormat {
+                is_human_readable: false,
+            },
+        );
 
         assert_eq!(
             BTreeMap::<HumanReadability, u8>::deserialize(deserializer),

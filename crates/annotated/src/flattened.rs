@@ -4,8 +4,17 @@ use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, Visitor};
 
 use crate::collecting_type_errors::problem_of;
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, WrongType};
+use crate::content_deserializer::{ContentDeserializer, ReadAs, WrongType};
 use crate::{Location, Report};
+
+// As serde's derive reads them, the entries kept are human-readable, and a struct or an enum takes its own out of the
+// buffer, where a map reads every entry by reference.
+const TAKEN_OUT: ReadAs = ReadAs::SerdesBuffer {
+    is_human_readable: true,
+};
+const READ_BY_REFERENCE: ReadAs = ReadAs::SerdesBufferByReference {
+    is_human_readable: true,
+};
 
 /// The entries of a map that aren't fields of the struct being read. A struct with a flattened field keeps them, and
 /// reads each flattened field from them once the map is read, as serde's derive does.
@@ -148,7 +157,7 @@ impl<'de, E: de::Error> Deserializer<'de> for FlatMapDeserializer<'_, 'de, E> {
                 "no variant of enum {name} found in flattened data"
             )));
         };
-        ContentDeserializer::new(Content::Map(vec![variant]), true).deserialize_enum(name, variants, visitor)
+        ContentDeserializer::new(Content::Map(vec![variant]), TAKEN_OUT).deserialize_enum(name, variants, visitor)
     }
 
     fn deserialize_newtype_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, E> {
@@ -212,12 +221,13 @@ impl<'de, E: de::Error> MapAccess<'de> for FlatMapAccess<'_, 'de, E> {
             return Ok(None);
         };
         self.value = Some(value);
-        seed.deserialize(ContentDeserializer::new(key.clone(), true)).map(Some)
+        seed.deserialize(ContentDeserializer::new(key.clone(), READ_BY_REFERENCE))
+            .map(Some)
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, E> {
         let value = self.value.take().ok_or_else(|| E::custom("value is missing"))?;
-        seed.deserialize(ContentDeserializer::new(value.clone(), true))
+        seed.deserialize(ContentDeserializer::new(value.clone(), READ_BY_REFERENCE))
     }
 }
 
@@ -238,12 +248,12 @@ impl<'de, E: de::Error> MapAccess<'de> for FlatStructAccess<'_, 'de, E> {
             return Ok(None);
         };
         self.value = Some(value);
-        seed.deserialize(ContentDeserializer::new(key, true)).map(Some)
+        seed.deserialize(ContentDeserializer::new(key, TAKEN_OUT)).map(Some)
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, E> {
         let value = self.value.take().ok_or_else(|| E::custom("value is missing"))?;
-        seed.deserialize(ContentDeserializer::new(value, true))
+        seed.deserialize(ContentDeserializer::new(value, TAKEN_OUT))
     }
 }
 

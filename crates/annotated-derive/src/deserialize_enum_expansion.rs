@@ -491,17 +491,18 @@ impl<'a> EnumExpansion<'a> {
         }
         let is_read_beside_its_tag =
             matches!(&self.deserialized_enum.tag, Tag::Internal { .. }) && !variant.is_untagged;
-        let skipping_the_content = if is_read_beside_its_tag {
-            quote!(#serde::Deserializer::deserialize_ignored_any(#deserializer, #serde::de::IgnoredAny)?;)
+        let unit_visitor = if is_read_beside_its_tag {
+            quote!(InternallyTaggedUnitVisitor)
         } else {
-            let enum_name = name.to_string();
-            let variant_name = ident.to_string();
-            quote! {
-                #serde::Deserializer::deserialize_any(
-                    #deserializer,
-                    _annotated::__private::UnitVariantVisitor::new(#enum_name, #variant_name),
-                )?;
-            }
+            quote!(UnitVariantVisitor)
+        };
+        let enum_name = name.to_string();
+        let variant_name = ident.to_string();
+        let skipping_the_content = quote! {
+            #serde::Deserializer::deserialize_any(
+                #deserializer,
+                _annotated::__private::#unit_visitor::new(#enum_name, #variant_name),
+            )?;
         };
         let (Some(content), Some(deserialized_content)) = (&self.contents[index], &variant.content) else {
             return quote! {
@@ -970,7 +971,15 @@ impl EnumExpansion<'_> {
             local("variant_read"),
         );
         let is_denying_unknown_fields = self.deserialized_enum.is_denying_unknown_fields;
-        let content_read_after_its_tag = (!self.deserialized_enum.collects_type_errors).then(|| {
+        let content_read_after_its_tag = if self.deserialized_enum.collects_type_errors {
+            quote! {
+                ::core::option::Option::Some(::core::option::Option::Some(_)) => {
+                    #content_buffered = ::core::option::Option::Some(_annotated::__private::Buffered::read_as_the_format(
+                        #serde::de::MapAccess::next_value::<_annotated::__private::Buffered<'de>>(&mut #map)?,
+                    ));
+                }
+            }
+        } else {
             let variant_seed = self.variant_seed_for(&quote!(#variant), &quote!(&mut *self.#found));
             quote! {
                 ::core::option::Option::Some(::core::option::Option::Some(#variant)) => {
@@ -979,7 +988,7 @@ impl EnumExpansion<'_> {
                     );
                 }
             }
-        });
+        };
         quote! {
             fn visit_map<__A: #serde::de::MapAccess<'de>>(
                 self,
@@ -1049,7 +1058,9 @@ impl EnumExpansion<'_> {
         let content_read = if self.deserialized_enum.collects_type_errors {
             quote! {
                 match #serde::de::SeqAccess::next_element::<_annotated::__private::Buffered<'de>>(&mut #seq)? {
-                    ::core::option::Option::Some(content) => self.buffered_content_read(#variant, content),
+                    ::core::option::Option::Some(content) => {
+                        self.buffered_content_read(#variant, _annotated::__private::Buffered::read_as_the_format(content))
+                    }
                     ::core::option::Option::None => self.missing_content(#variant),
                 }
             }

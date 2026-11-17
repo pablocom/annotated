@@ -3,26 +3,26 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use serde::Deserialize as _;
-use serde::de::{self, DeserializeSeed, Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Visitor};
 
 use crate::Problem;
 use crate::collecting_type_errors::problem_of;
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, WrongType};
+use crate::content_deserializer::{ContentDeserializer, ReadAs, TypeError, WrongType};
 use crate::content_ref_deserializer::ContentRefDeserializer;
 use crate::flattened::field_name_of;
 
 /// A value read whole into a buffer, to be read again once its tag says which variant it is.
 pub struct Buffered<'de> {
     content: Content<'de>,
-    is_human_readable: bool,
+    read_as: ReadAs,
 }
 
 impl<'de> Buffered<'de> {
     /// A deserializer that reads the buffered value, ending with an error of type `E` at the first failure.
     #[must_use]
     pub fn deserializer<E: de::Error>(self) -> impl Deserializer<'de, Error = E> {
-        ContentDeserializer::new(self.content, self.is_human_readable)
+        ContentDeserializer::new(self.content, self.read_as)
     }
 }
 
@@ -77,9 +77,12 @@ where
     };
     let content = Buffered {
         content,
-        is_human_readable,
+        read_as: ReadAs::SerdesBuffer { is_human_readable },
     };
-    match V::deserialize(ContentDeserializer::<WrongType>::new(tag_value, is_human_readable)) {
+    match V::deserialize(ContentDeserializer::<WrongType>::new(
+        tag_value,
+        ReadAs::SerdesBuffer { is_human_readable },
+    )) {
         Ok(variant) => Ok(Tagged::Variant(variant, content)),
         Err(_) => Ok(Tagged::IssueAtTheTag(Problem::UnknownVariant { expected: variants })),
     }
@@ -157,17 +160,29 @@ impl<'de> serde::Deserialize<'de> for Buffered<'de> {
         let content = <Content as serde::Deserialize>::deserialize(deserializer)?;
         Ok(Self {
             content,
-            is_human_readable,
+            read_as: ReadAs::SerdesBuffer { is_human_readable },
         })
     }
 }
 
 impl<'de> Buffered<'de> {
+    /// The buffered value, read as the format it came from reads it, rather than as serde's buffer: the content of an
+    /// adjacently tagged enum collecting type errors, which serde reads from the format when it follows the tag.
+    #[must_use]
+    pub fn read_as_the_format(self) -> Self {
+        Self {
+            content: self.content,
+            read_as: ReadAs::TheFormat {
+                is_human_readable: self.read_as.is_human_readable(),
+            },
+        }
+    }
+
     /// A deserializer that reads the buffered value without taking it, so it can be read again: each variant of an
     /// untagged enum is tried on it in turn.
     #[must_use]
     pub fn by_reference<E: de::Error>(&self) -> impl Deserializer<'de, Error = E> {
-        ContentRefDeserializer::new(&self.content, self.is_human_readable)
+        ContentRefDeserializer::new(&self.content, self.read_as.is_human_readable())
     }
 
     /// The problem of a buffered value that fits none of an untagged enum's variants: what the enum `expecting` says,
@@ -184,6 +199,8 @@ impl<'de> Buffered<'de> {
     /// Reads the buffered value with `seed`. A value that doesn't fit is returned as the [`Problem`] to report, instead
     /// of ending deserialization. `type_name` says what was expected when serde's error doesn't.
     ///
+    /// The types collecting type errors inside the value read their values where they are in the buffer.
+    ///
     /// # Errors
     ///
     /// The problem, when the value doesn't fit what `seed` reads.
@@ -192,11 +209,8 @@ impl<'de> Buffered<'de> {
         S: DeserializeSeed<'de, Value = Option<T>>,
     {
         let kind_found = self.content.kind();
-        seed.deserialize(ContentDeserializer::<WrongType>::new(
-            self.content,
-            self.is_human_readable,
-        ))
-        .map_err(|wrong_type| problem_of(wrong_type, type_name, kind_found))
+        seed.deserialize(ContentDeserializer::<TypeError>::new(self.content, self.read_as))
+            .map_err(|error| problem_of(error.into_wrong_type(), type_name, kind_found))
     }
 }
 
@@ -305,11 +319,8 @@ impl<'de, V: serde::Deserialize<'de>> DeserializeSeed<'de> for TagValue<V> {
     type Value = Option<V>;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Option<V>, D::Error> {
-        let Buffered {
-            content,
-            is_human_readable,
-        } = Buffered::deserialize(deserializer)?;
-        Ok(V::deserialize(ContentDeserializer::<WrongType>::new(content, is_human_readable)).ok())
+        let Buffered { content, read_as } = Buffered::deserialize(deserializer)?;
+        Ok(V::deserialize(ContentDeserializer::<WrongType>::new(content, read_as)).ok())
     }
 }
 
@@ -342,6 +353,42 @@ impl Visitor<'_> for UnitVariantVisitor {
     }
 
     fn visit_none<E: de::Error>(self) -> Result<(), E> {
+        Ok(())
+    }
+}
+
+/// Reads what is beside an internally tagged unit variant's tag, as serde does: any entries of a map, which it skips,
+/// or no element of a sequence.
+pub struct InternallyTaggedUnitVisitor {
+    enum_name: &'static str,
+    variant_name: &'static str,
+}
+
+impl InternallyTaggedUnitVisitor {
+    /// Reads what is beside the tag of the unit variant `variant_name` of the enum `enum_name`.
+    #[must_use]
+    pub const fn new(enum_name: &'static str, variant_name: &'static str) -> Self {
+        Self {
+            enum_name,
+            variant_name,
+        }
+    }
+}
+
+impl<'de> Visitor<'de> for InternallyTaggedUnitVisitor {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "unit variant {}::{}", self.enum_name, self.variant_name)
+    }
+
+    // An element left in the sequence makes it the wrong length.
+    fn visit_seq<A: SeqAccess<'de>>(self, _: A) -> Result<(), A::Error> {
+        Ok(())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
         Ok(())
     }
 }

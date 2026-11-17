@@ -620,16 +620,6 @@ mod an_internally_tagged_enum {
         in_json("[0]"),
     ];
 
-    /// annotated reads a unit, a unit struct or a unit variant from the entries left beside the tag as it reads them
-    /// from the input, where serde reads them from its buffer: a unit and a unit struct from no entries, and a unit
-    /// variant from no element.
-    const UNITS_BESIDE_THE_TAG: &[KnownDifference] = &[
-        in_both_formats(r#"{"type": "Nothing"}"#),
-        in_both_formats(r#"{"type": "Marked"}"#),
-        in_both_formats(r#"["Marked"]"#),
-        in_both_formats(r#"["Cash", 1]"#),
-    ];
-
     /// An `Option` field whose element is missing from the end of a sequence is `None` to annotated. serde takes it
     /// for a sequence of the wrong length, unless the field has a default.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"["Transfer", "ES12"]"#)];
@@ -639,7 +629,7 @@ mod an_internally_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, by_annotated::Payment>(
             "an internally tagged enum",
             BODIES,
-            &[INDICES_AS_TAGS, UNITS_BESIDE_THE_TAG, OPTIONS_MISSING_FROM_A_SEQUENCE],
+            &[INDICES_AS_TAGS, OPTIONS_MISSING_FROM_A_SEQUENCE],
         );
     }
 
@@ -648,7 +638,7 @@ mod an_internally_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_at_the_root::Payment>(
             "an internally tagged enum collecting type errors",
             BODIES,
-            &[INDICES_AS_TAGS, UNITS_BESIDE_THE_TAG, OPTIONS_MISSING_FROM_A_SEQUENCE],
+            &[INDICES_AS_TAGS, OPTIONS_MISSING_FROM_A_SEQUENCE],
         );
     }
 
@@ -657,7 +647,7 @@ mod an_internally_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_throughout::Payment>(
             "an internally tagged enum collecting type errors throughout",
             BODIES,
-            &[INDICES_AS_TAGS, UNITS_BESIDE_THE_TAG, OPTIONS_MISSING_FROM_A_SEQUENCE],
+            &[INDICES_AS_TAGS, OPTIONS_MISSING_FROM_A_SEQUENCE],
         );
     }
 }

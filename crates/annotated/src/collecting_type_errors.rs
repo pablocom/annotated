@@ -7,7 +7,7 @@ use serde::Deserializer;
 use serde::de::{DeserializeSeed, EnumAccess, Error as _, VariantAccess, Visitor};
 
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, FunctionError, READ_IN_PLACE, TypeError, WrongType};
+use crate::content_deserializer::{ContentDeserializer, FunctionError, READ_IN_PLACE, ReadAs, TypeError, WrongType};
 use crate::deserialize::DeserializeAt;
 use crate::{Deserialize, Location, Problem, Report};
 
@@ -291,10 +291,10 @@ impl<'de, S: DeserializeSeed<'de>> Visitor<'de> for ReadInPlace<S> {
 fn buffered<'de, D: Deserializer<'de>, E>(
     deserializer: D,
 ) -> Result<(ContentDeserializer<'de, E>, ValueKind), D::Error> {
-    let is_human_readable = deserializer.is_human_readable();
+    let read_as = ReadAs::of_a_value_from(&deserializer);
     let content = <Content as serde::Deserialize>::deserialize(deserializer)?;
     let kind = content.kind();
-    Ok((ContentDeserializer::new(content, is_human_readable), kind))
+    Ok((ContentDeserializer::new(content, read_as), kind))
 }
 
 #[cold]

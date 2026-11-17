@@ -568,6 +568,21 @@ fn a_value_that_is_not_well_formed_is_still_the_format_s_error() {
 }
 
 #[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+struct Heartbeat {
+    #[allow(dead_code)]
+    beat: (),
+}
+
+#[test]
+fn a_unit_is_read_from_null_alone_as_the_format_reads_it() {
+    assert_eq!(
+        issues_reading::<Heartbeat>(r#"{ "beat": {} }"#),
+        ["beat: invalid_type(expected: unit, found: map)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 #[annotated(collect_type_errors)]
 struct Invitation {

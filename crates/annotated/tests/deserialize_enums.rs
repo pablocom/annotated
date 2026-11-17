@@ -663,6 +663,63 @@ fn an_internally_tagged_unit_variant_is_read_from_its_tag_alone() {
 }
 
 #[test]
+fn an_internally_tagged_unit_variant_given_more_than_its_tag_in_a_sequence_is_the_format_s_error_as_with_serde() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"["muted", 1]"#),
+        ["the format's error: invalid length 1, expected 0 elements in sequence"]
+    );
+}
+
+#[derive(serde::Deserialize, Debug, PartialEq)]
+struct Pong;
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum Signal {
+    Ping(()),
+    Pong(Pong),
+}
+
+#[test]
+fn an_internally_tagged_newtype_variant_of_a_unit_is_read_from_its_tag_alone_as_with_serde() {
+    assert_eq!(read::<Signal>(r#"{ "type": "ping" }"#), Ok(Signal::Ping(())));
+}
+
+#[test]
+fn an_internally_tagged_newtype_variant_of_a_unit_struct_is_read_from_its_tag_alone_as_with_serde() {
+    assert_eq!(read::<Signal>(r#"{ "type": "pong" }"#), Ok(Signal::Pong(Pong)));
+}
+
+#[test]
+fn an_internally_tagged_newtype_variant_of_a_unit_struct_is_read_from_a_sequence_of_its_tag_alone_as_with_serde() {
+    assert_eq!(read::<Signal>(r#"["pong"]"#), Ok(Signal::Pong(Pong)));
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+enum CollectedSignal {
+    Ping(()),
+    Pong(Pong),
+}
+
+#[test]
+fn under_collect_type_errors_an_internally_tagged_newtype_variant_of_a_unit_is_read_from_its_tag_alone() {
+    assert_eq!(
+        read::<CollectedSignal>(r#"{ "type": "ping" }"#),
+        Ok(CollectedSignal::Ping(()))
+    );
+}
+
+#[test]
+fn under_collect_type_errors_an_internally_tagged_newtype_variant_of_a_unit_struct_is_read_from_its_tag_alone() {
+    assert_eq!(
+        read::<CollectedSignal>(r#"{ "type": "pong" }"#),
+        Ok(CollectedSignal::Pong(Pong))
+    );
+}
+
+#[test]
 fn an_issue_in_an_internally_tagged_variant_is_at_the_enum_s_location() {
     assert_eq!(
         issues_reading::<Notification>(r#"{ "type": "email", "address": "ada" }"#),
