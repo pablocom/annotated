@@ -2,14 +2,17 @@ use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
 
-use serde::Deserialize as _;
-use serde::de::{self, DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::de::{
+    self, DeserializeSeed, Deserializer, EnumAccess, Error as _, IgnoredAny, MapAccess, SeqAccess, Unexpected,
+    VariantAccess, Visitor,
+};
 
 use crate::Problem;
 use crate::collecting_type_errors::problem_or_error;
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, ReadAs, TypeError, WrongType};
+use crate::content_deserializer::{ContentDeserializer, ReadAs, TypeError, WrongType, is_annotated_s_buffer};
 use crate::content_ref_deserializer::ContentRefDeserializer;
+use crate::deserialize_containers::room_for;
 use crate::flattened::field_name_of;
 
 /// A value read whole into a buffer, to be read again once its tag says which variant it is.
@@ -38,7 +41,8 @@ pub enum Tagged<'de, V> {
 }
 
 /// Reads an internally tagged enum, as serde's derive does: the value of the key named `tag`, which names the variant
-/// `V`, and every other entry into a buffer. A value given as a sequence starts with its tag.
+/// `V` as the deserializer reads a name, and every other entry into a buffer. A value given as a sequence starts with
+/// its tag.
 ///
 /// A missing tag, or one that names none of the `variants`, is returned as an issue, so that reading can go on. A
 /// value that is neither a map nor a sequence is the format's error, unless `collects_type_errors`.
@@ -58,99 +62,179 @@ where
     V: serde::Deserialize<'de>,
 {
     let is_human_readable = deserializer.is_human_readable();
-    let (tag_value, content) = if collects_type_errors {
-        let content = <Content as serde::Deserialize>::deserialize(deserializer)?;
-        match tag_split_from::<D::Error>(content, tag)? {
-            Ok(split) => split,
-            Err(kind_found) => {
-                return Ok(Tagged::IssueAtTheEnum(Problem::InvalidType {
-                    expected: Cow::Borrowed(expecting),
-                    found: kind_found.name(),
-                }));
-            }
+    let reading_the_enum = TaggedContentVisitor {
+        tag,
+        expecting,
+        collects_type_errors,
+        variant: PhantomData,
+    };
+    let (tag_found, content) = match deserializer.deserialize_any(reading_the_enum)? {
+        TaggedContent::Read { tag_found, content } => (tag_found, content),
+        TaggedContent::NotTheEnum(kind_found) => {
+            return Ok(Tagged::IssueAtTheEnum(Problem::InvalidType {
+                expected: Cow::Borrowed(expecting),
+                found: kind_found.name(),
+            }));
         }
-    } else {
-        deserializer.deserialize_any(TaggedContentVisitor { tag, expecting })?
     };
-    let Some(tag_value) = tag_value else {
-        return Ok(Tagged::IssueAtTheTag(Problem::Missing));
-    };
-    let content = Buffered {
-        content,
-        read_as: ReadAs::SerdesBuffer { is_human_readable },
-    };
-    match V::deserialize(ContentDeserializer::<WrongType>::new(
-        tag_value,
-        ReadAs::SerdesBuffer { is_human_readable },
-    )) {
-        Ok(variant) => Ok(Tagged::Variant(variant, content)),
-        Err(_) => Ok(Tagged::IssueAtTheTag(Problem::UnknownVariant { expected: variants })),
+    match tag_found {
+        TagFound::Missing => Ok(Tagged::IssueAtTheTag(Problem::Missing)),
+        TagFound::NamingNoVariant => Ok(Tagged::IssueAtTheTag(Problem::UnknownVariant { expected: variants })),
+        TagFound::Naming(variant) => {
+            let content = Buffered {
+                content,
+                read_as: ReadAs::SerdesBuffer { is_human_readable },
+            };
+            Ok(Tagged::Variant(variant, content))
+        }
     }
 }
 
-type TagAndContent<'de> = (Option<Content<'de>>, Content<'de>);
+/// What reading an internally tagged enum's value found: its tag, beside every other entry, or a value of another kind
+/// when type errors are collected.
+enum TaggedContent<'de, V> {
+    Read {
+        tag_found: TagFound<V>,
+        content: Content<'de>,
+    },
+    NotTheEnum(ValueKind),
+}
 
-fn tag_split_from<'de, E: de::Error>(
-    content: Content<'de>,
-    tag: &'static str,
-) -> Result<Result<TagAndContent<'de>, ValueKind>, E> {
-    match content {
-        Content::Map(mut entries) => {
-            let mut tag_positions = entries
-                .iter()
-                .enumerate()
-                .filter(|(_, (key, _))| field_name_of(key) == Some(tag))
-                .map(|(position, _)| position);
-            let tag_position = tag_positions.next();
-            if tag_positions.next().is_some() {
-                return Err(E::duplicate_field(tag));
-            }
-            let tag_value = tag_position.map(|position| entries.remove(position).1);
-            Ok(Ok((tag_value, Content::Map(entries))))
-        }
-        Content::Seq(mut elements) => {
-            let tag_value = (!elements.is_empty()).then(|| elements.remove(0));
-            Ok(Ok((tag_value, Content::Seq(elements))))
-        }
-        other => Ok(Err(other.kind())),
+/// What an internally tagged enum's tag says.
+enum TagFound<V> {
+    Missing,
+    NamingNoVariant,
+    Naming(V),
+}
+
+impl<V> TagFound<V> {
+    fn naming(variant: Option<V>) -> Self {
+        variant.map_or(Self::NamingNoVariant, Self::Naming)
     }
 }
 
-struct TaggedContentVisitor {
+struct TaggedContentVisitor<V> {
     tag: &'static str,
     expecting: &'static str,
+    collects_type_errors: bool,
+    variant: PhantomData<fn() -> V>,
 }
 
-impl<'de> Visitor<'de> for TaggedContentVisitor {
-    type Value = TagAndContent<'de>;
+impl<'de, V: serde::Deserialize<'de>> TaggedContentVisitor<V> {
+    fn not_the_enum<E: de::Error>(
+        self,
+        kind: ValueKind,
+        unexpected: Unexpected<'_>,
+    ) -> Result<TaggedContent<'de, V>, E> {
+        if self.collects_type_errors {
+            return Ok(TaggedContent::NotTheEnum(kind));
+        }
+        Err(E::invalid_type(unexpected, &self))
+    }
+
+    fn not_the_enum_holding<D: Deserializer<'de>>(
+        self,
+        held: D,
+        unexpected: Unexpected<'_>,
+    ) -> Result<TaggedContent<'de, V>, D::Error> {
+        if !self.collects_type_errors {
+            return Err(D::Error::invalid_type(unexpected, &self));
+        }
+        let held = <Content as serde::Deserialize>::deserialize(held)?;
+        Ok(TaggedContent::NotTheEnum(held.kind()))
+    }
+}
+
+impl<'de, V: serde::Deserialize<'de>> Visitor<'de> for TaggedContentVisitor<V> {
+    type Value = TaggedContent<'de, V>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.expecting)
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-        let mut tag_value = None;
-        let mut entries = Vec::new();
+        let mut tag_found = TagFound::Missing;
+        let mut entries = Vec::with_capacity(room_for::<(Content, Content)>(map.size_hint()));
         while let Some(key) = map.next_key::<Content<'de>>()? {
-            if field_name_of(&key) == Some(self.tag) {
-                if tag_value.is_some() {
-                    return Err(A::Error::duplicate_field(self.tag));
-                }
-                tag_value = Some(map.next_value::<Content<'de>>()?);
-            } else {
+            if field_name_of(&key) != Some(self.tag) {
                 entries.push((key, map.next_value::<Content<'de>>()?));
+                continue;
             }
+            if !matches!(tag_found, TagFound::Missing) {
+                return Err(A::Error::duplicate_field(self.tag));
+            }
+            tag_found = TagFound::naming(map.next_value_seed(TagName::<V>::new())?);
         }
-        Ok((tag_value, Content::Map(entries)))
+        Ok(TaggedContent::Read {
+            tag_found,
+            content: Content::Map(entries),
+        })
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-        let tag_value = seq.next_element::<Content<'de>>()?;
-        let mut elements = Vec::new();
+        let tag_found = seq
+            .next_element_seed(TagName::<V>::new())?
+            .map_or(TagFound::Missing, TagFound::naming);
+        let mut elements = Vec::with_capacity(room_for::<Content>(seq.size_hint()));
         while let Some(element) = seq.next_element::<Content<'de>>()? {
             elements.push(element);
         }
-        Ok((tag_value, Content::Seq(elements)))
+        Ok(TaggedContent::Read {
+            tag_found,
+            content: Content::Seq(elements),
+        })
+    }
+
+    fn visit_bool<E: de::Error>(self, boolean: bool) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Boolean, Unexpected::Bool(boolean))
+    }
+
+    fn visit_i64<E: de::Error>(self, integer: i64) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Integer, Unexpected::Signed(integer))
+    }
+
+    fn visit_i128<E: de::Error>(self, _: i128) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Integer, Unexpected::Other("integer"))
+    }
+
+    fn visit_u64<E: de::Error>(self, integer: u64) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Integer, Unexpected::Unsigned(integer))
+    }
+
+    fn visit_u128<E: de::Error>(self, _: u128) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Integer, Unexpected::Other("integer"))
+    }
+
+    fn visit_f64<E: de::Error>(self, float: f64) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Float, Unexpected::Float(float))
+    }
+
+    fn visit_char<E: de::Error>(self, character: char) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Character, Unexpected::Char(character))
+    }
+
+    fn visit_str<E: de::Error>(self, string: &str) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::String, Unexpected::Str(string))
+    }
+
+    fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Bytes, Unexpected::Bytes(bytes))
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Null, Unexpected::Unit)
+    }
+
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        self.not_the_enum(ValueKind::Null, Unexpected::Option)
+    }
+
+    fn visit_some<D: Deserializer<'de>>(self, held: D) -> Result<Self::Value, D::Error> {
+        self.not_the_enum_holding(held, Unexpected::Option)
+    }
+
+    fn visit_newtype_struct<D: Deserializer<'de>>(self, held: D) -> Result<Self::Value, D::Error> {
+        self.not_the_enum_holding(held, Unexpected::NewtypeStruct)
     }
 }
 
@@ -303,8 +387,9 @@ impl Visitor<'_> for TagOrContentKey {
     }
 }
 
-/// Reads a tag's value as the variant `V` it names, or as `None` when it names none, whatever its type, so that the
-/// enum can report it and reading can go on.
+/// Reads the value of an adjacently tagged enum's tag in a map as the variant `V` it names, or as `None` when it names
+/// none, whatever its type, so that the enum can report it and reading can go on. As with serde, the value is a unit
+/// variant: a name, or a map of a name to a unit, as the deserializer reads an enum.
 pub struct TagValue<V>(PhantomData<fn() -> V>);
 
 impl<V> TagValue<V> {
@@ -325,8 +410,80 @@ impl<'de, V: serde::Deserialize<'de>> DeserializeSeed<'de> for TagValue<V> {
     type Value = Option<V>;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Option<V>, D::Error> {
-        let Buffered { content, read_as } = Buffered::deserialize(deserializer)?;
-        Ok(V::deserialize(ContentDeserializer::<WrongType>::new(content, read_as)).ok())
+        variant_named_by(deserializer, UnitVariant::<V>(PhantomData))
+    }
+}
+
+/// Reads a tag as the name of the variant `V` it names, or as `None` when it names none, whatever its type, so that the
+/// enum can report it and reading can go on. As with serde, the name is read as the deserializer reads a name: an
+/// internal tag, and an adjacent tag at the head of a sequence.
+pub struct TagName<V>(PhantomData<fn() -> V>);
+
+impl<V> TagName<V> {
+    /// A seed reading a tag naming a `V`.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<V> Default for TagName<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'de, V: serde::Deserialize<'de>> DeserializeSeed<'de> for TagName<V> {
+    type Value = Option<V>;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Option<V>, D::Error> {
+        variant_named_by(deserializer, PhantomData::<V>)
+    }
+}
+
+/// Reads a tag with `naming`, as `tag` reads it, or as `None` when `naming` refuses it. A format can't go on past a
+/// value it refused, so a tag from a format is buffered first, and read as the format reads it. annotated's buffers
+/// read it where it is, as the reader they stand for.
+fn variant_named_by<'de, D, S>(tag: D, naming: S) -> Result<Option<S::Value>, D::Error>
+where
+    D: Deserializer<'de>,
+    S: DeserializeSeed<'de>,
+{
+    if is_annotated_s_buffer::<D>() {
+        return Ok(naming.deserialize(tag).ok());
+    }
+    let read_as = ReadAs::TheFormat {
+        is_human_readable: tag.is_human_readable(),
+    };
+    let tag = <Content as serde::Deserialize>::deserialize(tag)?;
+    Ok(naming
+        .deserialize(ContentDeserializer::<WrongType>::new(tag, read_as))
+        .ok())
+}
+
+/// Reads a unit variant of an enum whose variants `V` names. Only annotated's buffers are asked, which read an enum
+/// whatever its name.
+struct UnitVariant<V>(PhantomData<fn() -> V>);
+
+impl<'de, V: serde::Deserialize<'de>> DeserializeSeed<'de> for UnitVariant<V> {
+    type Value = V;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<V, D::Error> {
+        deserializer.deserialize_enum("", &[], self)
+    }
+}
+
+impl<'de, V: serde::Deserialize<'de>> Visitor<'de> for UnitVariant<V> {
+    type Value = V;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a unit variant")
+    }
+
+    fn visit_enum<A: EnumAccess<'de>>(self, unit_variant: A) -> Result<V, A::Error> {
+        let (variant, content) = unit_variant.variant::<V>()?;
+        content.unit_variant()?;
+        Ok(variant)
     }
 }
 

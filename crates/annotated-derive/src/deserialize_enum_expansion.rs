@@ -1080,7 +1080,7 @@ impl EnumExpansion<'_> {
             ) -> ::core::result::Result<Self::Value, __A::Error> {
                 match #serde::de::SeqAccess::next_element_seed(
                     &mut #seq,
-                    _annotated::__private::TagValue::<__Variant>::new(),
+                    _annotated::__private::TagName::<__Variant>::new(),
                 )? {
                     ::core::option::Option::Some(::core::option::Option::Some(#variant)) => #content_read,
                     ::core::option::Option::Some(::core::option::Option::None) => {

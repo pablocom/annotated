@@ -109,13 +109,6 @@ struct KnownDifference {
     body: &'static str,
 }
 
-const fn in_json(body: &'static str) -> KnownDifference {
-    KnownDifference {
-        formats: &[Format::Json],
-        body,
-    }
-}
-
 const fn in_message_pack(body: &'static str) -> KnownDifference {
     KnownDifference {
         formats: &[Format::MessagePack],
@@ -498,9 +491,6 @@ mod an_externally_tagged_enum {
     /// for a sequence of the wrong length, unless the field has a default.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"{"Transfer": ["ES12"]}"#)];
 
-    /// annotated's buffer reads a variant's name only, where MessagePack also reads its index.
-    const INDICES_AS_TAGS_IN_THE_BUFFER: &[KnownDifference] = &[in_message_pack("0")];
-
     /// MessagePack reads a unit struct from an empty sequence, which annotated's buffer doesn't.
     const UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] = &[in_message_pack(r#"{"Marked": []}"#)];
 
@@ -520,7 +510,6 @@ mod an_externally_tagged_enum {
             BODIES,
             &[
                 OPTIONS_MISSING_FROM_A_SEQUENCE,
-                INDICES_AS_TAGS_IN_THE_BUFFER,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
         );
@@ -533,7 +522,6 @@ mod an_externally_tagged_enum {
             BODIES,
             &[
                 OPTIONS_MISSING_FROM_A_SEQUENCE,
-                INDICES_AS_TAGS_IN_THE_BUFFER,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
         );
@@ -609,13 +597,6 @@ mod an_internally_tagged_enum {
         "0",
     ];
 
-    /// annotated reads a tag given as an integer as a variant's index, which `serde_json` refuses.
-    const INDICES_AS_TAGS: &[KnownDifference] = &[
-        in_json(r#"{"type": 0}"#),
-        in_json(r#"{"type": 1, "number": "4111"}"#),
-        in_json("[0]"),
-    ];
-
     /// An `Option` field whose element is missing from the end of a sequence is `None` to annotated. serde takes it
     /// for a sequence of the wrong length, unless the field has a default.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"["Transfer", "ES12"]"#)];
@@ -625,7 +606,7 @@ mod an_internally_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, by_annotated::Payment>(
             "an internally tagged enum",
             BODIES,
-            &[INDICES_AS_TAGS, OPTIONS_MISSING_FROM_A_SEQUENCE],
+            &[OPTIONS_MISSING_FROM_A_SEQUENCE],
         );
     }
 
@@ -634,7 +615,7 @@ mod an_internally_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_at_the_root::Payment>(
             "an internally tagged enum collecting type errors",
             BODIES,
-            &[INDICES_AS_TAGS, OPTIONS_MISSING_FROM_A_SEQUENCE],
+            &[OPTIONS_MISSING_FROM_A_SEQUENCE],
         );
     }
 
@@ -643,7 +624,7 @@ mod an_internally_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_throughout::Payment>(
             "an internally tagged enum collecting type errors throughout",
             BODIES,
-            &[INDICES_AS_TAGS, OPTIONS_MISSING_FROM_A_SEQUENCE],
+            &[OPTIONS_MISSING_FROM_A_SEQUENCE],
         );
     }
 }
@@ -725,16 +706,6 @@ mod an_adjacently_tagged_enum {
         "null",
     ];
 
-    /// annotated reads a tag given as an integer as a variant's index, which `serde_json` refuses, and refuses a tag given
-    /// as a unit variant, which serde reads.
-    const TAGS_READ_FROM_THE_BUFFER: &[KnownDifference] = &[
-        in_json(r#"{"type": 0}"#),
-        in_json(r#"{"type": 0, "data": null}"#),
-        in_json(r#"{"type": 1, "data": {"number": "4111"}}"#),
-        in_json("[0, null]"),
-        in_both_formats(r#"{"type": {"Cash": null}}"#),
-    ];
-
     /// annotated reads a unit variant from a sequence of its tag alone, which serde takes for a sequence of the wrong
     /// length.
     const CONTENT_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"["Cash"]"#)];
@@ -748,7 +719,7 @@ mod an_adjacently_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, by_annotated::Payment>(
             "an adjacently tagged enum",
             BODIES,
-            &[TAGS_READ_FROM_THE_BUFFER, CONTENT_MISSING_FROM_A_SEQUENCE],
+            &[CONTENT_MISSING_FROM_A_SEQUENCE],
         );
     }
 
@@ -758,7 +729,6 @@ mod an_adjacently_tagged_enum {
             "an adjacently tagged enum collecting type errors",
             BODIES,
             &[
-                TAGS_READ_FROM_THE_BUFFER,
                 CONTENT_MISSING_FROM_A_SEQUENCE,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
@@ -771,7 +741,6 @@ mod an_adjacently_tagged_enum {
             "an adjacently tagged enum collecting type errors throughout",
             BODIES,
             &[
-                TAGS_READ_FROM_THE_BUFFER,
                 CONTENT_MISSING_FROM_A_SEQUENCE,
                 UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
             ],
@@ -903,25 +872,12 @@ mod tagged_enums_in_a_struct {
         "{}",
     ];
 
-    /// annotated reads a tag given as an integer as a variant's index, which `serde_json` refuses, and refuses a tag given
-    /// as a unit variant, which serde reads.
-    const TAGS_READ_FROM_THE_BUFFER: &[KnownDifference] = &[
-        in_json(r#"{"internal": {"type": 0}}"#),
-        in_json(r#"{"internal": {"type": 1, "number": "4111"}}"#),
-        in_json(r#"{"adjacent": {"type": 0}}"#),
-        in_json(r#"{"adjacent": [0, null]}"#),
-        in_both_formats(r#"{"adjacent": {"type": {"Cash": null}}}"#),
-    ];
-
-    /// annotated's buffer reads a variant's name only, where MessagePack also reads its index.
-    const INDICES_AS_TAGS_IN_THE_BUFFER: &[KnownDifference] = &[in_message_pack(r#"{"external": 0}"#)];
-
     #[test]
     fn tagged_enums_in_a_struct_read_each_body_as_serde_reads_it() {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, by_annotated::Order>(
             "tagged enums in a struct",
             BODIES,
-            &[TAGS_READ_FROM_THE_BUFFER],
+            &[],
         );
     }
 
@@ -930,7 +886,7 @@ mod tagged_enums_in_a_struct {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_at_the_root::Order>(
             "tagged enums in a struct collecting type errors",
             BODIES,
-            &[TAGS_READ_FROM_THE_BUFFER, INDICES_AS_TAGS_IN_THE_BUFFER],
+            &[],
         );
     }
 
@@ -939,7 +895,146 @@ mod tagged_enums_in_a_struct {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_throughout::Order>(
             "tagged enums collecting type errors in a struct collecting them",
             BODIES,
-            &[TAGS_READ_FROM_THE_BUFFER, INDICES_AS_TAGS_IN_THE_BUFFER],
+            &[],
+        );
+    }
+}
+
+mod tagged_enums_beside_an_internal_tag {
+    use super::*;
+
+    read_by_both! {
+        #[serde(tag = "type")]
+        enum Order {
+            Internal(#[validate(nested)] Internal),
+            Adjacent(#[validate(nested)] Adjacent),
+        }
+
+        #[serde(tag = "kind")]
+        enum Internal {
+            Cash,
+            Card { number: String },
+        }
+
+        #[serde(tag = "kind", content = "data")]
+        enum Adjacent {
+            Cash,
+            Card { number: String },
+        }
+    }
+
+    const BODIES: &[&str] = &[
+        r#"{"type": "Internal", "kind": "Cash"}"#,
+        r#"{"type": "Internal", "kind": "Card", "number": "4111"}"#,
+        r#"{"type": "Internal", "kind": 0}"#,
+        r#"{"type": "Internal", "kind": 1, "number": "4111"}"#,
+        r#"{"type": "Internal", "kind": 2}"#,
+        r#"{"type": "Internal", "kind": -1}"#,
+        r#"{"type": "Internal", "kind": true}"#,
+        r#"{"type": "Internal", "kind": {"Cash": null}}"#,
+        r#"{"type": "Adjacent", "kind": "Cash"}"#,
+        r#"{"type": "Adjacent", "kind": "Card", "data": {"number": "4111"}}"#,
+        r#"{"type": "Adjacent", "kind": 0}"#,
+        r#"{"type": "Adjacent", "kind": 1, "data": {"number": "4111"}}"#,
+        r#"{"type": "Adjacent", "data": {"number": "4111"}, "kind": 1}"#,
+        r#"{"type": "Adjacent", "kind": {"Cash": null}}"#,
+        r#"{"type": "Adjacent", "kind": {"Card": null}, "data": {"number": "4111"}}"#,
+        r#"{"type": "Adjacent", "kind": {"Cash": 1}}"#,
+        r#"{"type": "Adjacent", "kind": true}"#,
+    ];
+
+    #[test]
+    fn tagged_enums_beside_an_internal_tag_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Order, by_annotated::Order>(
+            "tagged enums beside an internal tag",
+            BODIES,
+            &[],
+        );
+    }
+
+    #[test]
+    fn tagged_enums_beside_an_internal_tag_collecting_type_errors_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_at_the_root::Order>(
+            "tagged enums beside an internal tag collecting type errors",
+            BODIES,
+            &[],
+        );
+    }
+
+    #[test]
+    fn tagged_enums_collecting_type_errors_beside_an_internal_tag_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_throughout::Order>(
+            "tagged enums collecting type errors beside an internal tag collecting them",
+            BODIES,
+            &[],
+        );
+    }
+}
+
+mod tagged_enums_in_an_untagged_enum {
+    use super::*;
+
+    read_by_both! {
+        #[serde(untagged)]
+        enum Payment {
+            Internal(#[validate(nested)] Internal),
+            Adjacent(#[validate(nested)] Adjacent),
+        }
+
+        #[serde(tag = "kind")]
+        enum Internal {
+            Cash,
+            Card { number: String },
+        }
+
+        #[serde(tag = "kind", content = "data")]
+        enum Adjacent {
+            Cash,
+            Transfer { iban: String },
+        }
+    }
+
+    const BODIES: &[&str] = &[
+        r#"{"kind": "Cash"}"#,
+        r#"{"kind": "Card", "number": "4111"}"#,
+        r#"{"kind": 0}"#,
+        r#"{"kind": 1, "number": "4111"}"#,
+        r#"{"kind": 2}"#,
+        r#"{"kind": true}"#,
+        r#"{"kind": "Transfer", "data": {"iban": "ES12"}}"#,
+        r#"{"kind": 1, "data": {"iban": "ES12"}}"#,
+        r#"{"data": {"iban": "ES12"}, "kind": 1}"#,
+        r#"{"kind": {"Cash": null}}"#,
+        r#"{"kind": {"Transfer": null}, "data": {"iban": "ES12"}}"#,
+        r#"["Cash"]"#,
+        "[0]",
+        r#"[1, {"iban": "ES12"}]"#,
+    ];
+
+    #[test]
+    fn tagged_enums_in_an_untagged_enum_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, by_annotated::Payment>(
+            "tagged enums in an untagged enum",
+            BODIES,
+            &[],
+        );
+    }
+
+    #[test]
+    fn tagged_enums_in_an_untagged_enum_collecting_type_errors_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_at_the_root::Payment>(
+            "tagged enums in an untagged enum collecting type errors",
+            BODIES,
+            &[],
+        );
+    }
+
+    #[test]
+    fn tagged_enums_collecting_type_errors_in_an_untagged_enum_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_throughout::Payment>(
+            "tagged enums collecting type errors in an untagged enum collecting them",
+            BODIES,
+            &[],
         );
     }
 }

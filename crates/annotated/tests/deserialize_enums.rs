@@ -16,6 +16,14 @@ fn read<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, String> {
     deserialize(json).map_err(|error| error.to_string())
 }
 
+fn read_message_pack<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, String> {
+    annotated::from_deserializer(&mut rmp_serde::Deserializer::from_read_ref(bytes)).map_err(|error| error.to_string())
+}
+
+fn message_pack_of(value: &serde_json::Value) -> Vec<u8> {
+    rmp_serde::to_vec(value).unwrap()
+}
+
 fn issues_reading<'de, T: Deserialize<'de>>(json: &'de str) -> Vec<String> {
     described_outcome(deserialize::<T>(json))
 }
@@ -677,6 +685,22 @@ fn the_tag_of_an_internally_tagged_variant_may_come_after_its_keys() {
 }
 
 #[test]
+fn an_internal_tag_given_as_an_integer_names_no_variant_as_json_reads_it() {
+    assert_eq!(
+        issues_reading::<Notification>(r#"{ "type": 2 }"#),
+        ["type: unknown_variant(expected: email, mail, push, muted)"]
+    );
+}
+
+#[test]
+fn an_internal_tag_given_as_an_index_names_its_variant_as_message_pack_reads_it() {
+    assert_eq!(
+        read_message_pack::<Notification>(&message_pack_of(&serde_json::json!({ "type": 2 }))),
+        Ok(Notification::Muted)
+    );
+}
+
+#[test]
 fn an_internally_tagged_unit_variant_is_read_from_its_tag_alone() {
     assert_eq!(read::<Notification>(r#"{ "type": "muted" }"#), Ok(Notification::Muted));
 }
@@ -909,7 +933,7 @@ fn under_collect_type_errors_an_internally_tagged_variant_is_read_from_a_sequenc
 fn under_collect_type_errors_a_tag_given_twice_is_the_format_s_error() {
     assert_eq!(
         issues_reading::<Alert>(r#"{ "type": "email", "type": "email" }"#),
-        ["the format's error: duplicate field `type`"]
+        ["the format's error: duplicate field `type` at line 1 column 25"]
     );
 }
 
@@ -1047,6 +1071,22 @@ fn reading_goes_on_after_an_adjacent_tag_that_names_no_variant() {
             "first.type: unknown_variant(expected: signedUp, renamed, moved, snoozed, loggedOut)",
             "second.data: required"
         ]
+    );
+}
+
+#[test]
+fn an_adjacent_tag_is_read_from_a_unit_variant_as_serde_reads_it() {
+    assert_eq!(
+        read::<Event>(r#"{ "type": { "loggedOut": null } }"#),
+        Ok(Event::LoggedOut)
+    );
+}
+
+#[test]
+fn an_adjacent_tag_given_as_an_integer_names_no_variant_as_json_reads_it() {
+    assert_eq!(
+        issues_reading::<Event>(r#"{ "type": 4 }"#),
+        ["type: unknown_variant(expected: signedUp, renamed, moved, snoozed, loggedOut)"]
     );
 }
 
@@ -1784,8 +1824,19 @@ fn a_skipped_variant_s_type_parameter_needs_no_deserialize() {
 }
 
 #[test]
-fn a_tag_given_as_an_index_beyond_the_variants_reads_as_the_other_variant() {
-    assert_eq!(read::<Attachment>(r#"{ "type": 7 }"#), Ok(Attachment::Unsupported));
+fn a_tag_given_as_an_index_beyond_the_variants_reads_as_the_other_variant_where_the_format_reads_an_index() {
+    assert_eq!(
+        read_message_pack::<Attachment>(&message_pack_of(&serde_json::json!({ "type": 7 }))),
+        Ok(Attachment::Unsupported)
+    );
+}
+
+#[test]
+fn a_tag_given_as_an_integer_names_no_variant_where_the_format_reads_names_alone_whatever_the_other_variant() {
+    assert_eq!(
+        issues_reading::<Attachment>(r#"{ "type": 7 }"#),
+        ["type: unknown_variant(expected: image, unsupported)"]
+    );
 }
 
 #[derive(Deserialize, Debug, PartialEq)]

@@ -494,7 +494,9 @@ pub use annotated_derive::Validate;
 ///   names one of its variants, as serde reads it, and a struct with no such key is the format's error.
 /// - With `tag`, every key but the tag is buffered, as serde does, and the variant is read from them. A missing tag is
 ///   [`Problem::Missing`] at the tag's name, and a tag that names no variant is a [`Problem::UnknownVariant`] there,
-///   with or without `collect_type_errors`, so reading goes on.
+///   with or without `collect_type_errors`, so reading goes on. As with serde, a tag names a variant by its name, or
+///   by its index in a format that reads one, such as MessagePack and unlike JSON, and with `content` too, by a map
+///   of its name to `null`.
 /// - With `tag` and `content`, the content is read straight from the input when the tag comes first, and buffered
 ///   when it comes after, as with serde. A missing tag, or one that names no variant, is reported at the tag's name as
 ///   with `tag` alone. Missing content is [`Problem::Missing`] at the content's name, unless the variant needs none: a

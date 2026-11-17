@@ -75,6 +75,31 @@ impl ReadAs {
     const fn takes_a_unit_from_an_empty_value(self) -> bool {
         matches!(self, Self::SerdesBuffer { .. })
     }
+
+    // A field or a variant is named by its index too, as serde's data model has it, where its reader takes one. serde's
+    // buffer takes an index written as a `u8` or a `u64`. A format takes one as its own reader does, which the buffer
+    // can't ask: MessagePack's reads anything as a name, and JSON's a string alone. So a format is taken to read an
+    // index when it isn't human-readable, as a compact format may write a variant by its index.
+    fn takes_an_index_for_a_name(self, index: &Content<'_>) -> bool {
+        match self {
+            Self::TheFormat { is_human_readable } => !is_human_readable,
+            Self::SerdesBuffer { .. } | Self::SerdesBufferByReference { .. } => is_an_index_serde_s_buffer_takes(index),
+        }
+    }
+
+    // Such a format reads an enum from a variant's index alone too, where serde's buffer reads it from a name or a map.
+    fn takes_an_index_for_a_variant(self, index: &Content<'_>) -> bool {
+        matches!(
+            self,
+            Self::TheFormat {
+                is_human_readable: false
+            }
+        ) && index.kind() == ValueKind::Integer
+    }
+}
+
+pub(crate) const fn is_an_index_serde_s_buffer_takes(index: &Content<'_>) -> bool {
+    matches!(index, Content::U8(_) | Content::U64(_))
 }
 
 // The names of the types of annotated's buffers, whatever their error. Rust can't ask whether a deserializer is one of
@@ -86,6 +111,13 @@ const FLATTENED_ENTRIES_TYPE_NAME: &str = "annotated::flattened::FlatMapDeserial
 /// Whether `D` reads a flattened field from the entries a struct kept, whatever its error.
 pub(crate) fn is_annotated_s_flattened_entries<'de, D: Deserializer<'de>>() -> bool {
     std::any::type_name::<D>().starts_with(FLATTENED_ENTRIES_TYPE_NAME)
+}
+
+/// Whether `D` is one of annotated's buffers, whatever its error. Unlike a format, a buffer goes on reading past a
+/// value it refused, and reads it as the reader it stands for.
+pub(crate) fn is_annotated_s_buffer<'de, D: Deserializer<'de>>() -> bool {
+    let name = std::any::type_name::<D>();
+    name.starts_with(BUFFER_TYPE_NAME) || name.starts_with(BUFFER_BY_REFERENCE_TYPE_NAME)
 }
 
 impl<'de, E: de::Error> ContentDeserializer<'de, E> {
@@ -388,6 +420,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
                 )),
                 Err(entries) => Err(Self::new(Content::Map(entries), read_as).invalid_type(&visitor)),
             },
+            _ if read_as.takes_an_index_for_a_variant(&self.content) => visitor.visit_enum(BufferedEnum::named(self)),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -397,7 +430,8 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
             Content::String(_) | Content::Str(_) | Content::ByteBuf(_) | Content::Bytes(_) => {
                 self.deserialize_string(visitor)
             }
-            _ => self.deserialize_integer(visitor),
+            _ if self.read_as.takes_an_index_for_a_name(&self.content) => self.deserialize_integer(visitor),
+            _ => Err(self.invalid_type(&visitor)),
         }
     }
 
@@ -1583,13 +1617,81 @@ mod tests {
     }
 
     #[test]
-    fn a_field_is_named_by_text_bytes_or_index() {
+    fn a_field_is_named_by_text_or_bytes() {
         let fields = Content::Map(vec![
             (Content::Bytes(b"y"), Content::I8(-2)),
-            (Content::U64(0), Content::U8(1)),
+            (Content::Str("x"), Content::U8(1)),
         ]);
 
         assert_eq!(read::<Point>(fields), Ok(Point { x: 1, y: -2 }));
+    }
+
+    fn read_by_a_compact_format<'de, T: Deserialize<'de>>(content: Content<'de>) -> Result<T, WrongType> {
+        T::deserialize(ContentDeserializer::new(
+            content,
+            ReadAs::TheFormat {
+                is_human_readable: false,
+            },
+        ))
+    }
+
+    #[test]
+    fn a_field_named_by_its_index_is_refused_as_a_human_readable_format_refuses_it() {
+        let fields = Content::Map(vec![
+            (Content::U64(0), Content::U8(1)),
+            (Content::Str("y"), Content::I8(-2)),
+        ]);
+
+        assert_eq!(
+            read::<Point>(fields),
+            Err(wrong_type("field identifier", ValueKind::Integer))
+        );
+    }
+
+    #[test]
+    fn a_field_is_named_by_its_index_as_a_compact_format_names_it() {
+        let fields = Content::Map(vec![
+            (Content::U16(0), Content::U8(1)),
+            (Content::U32(1), Content::I8(-2)),
+        ]);
+
+        assert_eq!(read_by_a_compact_format::<Point>(fields), Ok(Point { x: 1, y: -2 }));
+    }
+
+    #[test]
+    fn a_field_is_named_by_its_index_written_as_a_u8_or_a_u64_as_serde_s_buffer_names_it() {
+        let fields = Content::Map(vec![
+            (Content::U8(0), Content::U8(1)),
+            (Content::U64(1), Content::I8(-2)),
+        ]);
+
+        assert_eq!(read_as_serde_s_buffer::<Point>(fields), Ok(Point { x: 1, y: -2 }));
+    }
+
+    #[test]
+    fn an_index_of_another_width_is_refused_as_a_name_as_serde_s_buffer_refuses_it() {
+        let fields = Content::Map(vec![
+            (Content::U16(0), Content::U8(1)),
+            (Content::Str("y"), Content::I8(-2)),
+        ]);
+
+        assert_eq!(
+            read_as_serde_s_buffer::<Point>(fields),
+            Err(wrong_type("field identifier", ValueKind::Integer))
+        );
+    }
+
+    #[test]
+    fn a_unit_variant_is_read_from_its_index_alone_as_a_compact_format_reads_it() {
+        assert_eq!(read_by_a_compact_format::<Status>(Content::U8(0)), Ok(Status::Active));
+    }
+
+    #[test]
+    fn an_index_alone_is_refused_as_an_enum_as_serde_s_buffer_refuses_it() {
+        assert_eq!(
+            read_as_serde_s_buffer::<Status>(Content::U8(0)),
+            Err(wrong_type("enum Status", ValueKind::Integer))
+        );
     }
 
     #[test]

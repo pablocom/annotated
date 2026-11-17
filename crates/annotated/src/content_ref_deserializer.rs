@@ -5,7 +5,8 @@ use serde::de::{self, Deserializer, Expected, IntoDeserializer, Visitor};
 
 use crate::content::Content;
 use crate::content_deserializer::{
-    BufferedEnum, ContentDeserializer, ReadAs, boolean_written_in, integer_written_in, visit_i128, visit_u128,
+    BufferedEnum, ContentDeserializer, ReadAs, boolean_written_in, integer_written_in,
+    is_an_index_serde_s_buffer_takes, visit_i128, visit_u128,
 };
 
 /// Reads a [`Content`] by reference, so the same buffer can be read again: each variant of an untagged enum is tried
@@ -306,7 +307,8 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentRefDeserializer<'_, 'de, E>
             Content::String(_) | Content::Str(_) | Content::ByteBuf(_) | Content::Bytes(_) => {
                 self.deserialize_string(visitor)
             }
-            _ => self.deserialize_integer(visitor),
+            _ if is_an_index_serde_s_buffer_takes(self.content) => self.deserialize_integer(visitor),
+            _ => Err(self.invalid_type(&visitor)),
         }
     }
 

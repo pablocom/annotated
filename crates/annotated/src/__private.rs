@@ -24,8 +24,8 @@ pub use crate::deserialize::DeserializeAt;
 pub use crate::flattened::{FlatMapDeserializer, Key, Leftovers};
 #[cfg(feature = "serde")]
 pub use crate::tagged::{
-    Buffered, InternallyTaggedUnitVisitor, TagOrContent, TagOrContentKey, TagValue, Tagged, UnitVariantVisitor,
-    read_internally_tagged,
+    Buffered, InternallyTaggedUnitVisitor, TagName, TagOrContent, TagOrContentKey, TagValue, Tagged,
+    UnitVariantVisitor, read_internally_tagged,
 };
 
 // Out of line and cold, so a rule that passes costs one branch: the benchmarks' order of 100 lines validates in
