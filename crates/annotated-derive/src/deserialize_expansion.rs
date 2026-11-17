@@ -930,8 +930,9 @@ impl<'a> DeserializeExpansion<'a> {
         quote!(::core::option::Option::map(#value, |#wrapper| #wrapper.value))
     }
 
-    // Never inlined, so the frame a nested body's recursion repeats doesn't hold the checks' locals: a MessagePack tree
-    // takes 25–32% less stack per level and 200 structs compile in 10.2 s, not 17.6, for up to 2.9% more instructions.
+    // Always inlined into `visit_map` and `visit_seq`. As one function both call, 200 structs compiled in 10.2 s, not
+    // 17.6, and a MessagePack tree took 25–32% less stack per level, but each struct read paid a call that passes its
+    // slots and its value through memory: 0.6% more instructions on an order, 3–4.5% on structs nested three deep.
     fn checked_value(&self) -> TokenStream {
         let Self {
             deserialized,
@@ -982,7 +983,7 @@ impl<'a> DeserializeExpansion<'a> {
             )
         };
         quote! {
-            #[inline(never)]
+            #[inline(always)]
             fn checked_value(
                 self,
                 (#(#slots,)*): (#(#slot_types,)*),
