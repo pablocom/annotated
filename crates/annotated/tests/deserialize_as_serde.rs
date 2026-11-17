@@ -382,7 +382,9 @@ mod a_struct {
     ];
 
     /// An `Option` field whose element is missing from the end of a sequence is `None` to annotated. serde takes it
-    /// for a sequence of the wrong length, unless the field has a default.
+    /// for a sequence of the wrong length, unless the field has a default. annotated checks a struct read from a
+    /// sequence with the code that checks one read from a map, where an absent `Option` is `None`: telling the two
+    /// apart there is a change of its own.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[
         in_both_formats(r#"{"id": 1, "address": ["Gran Vía"]}"#),
         in_both_formats("[1]"),
@@ -488,10 +490,14 @@ mod an_externally_tagged_enum {
     ];
 
     /// An `Option` field whose element is missing from the end of a sequence is `None` to annotated. serde takes it
-    /// for a sequence of the wrong length, unless the field has a default.
+    /// for a sequence of the wrong length, unless the field has a default. annotated checks a struct read from a
+    /// sequence with the code that checks one read from a map, where an absent `Option` is `None`: telling the two
+    /// apart there is a change of its own.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"{"Transfer": ["ES12"]}"#)];
 
-    /// MessagePack reads a unit struct from an empty sequence, which annotated's buffer doesn't.
+    /// MessagePack reads a unit struct from an empty sequence, which annotated's buffer doesn't. `rmp-serde` writes a unit
+    /// struct as one, which no other format annotated's buffer could follow does: JSON and CBOR read one from null
+    /// alone, and the buffer can't ask the format which it is.
     const UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] = &[in_message_pack(r#"{"Marked": []}"#)];
 
     #[test]
@@ -598,7 +604,9 @@ mod an_internally_tagged_enum {
     ];
 
     /// An `Option` field whose element is missing from the end of a sequence is `None` to annotated. serde takes it
-    /// for a sequence of the wrong length, unless the field has a default.
+    /// for a sequence of the wrong length, unless the field has a default. annotated checks a struct read from a
+    /// sequence with the code that checks one read from a map, where an absent `Option` is `None`: telling the two
+    /// apart there is a change of its own.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"["Transfer", "ES12"]"#)];
 
     #[test]
@@ -706,7 +714,9 @@ mod an_adjacently_tagged_enum {
         "null",
     ];
 
-    /// MessagePack reads a unit struct from an empty sequence, which annotated's buffer doesn't.
+    /// MessagePack reads a unit struct from an empty sequence, which annotated's buffer doesn't. `rmp-serde` writes a unit
+    /// struct as one, which no other format annotated's buffer could follow does: JSON and CBOR read one from null
+    /// alone, and the buffer can't ask the format which it is.
     const UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] =
         &[in_message_pack(r#"{"type": "Marked", "data": []}"#)];
 
@@ -1200,7 +1210,9 @@ mod options {
     ];
 
     /// An `Option` field whose element is missing from the end of a sequence is `None` to annotated. serde takes it
-    /// for a sequence of the wrong length, unless the field has a default.
+    /// for a sequence of the wrong length, unless the field has a default. annotated checks a struct read from a
+    /// sequence with the code that checks one read from a map, where an absent `Option` is `None`: telling the two
+    /// apart there is a change of its own.
     const OPTIONS_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats("[]")];
 
     #[test]
