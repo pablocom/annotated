@@ -40,8 +40,38 @@
 //!
 //! # A response of your own
 //!
-//! [`ValidJsonRejection`] holds the issues as data. To answer them with a body of your own, convert the rejection
-//! into an error type of yours, and read the body through `ValidJson` with axum's `FromRequest` derive:
+//! [`ValidJsonRejection`] converts into the [`ProblemDetails`] it is answered with. To set their type, or any other
+//! member, to your app's own, convert the rejection into a rejection of yours, and read the body through `ValidJson`
+//! with axum's `FromRequest` derive:
+//!
+//! ```
+//! use annotated_axum::{ProblemDetails, ValidJson, ValidJsonRejection};
+//! use axum::extract::FromRequest;
+//! use axum::response::{IntoResponse, Response};
+//!
+//! #[derive(FromRequest)]
+//! #[from_request(via(ValidJson), rejection(InvalidBody))]
+//! struct AppJson<T>(T);
+//!
+//! struct InvalidBody(ProblemDetails);
+//!
+//! impl From<ValidJsonRejection> for InvalidBody {
+//!     fn from(rejection: ValidJsonRejection) -> Self {
+//!         Self(ProblemDetails::from(rejection).with_type("https://example.com/problems/invalid-body"))
+//!     }
+//! }
+//!
+//! impl IntoResponse for InvalidBody {
+//!     fn into_response(self) -> Response {
+//!         self.0.into_response()
+//!     }
+//! }
+//! ```
+//!
+//! The rejection is an error too, so your rejection can log it: its `Display` says why the request was refused, and
+//! its `source()` is the error it came from.
+//!
+//! It holds the issues as data. To answer them with a body of your own instead, match them in your rejection:
 //!
 //! ```
 //! use annotated::{DeserializeError, Issues};
@@ -83,6 +113,8 @@
 //! This crate works with axum 0.8. A new version of axum that breaks its API comes with a new version of this crate.
 
 use std::borrow::Cow;
+use std::error::Error;
+use std::fmt::{self, Display};
 
 use annotated::{DeserializeError, Issue, Issues, ParamValue};
 use axum::Json;
@@ -133,8 +165,11 @@ fn has_json_content_type(headers: &HeaderMap) -> bool {
         && (media_type.subtype() == "json" || media_type.suffix().is_some_and(|suffix| suffix == "json"))
 }
 
-/// Why [`ValidJson`] didn't read a request. As a response, it is [`ProblemDetails`], with the status axum's own
-/// `Json` answers the same request with.
+/// Why [`ValidJson`] didn't read a request.
+///
+/// As a response, it is the [`ProblemDetails`] it converts into. As an error, its `Display` says why the request was
+/// refused, [`ValidJsonRejection::status`] says the status it is answered with, and its `source()` is the error it
+/// came from: axum's rejection, `serde_json`'s error, or the [`Issues`].
 ///
 /// New kinds may be added without a breaking change, so a `match` on it needs a wildcard arm.
 #[derive(Debug)]
@@ -153,7 +188,11 @@ pub enum ValidJsonRejection {
 }
 
 impl ValidJsonRejection {
-    fn status(&self) -> StatusCode {
+    /// The status the rejection is answered with, the one axum's own `Json` answers the same request with: 415 when
+    /// it isn't sent as JSON, 413 when its body is larger than the app's limit, 400 when the body can't be read or
+    /// isn't JSON, and 422 for a value of the wrong type or for issues.
+    #[must_use]
+    pub fn status(&self) -> StatusCode {
         match self {
             Self::MissingJsonContentType(rejection) => rejection.status(),
             Self::BytesRejection(rejection) => rejection.status(),
@@ -162,38 +201,64 @@ impl ValidJsonRejection {
         }
     }
 
-    fn detail(&self) -> String {
+    /// Why the request was refused, as its `Display` says it: `the body is not JSON: syntax error at line 1 column
+    /// 2`. It is the `detail` of the problem details it is answered with, except for issues, which those list.
+    #[must_use]
+    pub fn body_text(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl Display for ValidJsonRejection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingJsonContentType(_) => {
-                "the request isn't sent as JSON: its Content-Type must be application/json or end in +json".to_owned()
-            }
+            Self::MissingJsonContentType(_) => formatter
+                .write_str("the request isn't sent as JSON: its Content-Type must be application/json or end in +json"),
             Self::BytesRejection(BytesRejection::FailedToBufferBody(FailedToBufferBody::LengthLimitError(_))) => {
-                "the body is larger than the server accepts".to_owned()
+                formatter.write_str("the body is larger than the server accepts")
             }
-            Self::BytesRejection(_) => "the body couldn't be read".to_owned(),
-            Self::Deserialize(DeserializeError::Format(error)) => what_is_wrong_with_the_json(error),
-            Self::Deserialize(_) => "the body has issues".to_owned(),
+            Self::BytesRejection(_) => formatter.write_str("the body couldn't be read"),
+            Self::Deserialize(DeserializeError::Format(error)) => write_what_is_wrong_with_the_json(error, formatter),
+            Self::Deserialize(_) => formatter.write_str("the body has issues"),
         }
     }
 }
 
-fn what_is_wrong_with_the_json(error: &serde_json::Error) -> String {
+fn write_what_is_wrong_with_the_json(error: &serde_json::Error, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
     let (line, column) = (error.line(), error.column());
     match error.classify() {
-        Category::Data => format!("a value at line {line} column {column} can't be read into the type expected"),
-        Category::Eof => format!("the body is not JSON: unexpected end at line {line} column {column}"),
-        Category::Syntax | Category::Io => format!("the body is not JSON: syntax error at line {line} column {column}"),
+        Category::Data => write!(
+            formatter,
+            "a value at line {line} column {column} can't be read into the type expected"
+        ),
+        Category::Eof => write!(
+            formatter,
+            "the body is not JSON: unexpected end at line {line} column {column}"
+        ),
+        Category::Syntax | Category::Io => {
+            write!(
+                formatter,
+                "the body is not JSON: syntax error at line {line} column {column}"
+            )
+        }
+    }
+}
+
+impl Error for ValidJsonRejection {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::MissingJsonContentType(rejection) => Some(rejection),
+            Self::BytesRejection(rejection) => Some(rejection),
+            Self::Deserialize(DeserializeError::Format(error)) => Some(error),
+            Self::Deserialize(DeserializeError::Issues(issues)) => Some(issues),
+            Self::Deserialize(error) => Some(error),
+        }
     }
 }
 
 impl IntoResponse for ValidJsonRejection {
     fn into_response(self) -> Response {
-        match self {
-            Self::Deserialize(DeserializeError::Issues(issues)) => ProblemDetails::from(issues).into_response(),
-            rejection => ProblemDetails::new(rejection.status())
-                .with_detail(rejection.detail())
-                .into_response(),
-        }
+        ProblemDetails::from(self).into_response()
     }
 }
 
@@ -230,8 +295,9 @@ impl IntoResponse for ValidJsonRejection {
 /// }
 /// ```
 ///
-/// It converts from [`Issues`], so a handler that returns `Result<_, ProblemDetails>` answers the issues
-/// `Validate::validate` finds with `?`, and it answers any other problem of the app's:
+/// It converts from a [`ValidJsonRejection`], into the problem details the rejection is answered with, and from
+/// [`Issues`], so a handler that returns `Result<_, ProblemDetails>` answers the issues `Validate::validate` finds
+/// with `?`. And it answers any other problem of the app's:
 ///
 /// ```
 /// use annotated_axum::ProblemDetails;
@@ -340,6 +406,15 @@ impl From<Issues> for ProblemDetails {
     fn from(issues: Issues) -> Self {
         let errors = issues.iter().map(IssueDetails::from).collect();
         Self::with_errors(StatusCode::UNPROCESSABLE_ENTITY, errors)
+    }
+}
+
+impl From<ValidJsonRejection> for ProblemDetails {
+    fn from(rejection: ValidJsonRejection) -> Self {
+        match rejection {
+            ValidJsonRejection::Deserialize(DeserializeError::Issues(issues)) => Self::from(issues),
+            rejection => Self::new(rejection.status()).with_detail(rejection.to_string()),
+        }
     }
 }
 

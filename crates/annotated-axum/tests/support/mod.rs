@@ -34,10 +34,15 @@ pub async fn post_without_a_content_type(app: Router, body: &'static str) -> Res
 pub async fn post_a_body_that_fails(app: Router) -> Response {
     let request = Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::new(FailingBody))
+        .body(a_body_that_fails())
         .expect("a request with a body");
 
     app.oneshot(request).await.expect("a router always answers")
+}
+
+/// A body that fails while it is read, as when the connection breaks.
+pub fn a_body_that_fails() -> Body {
+    Body::new(FailingBody)
 }
 
 pub fn content_type_of(response: &Response) -> &str {

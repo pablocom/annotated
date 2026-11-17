@@ -1,5 +1,6 @@
-//! A rejection of `ValidJson` holds the issues as data, so an app can answer them with a response of its own. And
-//! `ProblemDetails` answers the issues `Validate::validate` finds.
+//! A rejection of `ValidJson` holds the issues as data, so an app can answer them with a response of its own, and
+//! converts into the problem details it is answered with, so an app can set their type. And `ProblemDetails`
+//! answers the issues `Validate::validate` finds.
 
 // The fields here are read from requests, and never used.
 #![allow(dead_code)]
@@ -58,6 +59,29 @@ impl IntoResponse for ApiError {
 }
 
 async fn add_member(AppJson(_new_member): AppJson<NewMember>) -> StatusCode {
+    StatusCode::CREATED
+}
+
+/// A JSON body read by `ValidJson`, refused with problem details of the app's own type.
+#[derive(FromRequest)]
+#[from_request(via(ValidJson), rejection(InvalidBody))]
+struct CheckedJson<T>(T);
+
+struct InvalidBody(ProblemDetails);
+
+impl From<ValidJsonRejection> for InvalidBody {
+    fn from(rejection: ValidJsonRejection) -> Self {
+        Self(ProblemDetails::from(rejection).with_type("https://example.com/problems/invalid-body"))
+    }
+}
+
+impl IntoResponse for InvalidBody {
+    fn into_response(self) -> Response {
+        self.0.into_response()
+    }
+}
+
+async fn add_checked_member(CheckedJson(_new_member): CheckedJson<NewMember>) -> StatusCode {
     StatusCode::CREATED
 }
 
@@ -125,6 +149,32 @@ async fn issues_found_by_validate_are_answered_as_problem_details() {
                     "code": "length",
                     "params": { "min": 8, "unit": "chars" },
                     "detail": "must be at least 8 characters long"
+                }
+            ]
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_refusal_can_be_answered_as_problem_details_of_a_type_of_your_own() {
+    let app = Router::new().route("/", post(add_checked_member));
+
+    let response = support::post(app, "application/json", r#"{ "fullName": "Alex Morgan", "age": 12 }"#).await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(content_type_of(&response), "application/problem+json");
+    assert_eq!(
+        json_body_of(response).await,
+        json!({
+            "type": "https://example.com/problems/invalid-body",
+            "title": "Unprocessable Content",
+            "status": 422,
+            "errors": [
+                {
+                    "pointer": "/age",
+                    "code": "range",
+                    "params": { "min": 18, "max": 120 },
+                    "detail": "must be between 18 and 120"
                 }
             ]
         })

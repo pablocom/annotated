@@ -62,7 +62,7 @@ content-type: application/problem+json
 
 That is the answer annotated-axum recommends: a standard format, with the codes and params for a client that translates them, and an English message for people. A rule's own `message` replaces the English one. A `pointer` is an [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer in its string form, `/age`, not the fragment of a URI, `#/age`.
 
-RFC 9457 says the type `about:blank` means no more than the status. An app that documents its problems, the `errors` member among them, sets their type to the URI of that documentation, as the next section shows.
+RFC 9457 says the type `about:blank` means no more than the status. An app that documents its problems, the `errors` member among them, sets their type to the URI of that documentation, as [Problem details of your own](#problem-details-of-your-own) shows.
 
 ## What it refuses
 
@@ -104,9 +104,39 @@ async fn add_member() -> Result<StatusCode, ProblemDetails> {
 
 `with_title` and `with_instance` set the other two members RFC 9457 defines. The title is the status's reason phrase unless the app sets its own.
 
+The rejection, `ValidJsonRejection`, converts into the `ProblemDetails` it is answered with. To set their type, or any other member, convert the rejection into a rejection of yours, and read the body through `ValidJson` with axum's `FromRequest` derive, from axum's `macros` feature:
+
+```rust
+use annotated_axum::{ProblemDetails, ValidJson, ValidJsonRejection};
+use axum::extract::FromRequest;
+use axum::response::{IntoResponse, Response};
+
+#[derive(FromRequest)]
+#[from_request(via(ValidJson), rejection(InvalidBody))]
+struct AppJson<T>(T);
+
+struct InvalidBody(ProblemDetails);
+
+impl From<ValidJsonRejection> for InvalidBody {
+    fn from(rejection: ValidJsonRejection) -> Self {
+        Self(ProblemDetails::from(rejection).with_type("https://example.com/problems/invalid-body"))
+    }
+}
+
+impl IntoResponse for InvalidBody {
+    fn into_response(self) -> Response {
+        self.0.into_response()
+    }
+}
+```
+
+Handlers then take `AppJson<T>`.
+
 ## A response of your own
 
-The rejection, `ValidJsonRejection`, holds the issues as data. To answer them with a body of your own, convert the rejection into an error type of yours, and read the body through `ValidJson` with axum's `FromRequest` derive, from axum's `macros` feature:
+The rejection is an error, as axum's own rejections are: its `Display` says why the request was refused, `status()` says the status it is answered with, and `source()` is the error it came from, axum's rejection, `serde_json`'s error or the issues. So your rejection can log it, or build a response of its own from it.
+
+It holds the issues as data. To answer them with a body of your own, convert the rejection into an error type of yours:
 
 ```rust
 use annotated::{DeserializeError, Issues};
@@ -143,7 +173,7 @@ impl IntoResponse for ApiError {
 }
 ```
 
-Handlers then take `AppJson<T>`. A rejection the app doesn't answer itself is answered as `ValidJson` answers it.
+A rejection the app doesn't answer itself is answered as `ValidJson` answers it.
 
 ## Values that already exist
 
