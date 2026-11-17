@@ -1,7 +1,8 @@
 //! Both derives compile on shapes meant to break a macro, with every warning denied: raw identifiers, names the
-//! generated code uses for its own, user types shadowing std's, a module without the prelude, and every struct and
-//! enum the derives accept in every serde tagging. A shape the derives rightly refuse is a compile-fail case under
-//! `tests/ui/` instead.
+//! generated code uses for its own, user types shadowing std's, a module without the prelude, generics of every kind,
+//! `Self`, items and types passed through `macro_rules!`, a crate re-exporting annotated, lints a crate may deny, and
+//! every struct and enum the derives accept in every serde tagging. A shape the derives rightly refuse is a
+//! compile-fail case under `tests/ui/` instead.
 
 #![cfg(feature = "serde")]
 #![deny(warnings)]
