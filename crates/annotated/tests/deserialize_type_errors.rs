@@ -3,7 +3,7 @@
 
 #![cfg(feature = "serde")]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv4Addr};
 
 use annotated::{Deserialize, DeserializeError, Issue, Problem};
@@ -1046,5 +1046,198 @@ fn failing_fast_on_a_well_typed_nested_body_answers_as_without_collect_type_erro
     assert_eq!(
         fail_fast_issues_reading::<Consignment>(body),
         fail_fast_issues_reading::<ConsignmentStoppingAtATypeError>(body)
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Squad {
+    #[validate(each(nested))]
+    players: Vec<Player>,
+    #[validate(nested)]
+    captain: Option<Player>,
+    #[validate(nested)]
+    coach: Box<Player>,
+    #[validate(each(nested))]
+    by_shirt_number: BTreeMap<u8, Player>,
+    #[validate(each(nested))]
+    by_nickname: HashMap<String, Player>,
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Player {
+    #[validate(required)]
+    name: String,
+    #[validate(range(min = 16))]
+    age: u8,
+}
+
+#[test]
+fn a_struct_collecting_type_errors_in_a_list_inside_another_reports_its_issues_at_their_full_paths() {
+    let body = r#"{ "players": [{ "name": "Ada", "age": 30 }, { "name": "", "age": "thirty" }], "captain": null,
+        "coach": { "name": "Grace", "age": 50 }, "byShirtNumber": {}, "byNickname": {} }"#;
+
+    assert_eq!(
+        issues_reading::<Squad>(body),
+        [
+            "players[1].name: required",
+            "players[1].age: invalid_type(expected: u8, found: string)"
+        ]
+    );
+}
+
+#[test]
+fn a_struct_collecting_type_errors_in_an_option_inside_another_reports_its_issues_at_their_full_paths() {
+    let body = r#"{ "players": [], "captain": { "name": "Ada", "age": true },
+        "coach": { "name": "Grace", "age": 50 }, "byShirtNumber": {}, "byNickname": {} }"#;
+
+    assert_eq!(
+        issues_reading::<Squad>(body),
+        ["captain.age: invalid_type(expected: u8, found: boolean)"]
+    );
+}
+
+#[test]
+fn a_struct_collecting_type_errors_in_a_box_inside_another_reports_its_issues_at_their_full_paths() {
+    let body = r#"{ "players": [], "captain": null,
+        "coach": { "name": "Grace", "age": -50 }, "byShirtNumber": {}, "byNickname": {} }"#;
+
+    assert_eq!(
+        issues_reading::<Squad>(body),
+        ["coach.age: invalid_type(expected: u8, found: integer)"]
+    );
+}
+
+#[test]
+fn a_struct_collecting_type_errors_in_a_btree_map_inside_another_reports_its_issues_at_their_full_paths() {
+    let body = r#"{ "players": [], "captain": null, "coach": { "name": "Grace", "age": 50 },
+        "byShirtNumber": { "7": { "name": "Ada", "age": [30] } }, "byNickname": {} }"#;
+
+    assert_eq!(
+        issues_reading::<Squad>(body),
+        ["byShirtNumber[7].age: invalid_type(expected: u8, found: sequence)"]
+    );
+}
+
+#[test]
+fn a_struct_collecting_type_errors_in_a_hash_map_inside_another_reports_its_issues_at_their_full_paths() {
+    let body = r#"{ "players": [], "captain": null, "coach": { "name": "Grace", "age": 50 },
+        "byShirtNumber": {}, "byNickname": { "flash": { "name": 5, "age": 12 } } }"#;
+
+    assert_eq!(
+        issues_reading::<Squad>(body),
+        [
+            "byNickname[flash].name: invalid_type(expected: a string, found: integer)",
+            "byNickname[flash].age: range(min: 16)"
+        ]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct Fixture {
+    #[validate(nested)]
+    home: Player,
+    #[validate(nested)]
+    away: Player,
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Matchday {
+    #[validate(each(nested))]
+    fixtures: Vec<Fixture>,
+}
+
+#[test]
+fn a_struct_collecting_type_errors_inside_one_that_does_not_reports_its_issues_at_their_full_paths() {
+    let body = r#"{ "home": { "name": "Ada", "age": 30 }, "away": { "name": "", "age": "fifty" } }"#;
+
+    assert_eq!(
+        issues_reading::<Fixture>(body),
+        [
+            "away.name: required",
+            "away.age: invalid_type(expected: u8, found: string)"
+        ]
+    );
+}
+
+#[test]
+fn a_struct_collecting_type_errors_in_one_that_does_not_in_one_that_does_reports_its_issues_at_their_full_paths() {
+    let body = r#"{ "fixtures": [{ "home": { "name": "Ada", "age": 30 }, "away": { "name": "", "age": "fifty" } }] }"#;
+
+    assert_eq!(
+        issues_reading::<Matchday>(body),
+        [
+            "fixtures[0].away.name: required",
+            "fixtures[0].away.age: invalid_type(expected: u8, found: string)"
+        ]
+    );
+}
+
+#[test]
+fn a_struct_not_collecting_type_errors_given_a_wrong_type_inside_one_that_does_is_of_the_wrong_type_at_its_field() {
+    let body = r#"{ "fixtures": [{ "home": { "name": "Ada", "age": 30 }, "away": 5 }] }"#;
+
+    assert_eq!(
+        issues_reading::<Matchday>(body),
+        ["fixtures: invalid_type(expected: struct Player, found: integer)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Itinerary {
+    #[validate(each(nested))]
+    routes: Vec<Route>,
+}
+
+#[test]
+fn an_element_of_the_wrong_type_in_a_nested_struct_replaces_the_issues_found_in_its_collection_before_it() {
+    let body = r#"{ "routes": [{ "stops": [{ "street": "", "postalCode": "28013" }, 5], "depots": {} }] }"#;
+
+    assert_eq!(
+        issues_reading::<Itinerary>(body),
+        ["routes[0].stops: invalid_type(expected: struct Address, found: integer)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Account {
+    #[validate(nested)]
+    profile: Profile,
+}
+
+#[test]
+fn a_value_its_type_refuses_with_a_message_of_its_own_inside_a_nested_struct_must_be_that_type() {
+    assert_eq!(
+        issues_reading::<Account>(r#"{ "profile": { "handle": "lucia" } }"#),
+        ["profile.handle: invalid_type(expected: Handle, found: string)"]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Agency {
+    #[validate(each(nested))]
+    hirings: Vec<Hiring>,
+}
+
+#[test]
+fn a_variant_a_serde_enum_doesn_t_know_inside_a_nested_struct_is_reported_by_the_names_it_accepts() {
+    let body = r#"{ "hirings": [{ "contract": "partTime", "pay": { "type": "monthly", "cents": 250000 } }] }"#;
+
+    assert_eq!(
+        issues_reading::<Agency>(body),
+        ["hirings[0].contract: unknown_variant(expected: permanent, fixedTerm, seasonal, temporary)"]
     );
 }

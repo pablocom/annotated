@@ -483,6 +483,53 @@ fn under_collect_type_errors_a_variant_of_its_type_is_read() {
     assert_eq!(read::<Donation>(r#""cash""#), Ok(Donation::Cash));
 }
 
+#[derive(Deserialize, Debug)]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Fundraiser {
+    #[validate(each(nested))]
+    donations: Vec<Donation>,
+}
+
+#[test]
+fn under_collect_type_errors_an_enum_nested_in_a_struct_reports_each_of_its_issues_at_its_full_path() {
+    let body = r#"{ "donations": [{ "card": { "number": 4111, "holder": "" } }, { "cheque": {} }, 12] }"#;
+
+    assert_eq!(
+        issues_reading::<Fundraiser>(body),
+        [
+            "donations[0].card.number: invalid_type(expected: a string, found: integer)",
+            "donations[0].card.holder: required",
+            "donations[1]: unknown_variant(expected: card, cash)",
+            "donations[2]: invalid_type(expected: enum Donation, found: integer)"
+        ]
+    );
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+enum Expression {
+    Literal(#[validate(range(max = 100))] u32),
+    Sum(#[validate(each(nested))] Vec<Expression>),
+}
+
+#[test]
+fn under_collect_type_errors_an_enum_nested_in_itself_reports_each_of_its_issues_at_its_full_path() {
+    let body =
+        r#"{ "sum": [{ "literal": 1 }, { "sum": [{ "literal": "two" }, { "literal": 300 }, { "product": [] }] }] }"#;
+
+    assert_eq!(
+        issues_reading::<Expression>(body),
+        [
+            "sum[1].sum[0].literal: invalid_type(expected: u32, found: string)",
+            "sum[1].sum[1].literal: range(max: 100)",
+            "sum[1].sum[2]: unknown_variant(expected: literal, sum)"
+        ]
+    );
+}
+
 #[derive(Deserialize, Debug, PartialEq)]
 enum Lookup<T> {
     Found(#[validate(nested)] T),

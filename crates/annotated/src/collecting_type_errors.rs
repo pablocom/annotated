@@ -1,11 +1,14 @@
+use std::any::type_name;
 use std::borrow::Cow;
+use std::fmt;
 use std::marker::PhantomData;
 
 use serde::Deserializer;
-use serde::de::{DeserializeSeed, Error as _, Visitor};
+use serde::de::{DeserializeSeed, EnumAccess, Error as _, VariantAccess, Visitor};
 
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, FunctionError, WrongType};
+use crate::content_deserializer::{ContentDeserializer, FunctionError, READ_IN_PLACE, TypeError, WrongType};
+use crate::deserialize::DeserializeAt;
 use crate::{Deserialize, Location, Problem, Report};
 
 /// The `DeserializeSeed` that a struct collecting type errors reads a field with.
@@ -40,12 +43,10 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
     type Value = Option<T>;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Option<T>, D::Error> {
-        let (buffered, kind_found) = buffered(deserializer)?;
-        match T::deserialize(buffered) {
+        match read_collecting_type_errors(deserializer, PhantomData::<T>, self.type_name)? {
             Ok(value) => Ok(Some(value)),
-            Err(wrong_type) => {
-                self.found
-                    .push(self.at, problem_of(wrong_type, self.type_name, kind_found));
+            Err(problem) => {
+                self.found.push(self.at, problem);
                 Ok(None)
             }
         }
@@ -81,13 +82,12 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for NestedCollectingTypeErro
     type Value = Option<T>;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Option<T>, D::Error> {
-        let (buffered, kind_found) = buffered(deserializer)?;
-        match T::deserialize_at(buffered, self.at, self.found) {
+        let reading_its_issues = DeserializeAt::<T>::new(self.at, &mut *self.found);
+        match read_collecting_type_errors(deserializer, reading_its_issues, self.type_name)? {
             Ok(value) => Ok(value),
-            Err(wrong_type) => {
+            Err(problem) => {
                 *self.found = self.found.new_alike();
-                self.found
-                    .push(self.at, problem_of(wrong_type, self.type_name, kind_found));
+                self.found.push(self.at, problem);
                 Ok(None)
             }
         }
@@ -156,10 +156,12 @@ where
     D: Deserializer<'de>,
     V: Visitor<'de, Value = Option<T>>,
 {
-    let (buffered, kind_found) = buffered::<D, WrongType>(deserializer)?;
-    Ok(buffered
-        .deserialize_enum(name, variants, visitor)
-        .map_err(|wrong_type| problem_of(wrong_type, type_name, kind_found)))
+    let reading_the_enum = EnumNamed {
+        name,
+        variants,
+        visitor,
+    };
+    read_collecting_type_errors(deserializer, reading_the_enum, type_name)
 }
 
 /// Like [`deserialize_enum_collecting_type_errors`], for an adjacently tagged enum, which is read as a struct with the
@@ -179,10 +181,111 @@ where
     D: Deserializer<'de>,
     V: Visitor<'de, Value = Option<T>>,
 {
-    let (buffered, kind_found) = buffered::<D, WrongType>(deserializer)?;
-    Ok(buffered
-        .deserialize_struct(name, fields, visitor)
-        .map_err(|wrong_type| problem_of(wrong_type, type_name, kind_found)))
+    let reading_the_struct = StructNamed { name, fields, visitor };
+    read_collecting_type_errors(deserializer, reading_the_struct, type_name)
+}
+
+struct EnumNamed<V> {
+    name: &'static str,
+    variants: &'static [&'static str],
+    visitor: V,
+}
+
+impl<'de, V: Visitor<'de>> DeserializeSeed<'de> for EnumNamed<V> {
+    type Value = V::Value;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<V::Value, D::Error> {
+        deserializer.deserialize_enum(self.name, self.variants, self.visitor)
+    }
+}
+
+struct StructNamed<V> {
+    name: &'static str,
+    fields: &'static [&'static str],
+    visitor: V,
+}
+
+impl<'de, V: Visitor<'de>> DeserializeSeed<'de> for StructNamed<V> {
+    type Value = V::Value;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<V::Value, D::Error> {
+        deserializer.deserialize_struct(self.name, self.fields, self.visitor)
+    }
+}
+
+/// Reads a value with `seed` from a buffer, so that a value of the wrong type is the [`Problem`] returned instead of
+/// ending deserialization. `type_name` says what was expected when serde's error doesn't.
+///
+/// A value already in annotated's buffer, because a type around it collects type errors too, is read where it is:
+/// buffering it again would copy it once for every type around it.
+fn read_collecting_type_errors<'de, D, S>(
+    deserializer: D,
+    seed: S,
+    type_name: &'static str,
+) -> Result<Result<S::Value, Problem>, D::Error>
+where
+    D: Deserializer<'de>,
+    S: DeserializeSeed<'de>,
+{
+    if may_be_annotated_s_buffer::<D>() {
+        return deserializer.deserialize_newtype_struct(READ_IN_PLACE, ReadInPlace { seed, type_name });
+    }
+    read_buffered(deserializer, seed, type_name)
+}
+
+// Rust can't ask whether `D` is annotated's buffer: there's no specialization, and `TypeId` needs a type that borrows
+// nothing. So the buffer itself answers a request for a newtype struct named `READ_IN_PLACE`. Any other deserializer
+// would read a newtype struct from the input, and not every format reads one as JSON does: RON expects parentheses. So
+// only a deserializer whose type bears the buffer's name is asked. Only a buffer bears it, of this version of annotated
+// or of another, which answers as for any newtype struct.
+fn may_be_annotated_s_buffer<'de, D: Deserializer<'de>>() -> bool {
+    type_name::<D>() == type_name::<ContentDeserializer<'static, TypeError>>()
+}
+
+fn read_buffered<'de, D, S>(
+    deserializer: D,
+    seed: S,
+    type_name: &'static str,
+) -> Result<Result<S::Value, Problem>, D::Error>
+where
+    D: Deserializer<'de>,
+    S: DeserializeSeed<'de>,
+{
+    let (buffered, kind_found) = buffered::<D, TypeError>(deserializer)?;
+    Ok(seed
+        .deserialize(buffered)
+        .map_err(|error| problem_of(error.into_wrong_type(), type_name, kind_found)))
+}
+
+/// Reads with `seed` the value annotated's buffer offers to read in place, as an enum whose variant is the kind of the
+/// value and whose content is the value.
+struct ReadInPlace<S> {
+    seed: S,
+    type_name: &'static str,
+}
+
+impl<'de, S: DeserializeSeed<'de>> Visitor<'de> for ReadInPlace<S> {
+    type Value = Result<S::Value, Problem>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a value in annotated's buffer")
+    }
+
+    fn visit_enum<A: EnumAccess<'de>>(self, in_place: A) -> Result<Self::Value, A::Error> {
+        let (kind_found, value): (&str, _) = in_place.variant()?;
+        match value.newtype_variant_seed(self.seed) {
+            Ok(value) => Ok(Ok(value)),
+            Err(error) => match (TypeError::take_wrong_type(&error), ValueKind::named(kind_found)) {
+                (Some(wrong_type), Some(kind_found)) => Ok(Err(problem_of(wrong_type, self.type_name, kind_found))),
+                _ => Err(error),
+            },
+        }
+    }
+
+    // The buffer of another version of annotated answers as for any newtype struct.
+    fn visit_newtype_struct<D: Deserializer<'de>>(self, buffer: D) -> Result<Self::Value, D::Error> {
+        read_buffered(buffer, self.seed, self.type_name)
+    }
 }
 
 fn buffered<'de, D: Deserializer<'de>, E>(
@@ -417,6 +520,23 @@ mod tests {
                 )])
             )
         );
+    }
+
+    #[test]
+    fn a_value_not_offered_to_be_read_in_place_is_buffered_and_read() {
+        let mut deserializer = serde_json::Deserializer::from_str(r#"[1, "x"]"#);
+
+        let read = deserializer
+            .deserialize_newtype_struct(
+                READ_IN_PLACE,
+                ReadInPlace {
+                    seed: PhantomData::<Vec<u8>>,
+                    type_name: "Vec",
+                },
+            )
+            .map_err(|format_error| format_error.to_string());
+
+        assert_eq!(read, Ok(Err(invalid_type("u8", "string"))));
     }
 
     #[test]

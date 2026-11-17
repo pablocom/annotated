@@ -1,5 +1,5 @@
 //! Validating a valid value allocates nothing, deserializing one allocates only what its fields hold, even when it
-//! collects type errors, and finding an issue allocates little.
+//! collects type errors, buffering it once however deeply such types nest, and finding an issue allocates little.
 
 use std::collections::BTreeMap;
 use std::hint::black_box;
@@ -207,6 +207,140 @@ fn deserializing_a_valid_value_collecting_type_errors_borrows_what_it_buffers_an
     });
 
     assert_eq!(allocations.count_total, 3);
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Delivery {
+    #[validate(required)]
+    reference: String,
+    #[validate(nested)]
+    address: DeliveryAddress,
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct DeliveryAddress {
+    #[validate(required)]
+    street: String,
+    #[validate(length(min = 5))]
+    postal_code: String,
+    #[validate(length(max = 3))]
+    notes: Vec<String>,
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_a_valid_nested_value_collecting_type_errors_buffers_it_once() {
+    let body = r#"{ "reference": "PX-1", "address": { "street": "Gran Vía 1", "postalCode": "28013",
+        "notes": ["Ring twice", "Leave at the door"] } }"#;
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(annotated::from_deserializer::<Delivery, _>(&mut deserializer));
+    });
+
+    assert_eq!(allocations.count_total, 8);
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn finding_a_value_of_the_wrong_type_in_a_nested_value_collecting_type_errors_allocates_its_issue_once() {
+    let body = r#"{ "reference": "PX-1", "address": { "street": 5, "postalCode": "28013", "notes": [] } }"#;
+
+    let allocations = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(body));
+        let _ = black_box(annotated::from_deserializer::<Delivery, _>(&mut deserializer));
+    });
+
+    assert_eq!(allocations.count_total, 5);
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+struct Node {
+    #[validate(length(max = 100))]
+    name: String,
+    #[validate(each(nested))]
+    children: Vec<Node>,
+}
+
+/// A chain of `depth` nodes, each the only child of the one before, whose last node has `leaves` children of its own.
+#[cfg(feature = "serde")]
+fn nodes_nested(depth: usize, leaves: usize) -> String {
+    let leaves = vec![r#"{ "name": "leaf", "children": [] }"#; leaves].join(", ");
+    let opening = r#"{ "name": "branch", "children": ["#.repeat(depth);
+    let closing = "] }".repeat(depth);
+    format!("{opening}{leaves}{closing}")
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_structs_collecting_type_errors_nested_sixty_deep_allocates_about_as_much_as_one_deep() {
+    let one_deep = nodes_nested(1, 1000);
+    let sixty_deep = nodes_nested(60, 1000);
+
+    let allocated_one_deep = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(&one_deep));
+        let _ = black_box(annotated::from_deserializer::<Node, _>(&mut deserializer));
+    });
+    let allocated_sixty_deep = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(&sixty_deep));
+        let _ = black_box(annotated::from_deserializer::<Node, _>(&mut deserializer));
+    });
+
+    assert_eq!(
+        (allocated_one_deep.count_total, allocated_sixty_deep.count_total),
+        (2011, 2247)
+    );
+}
+
+#[cfg(feature = "serde")]
+#[derive(annotated::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[annotated(collect_type_errors)]
+#[allow(dead_code)]
+enum Expression {
+    Literal(#[validate(range(max = 100))] u32),
+    Sum(#[validate(each(nested))] Vec<Expression>),
+}
+
+/// A chain of `depth` sums, each the only term of the one before, whose last sum has `literals` terms of its own.
+#[cfg(feature = "serde")]
+fn sums_nested(depth: usize, literals: usize) -> String {
+    let literals = vec![r#"{ "literal": 1 }"#; literals].join(", ");
+    let opening = r#"{ "sum": ["#.repeat(depth);
+    let closing = "] }".repeat(depth);
+    format!("{opening}{literals}{closing}")
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn deserializing_enums_collecting_type_errors_nested_sixty_deep_allocates_about_as_much_as_one_deep() {
+    let one_deep = sums_nested(1, 1000);
+    let sixty_deep = sums_nested(60, 1000);
+
+    let allocated_one_deep = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(&one_deep));
+        let _ = black_box(annotated::from_deserializer::<Expression, _>(&mut deserializer));
+    });
+    let allocated_sixty_deep = allocation_counter::measure(|| {
+        let mut deserializer = serde_json::Deserializer::from_str(black_box(&sixty_deep));
+        let _ = black_box(annotated::from_deserializer::<Expression, _>(&mut deserializer));
+    });
+
+    assert_eq!(
+        (allocated_one_deep.count_total, allocated_sixty_deep.count_total),
+        (1011, 1188)
+    );
 }
 
 #[cfg(feature = "serde")]

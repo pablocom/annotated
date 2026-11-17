@@ -139,6 +139,44 @@ fn under_collect_type_errors_a_str_the_input_can_t_lend_is_an_issue_at_its_field
     );
 }
 
+#[derive(Deserialize, Debug, PartialEq)]
+#[annotated(collect_type_errors)]
+struct DeviceLogInsCollectingTypeErrors<'a> {
+    #[serde(borrow)]
+    #[validate(each(nested))]
+    log_ins: Vec<LogInCollectingTypeErrors<'a>>,
+}
+
+#[test]
+fn under_collect_type_errors_a_str_in_a_nested_struct_borrows_from_the_input() {
+    let body = r#"{ "log_ins": [{ "email": "ada@example.com", "device": "phone" }] }"#;
+
+    let device_log_ins = deserialize::<DeviceLogInsCollectingTypeErrors>(body).unwrap();
+
+    assert_eq!(
+        device_log_ins,
+        DeviceLogInsCollectingTypeErrors {
+            log_ins: vec![LogInCollectingTypeErrors {
+                email: "ada@example.com",
+                device: "phone",
+            }]
+        }
+    );
+}
+
+#[test]
+fn under_collect_type_errors_a_str_the_input_can_t_lend_in_a_nested_struct_is_an_issue_at_its_full_path() {
+    let body = r#"{ "log_ins": [{ "email": "ada\u0040example.com", "device": "" }] }"#;
+
+    assert_eq!(
+        issues_reading::<DeviceLogInsCollectingTypeErrors>(body),
+        [
+            "log_ins[0].email: invalid_type(expected: a borrowed string, found: string)",
+            "log_ins[0].device: required"
+        ]
+    );
+}
+
 #[derive(Deserialize, Debug)]
 struct Greeting<'a> {
     #[serde(borrow)]

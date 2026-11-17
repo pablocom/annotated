@@ -49,6 +49,23 @@ pub(crate) enum ValueKind {
 }
 
 impl ValueKind {
+    const ALL: [Self; 9] = [
+        Self::Boolean,
+        Self::Integer,
+        Self::Float,
+        Self::Character,
+        Self::String,
+        Self::Bytes,
+        Self::Null,
+        Self::Sequence,
+        Self::Map,
+    ];
+
+    /// The kind whose [`name`](Self::name) is `name`.
+    pub(crate) fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Boolean => "boolean",
@@ -493,6 +510,39 @@ mod tests {
                 "map"
             ]
         );
+    }
+
+    #[test]
+    fn every_kind_is_known_by_its_name() {
+        assert_eq!(
+            [
+                ValueKind::named("boolean"),
+                ValueKind::named("integer"),
+                ValueKind::named("float"),
+                ValueKind::named("character"),
+                ValueKind::named("string"),
+                ValueKind::named("bytes"),
+                ValueKind::named("null"),
+                ValueKind::named("sequence"),
+                ValueKind::named("map"),
+            ],
+            [
+                Some(ValueKind::Boolean),
+                Some(ValueKind::Integer),
+                Some(ValueKind::Float),
+                Some(ValueKind::Character),
+                Some(ValueKind::String),
+                Some(ValueKind::Bytes),
+                Some(ValueKind::Null),
+                Some(ValueKind::Sequence),
+                Some(ValueKind::Map),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_name_of_no_kind_is_no_kind() {
+        assert_eq!(ValueKind::named("enum"), None);
     }
 
     #[test]

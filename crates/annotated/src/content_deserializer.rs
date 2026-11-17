@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::marker::PhantomData;
@@ -5,9 +6,16 @@ use std::marker::PhantomData;
 use serde::de::value::{
     BorrowedStrDeserializer, MapAccessDeserializer, MapDeserializer, SeqDeserializer, StringDeserializer,
 };
-use serde::de::{self, Deserializer, Expected, IntoDeserializer, Unexpected, Visitor};
+use serde::de::{
+    self, DeserializeSeed, Deserializer, EnumAccess, Expected, IntoDeserializer, Unexpected, VariantAccess, Visitor,
+};
 
 use crate::content::{Content, ValueKind};
+
+/// The name of the newtype struct that a type collecting type errors asks a [`ContentDeserializer`] for, to read the
+/// value where it is instead of buffering it again. It names annotated's version, since another version's buffer
+/// answers otherwise.
+pub(crate) const READ_IN_PLACE: &str = concat!("annotated ", env!("CARGO_PKG_VERSION"), " reading in place");
 
 /// Reads a [`Content`] again, as the type it's meant to be, accepting what a self-describing format accepts for it.
 pub(crate) struct ContentDeserializer<'de, E> {
@@ -256,7 +264,10 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
         self.deserialize_unit(visitor)
     }
 
-    fn deserialize_newtype_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, E> {
+    fn deserialize_newtype_struct<V: Visitor<'de>>(self, name: &'static str, visitor: V) -> Result<V::Value, E> {
+        if name == READ_IN_PLACE {
+            return visitor.visit_enum(InPlace(self));
+        }
         match self.content {
             Content::Newtype(inner) => visitor.visit_newtype_struct(Self::new(*inner, self.is_human_readable)),
             _ => visitor.visit_newtype_struct(self),
@@ -341,6 +352,40 @@ impl<'de, E: de::Error> IntoDeserializer<'de, E> for ContentDeserializer<'de, E>
 
     fn into_deserializer(self) -> Self {
         self
+    }
+}
+
+/// A buffered value offered to be read where it is, as an enum: its variant is the name of the value's kind, and its
+/// content is the value.
+struct InPlace<'de, E>(ContentDeserializer<'de, E>);
+
+impl<'de, E: de::Error> EnumAccess<'de> for InPlace<'de, E> {
+    type Error = E;
+    type Variant = Self;
+
+    fn variant_seed<V: DeserializeSeed<'de>>(self, seed: V) -> Result<(V::Value, Self), E> {
+        let kind = BorrowedStrDeserializer::new(self.0.content.kind().name());
+        Ok((seed.deserialize(kind)?, self))
+    }
+}
+
+impl<'de, E: de::Error> VariantAccess<'de> for InPlace<'de, E> {
+    type Error = E;
+
+    fn unit_variant(self) -> Result<(), E> {
+        de::Deserialize::deserialize(self.0)
+    }
+
+    fn newtype_variant_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Value, E> {
+        seed.deserialize(self.0)
+    }
+
+    fn tuple_variant<V: Visitor<'de>>(self, length: usize, visitor: V) -> Result<V::Value, E> {
+        self.0.deserialize_tuple(length, visitor)
+    }
+
+    fn struct_variant<V: Visitor<'de>>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value, E> {
+        self.0.deserialize_struct("", fields, visitor)
     }
 }
 
@@ -536,6 +581,80 @@ impl Display for WrongType {
 }
 
 impl Error for WrongType {}
+
+/// The error of reading a [`Content`] as a type while collecting type errors: the [`WrongType`] found.
+///
+/// A type nested in one that collects type errors reads its value from the buffer around it, through code generic over
+/// the deserializer, which knows this error only as `D::Error`. That type may borrow, so it can't be downcast, but the
+/// error's source can: [`TypeError::take_wrong_type`] takes the `WrongType` out of it.
+#[derive(Debug)]
+pub(crate) struct TypeError(WrongTypeFound);
+
+/// The [`WrongType`] in a [`TypeError`], as its source. A source can only be borrowed, so the `WrongType` is in a cell,
+/// for code reading in place to move it out instead of copying what was expected.
+#[derive(Debug)]
+struct WrongTypeFound(RefCell<WrongType>);
+
+impl TypeError {
+    fn new(wrong_type: WrongType) -> Self {
+        Self(WrongTypeFound(RefCell::new(wrong_type)))
+    }
+
+    pub(crate) fn into_wrong_type(self) -> WrongType {
+        self.0.0.into_inner()
+    }
+
+    /// Takes the wrong type out of `error`, when `error` is a `TypeError`, and leaves one that says nothing.
+    pub(crate) fn take_wrong_type<E: Error>(error: &E) -> Option<WrongType> {
+        let found = error.source()?.downcast_ref::<WrongTypeFound>()?;
+        Some(found.0.replace(WrongType::Mismatched {
+            expected: None,
+            found: None,
+        }))
+    }
+}
+
+impl de::Error for TypeError {
+    fn custom<T: Display>(message: T) -> Self {
+        Self::new(WrongType::custom(message))
+    }
+
+    fn invalid_type(unexpected: Unexpected<'_>, expected: &dyn Expected) -> Self {
+        Self::new(WrongType::invalid_type(unexpected, expected))
+    }
+
+    fn invalid_value(unexpected: Unexpected<'_>, expected: &dyn Expected) -> Self {
+        Self::new(WrongType::invalid_value(unexpected, expected))
+    }
+
+    fn invalid_length(length: usize, expected: &dyn Expected) -> Self {
+        Self::new(WrongType::invalid_length(length, expected))
+    }
+
+    fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
+        Self::new(WrongType::unknown_variant(variant, expected))
+    }
+}
+
+impl Display for TypeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl Error for TypeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+impl Display for WrongTypeFound {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.borrow().fmt(formatter)
+    }
+}
+
+impl Error for WrongTypeFound {}
 
 /// Why a function given to serde's `deserialize_with` couldn't read a [`Content`]: a value of the wrong type, or an
 /// error of the function's own. Its message may repeat the input, so it is kept only to end deserialization with.
@@ -1246,6 +1365,37 @@ mod tests {
                 found: None,
             }
         );
+    }
+
+    #[test]
+    fn the_wrong_type_in_a_type_error_is_taken_through_its_source() {
+        let type_error = TypeError::invalid_type(Unexpected::Str("hunter2"), &"u8");
+
+        assert_eq!(
+            TypeError::take_wrong_type(&type_error),
+            Some(wrong_type("u8", ValueKind::String))
+        );
+    }
+
+    #[test]
+    fn a_type_error_whose_wrong_type_was_taken_says_nothing() {
+        let type_error = TypeError::invalid_type(Unexpected::Str("hunter2"), &"u8");
+        let _ = TypeError::take_wrong_type(&type_error);
+
+        assert_eq!(
+            type_error.into_wrong_type(),
+            WrongType::Mismatched {
+                expected: None,
+                found: None,
+            }
+        );
+    }
+
+    #[test]
+    fn no_wrong_type_is_taken_from_an_error_other_than_a_type_error() {
+        let wrong_type = WrongType::invalid_type(Unexpected::Str("hunter2"), &"u8");
+
+        assert_eq!(TypeError::take_wrong_type(&wrong_type), None);
     }
 
     #[test]
