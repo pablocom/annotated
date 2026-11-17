@@ -1,14 +1,21 @@
-//! The `url` rule agrees with a strict RFC 3986 and RFC 3987 validator, `iri-string`, on generated text.
+//! The `url` rule agrees on generated text with a strict RFC 3986 and RFC 3987 validator, `iri-string`, and with the
+//! departures from the RFCs its documentation lists.
+
+use std::net::Ipv4Addr;
+use std::ops::RangeInclusive;
 
 use annotated::{Rule, rules};
 use iri_string::types::IriStr;
 use proptest::prelude::*;
 use proptest::sample::select;
 
-/// What the rule promises, told by `iri-string`: an absolute IRI with an authority whose host isn't empty,
-/// without userinfo, of the scheme `http`, `https` or `ftp` in any case.
-fn is_url_by_the_rfcs(text: &str) -> bool {
-    let Ok(iri) = IriStr::new(text) else {
+/// What the rule promises: an absolute IRI with an authority, of the scheme `http`, `https` or `ftp` in any case, as
+/// `iri-string` tells once the `[`, `]` and `|` that browsers send in a query or a fragment are percent-encoded. Its
+/// host isn't empty, isn't an `IPvFuture`, has no percent-encoding, and is an IPv4 address when it ends in a number.
+/// It has no userinfo, a port up to 65535, and no whitespace or invisible character.
+fn is_url_by_the_rfcs_and_the_departures(text: &str) -> bool {
+    let text = with_browser_characters_encoded(text);
+    let Ok(iri) = IriStr::new(&text) else {
         return false;
     };
     let Some(authority) = iri.authority_components() else {
@@ -17,15 +24,80 @@ fn is_url_by_the_rfcs(text: &str) -> bool {
     let has_accepted_scheme = ["http", "https", "ftp"]
         .iter()
         .any(|scheme| scheme.eq_ignore_ascii_case(iri.scheme_str()));
-    has_accepted_scheme && authority.userinfo().is_none() && !authority.host().is_empty()
+    let host = authority.host();
+    let is_accepted_host = !host.is_empty()
+        && !host.starts_with("[v")
+        && !host.starts_with("[V")
+        && !host.contains('%')
+        && (!ends_in_a_number(host) || is_ipv4_address(host));
+    let is_accepted_port = authority
+        .port()
+        .is_none_or(|port| port.is_empty() || port.parse::<u16>().is_ok());
+    has_accepted_scheme
+        && authority.userinfo().is_none()
+        && is_accepted_host
+        && is_accepted_port
+        && !text.chars().any(is_whitespace_or_invisible)
 }
+
+/// `text` with `[`, `]` and `|` percent-encoded after the first `?` or `#`, which starts the query or the fragment of
+/// any URL.
+fn with_browser_characters_encoded(text: &str) -> String {
+    let (before_query, from_query) = text.split_at(text.find(['?', '#']).unwrap_or(text.len()));
+    let encoded = from_query.replace('[', "%5B").replace(']', "%5D").replace('|', "%7C");
+    format!("{before_query}{encoded}")
+}
+
+/// The URL Standard's ends-in-a-number checker.
+fn ends_in_a_number(host: &str) -> bool {
+    let mut labels: Vec<&str> = host.split('.').collect();
+    if labels.len() > 1 && labels.last() == Some(&"") {
+        labels.pop();
+    }
+    let last = labels.last().copied().unwrap_or_default();
+    let is_decimal = !last.is_empty() && last.chars().all(|character| character.is_ascii_digit());
+    let hexadecimal_digits = last.strip_prefix("0x").or_else(|| last.strip_prefix("0X"));
+    let is_hexadecimal =
+        hexadecimal_digits.is_some_and(|digits| digits.chars().all(|character| character.is_ascii_hexdigit()));
+    is_decimal || is_hexadecimal
+}
+
+/// An IPv4 address of four decimal numbers without leading zeros, maybe followed by a dot.
+fn is_ipv4_address(host: &str) -> bool {
+    host.strip_suffix('.').unwrap_or(host).parse::<Ipv4Addr>().is_ok()
+}
+
+fn is_whitespace_or_invisible(character: char) -> bool {
+    character.is_whitespace() || DEFAULT_IGNORABLE.iter().any(|range| range.contains(&character))
+}
+
+/// `Default_Ignorable_Code_Point` in Unicode 18.0's `DerivedCoreProperties.txt`.
+const DEFAULT_IGNORABLE: [RangeInclusive<char>; 17] = [
+    '\u{AD}'..='\u{AD}',
+    '\u{34F}'..='\u{34F}',
+    '\u{61C}'..='\u{61C}',
+    '\u{115F}'..='\u{1160}',
+    '\u{17B4}'..='\u{17B5}',
+    '\u{180B}'..='\u{180F}',
+    '\u{200B}'..='\u{200F}',
+    '\u{202A}'..='\u{202E}',
+    '\u{2060}'..='\u{206F}',
+    '\u{3164}'..='\u{3164}',
+    '\u{FE00}'..='\u{FE0F}',
+    '\u{FEFF}'..='\u{FEFF}',
+    '\u{FFA0}'..='\u{FFA0}',
+    '\u{FFF0}'..='\u{FFF8}',
+    '\u{1BCA0}'..='\u{1BCA3}',
+    '\u{1D173}'..='\u{1D17A}',
+    '\u{E0000}'..='\u{E0FFF}',
+];
 
 fn is_url_by_the_rule(text: &str) -> bool {
     rules::url().check(text).is_ok()
 }
 
-/// Characters on both sides of every line the grammar draws: delimiters, characters it never allows, and the
-/// edges of `ucschar` and `iprivate`.
+/// Characters on both sides of every line the grammar draws: delimiters, characters it never allows, the edges of
+/// `ucschar` and `iprivate`, and whitespace and invisible characters among `ucschar`.
 fn character() -> impl Strategy<Value = char> {
     select(vec![
         'a',
@@ -78,6 +150,19 @@ fn character() -> impl Strategy<Value = char> {
         '\u{80}',
         '\u{9F}',
         '\u{A0}',
+        '\u{A1}',
+        '\u{AD}',
+        '\u{AE}',
+        '\u{2028}',
+        '\u{200B}',
+        '\u{206F}',
+        '\u{2070}',
+        '\u{3000}',
+        '\u{3164}',
+        '\u{FE0F}',
+        '\u{FEFF}',
+        '\u{1D173}',
+        '\u{1D17B}',
         'ü',
         'ß',
         '納',
@@ -147,11 +232,18 @@ fn host() -> impl Strategy<Value = String> {
             "a",
             "",
             "xn--rsum-bpad.example.org",
-            "ex%41mple.com"
+            "ex%41mple.com",
+            "%31%32%37.0.0.1",
+            "2130706433",
+            "example.0x1f",
+            "example.0x1g",
+            "192.0.2.16.",
+            "256.0.0.1..",
         ])
         .prop_map(str::to_owned),
         "[a-z0-9._~!$&'()*+,;=%-]{0,8}",
         ipv4_like(),
+        ipv4_like().prop_map(|address| address + "."),
         ipv6_like().prop_map(|address| format!("[{address}]")),
         ipv6_like().prop_map(|address| format!("[{address}%25eth0]")),
         "\\[[vV][0-9a-fA-F]{0,2}\\.[a-z0-9:~!+]{0,4}\\]",
@@ -161,7 +253,8 @@ fn host() -> impl Strategy<Value = String> {
 
 fn dec_octet_like() -> impl Strategy<Value = &'static str> {
     select(vec![
-        "0", "9", "10", "99", "100", "199", "200", "249", "250", "255", "256", "00", "01", "010", "1000", "+1",
+        "0", "9", "10", "99", "100", "199", "200", "249", "250", "255", "256", "00", "01", "010", "1000", "+1", "0x7f",
+        "0x",
     ])
 }
 
@@ -197,6 +290,7 @@ fn port() -> impl Strategy<Value = String> {
     prop_oneof![
         4 => Just(String::new()),
         2 => "(:[0-9]{0,6})",
+        1 => select(vec![":65535", ":65536", ":00080"]).prop_map(str::to_owned),
         1 => text(3).prop_map(|port| format!(":{port}")),
     ]
 }
@@ -237,19 +331,19 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(20_000))]
 
     #[test]
-    fn the_rule_accepts_what_the_rfcs_call_a_url_and_nothing_else(text in url_shaped_text()) {
-        prop_assert_eq!(is_url_by_the_rule(&text), is_url_by_the_rfcs(&text), "{:?}", text);
+    fn the_rule_accepts_what_the_rfcs_call_a_url_but_for_its_departures(text in url_shaped_text()) {
+        prop_assert_eq!(is_url_by_the_rule(&text), is_url_by_the_rfcs_and_the_departures(&text), "{:?}", text);
     }
 
     #[test]
-    fn the_rule_agrees_with_the_rfcs_on_any_host_and_port(host in host(), port in port()) {
+    fn the_rule_agrees_with_the_rfcs_and_its_departures_on_any_host_and_port(host in host(), port in port()) {
         let text = format!("https://{host}{port}/");
 
-        prop_assert_eq!(is_url_by_the_rule(&text), is_url_by_the_rfcs(&text), "{:?}", text);
+        prop_assert_eq!(is_url_by_the_rule(&text), is_url_by_the_rfcs_and_the_departures(&text), "{:?}", text);
     }
 
     #[test]
-    fn the_rule_agrees_with_the_rfcs_on_any_text(text in any::<String>()) {
-        prop_assert_eq!(is_url_by_the_rule(&text), is_url_by_the_rfcs(&text), "{:?}", text);
+    fn the_rule_agrees_with_the_rfcs_and_its_departures_on_any_text(text in any::<String>()) {
+        prop_assert_eq!(is_url_by_the_rule(&text), is_url_by_the_rfcs_and_the_departures(&text), "{:?}", text);
     }
 }

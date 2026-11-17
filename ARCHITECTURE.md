@@ -210,11 +210,21 @@ scheme "://" authority path-abempty [ "?" query ] [ "#" fragment ]
 ```
 
 - **International characters.** [RFC 3987](https://www.rfc-editor.org/rfc/rfc3987) section 2.2 extends that grammar with `ucschar` in the host, path, query and fragment, and `iprivate` in the query. So `https://bücher.de/straße` passes.
-- **Two departures from the grammar.** The host can't be empty, as [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) section 4.2.1 requires of `http`. And userinfo, which section 4.2.4 deprecates for `http` and `https`, is rejected for every scheme, so the rule keeps a single definition.
 - **Scheme.** It is compared with the accepted schemes ignoring ASCII case.
-- **Host and port.** The host is an IP literal (`[IPv6address]` or `IPvFuture`), an IPv4 address or an `ireg-name`. The port is `*DIGIT`.
+- **Host and port.** The host is `[IPv6address]`, an IPv4 address or an `ireg-name`. The port is `*DIGIT`.
 - **Percent-encoding.** A `%` must be followed by two hexadecimal digits.
 - **Everything else breaks the rule:** whitespace, including before or after the URL, a backslash or a control character.
+
+The rule departs from that grammar where it accepts what no one means by a URL, or refuses URLs in everyday use:
+
+- **The host can't be empty**, as [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) section 4.2.1 requires of `http`.
+- **No userinfo.** Section 4.2.4 deprecates it for `http` and `https`, and it is rejected for every scheme, so the rule keeps a single definition.
+- **The port is at most 65535.** It can still be empty.
+- **No `IPvFuture`** host, such as `[v1.x]`. No scheme the rule is meant for has one.
+- **A host that ends in a number is an IPv4 address**, four decimal numbers from 0 to 255 without leading zeros. A browser reads `2130706433`, `127.1` or `0x7f.0.0.1` as `127.0.0.1`, which the grammar calls a registered name. A host ends in a number as the [URL Standard](https://url.spec.whatwg.org/#ends-in-a-number-checker) says: its last label, after one trailing dot is set aside, is all digits, or `0x` followed by hexadecimal digits. So `192.0.2.16.` is an IPv4 address, and `256.0.0.1..` a registered name.
+- **The host has no percent-encoding**, which a browser decodes before reading the host: `%31%32%37.0.0.1` is `127.0.0.1` to it.
+- **No whitespace or invisible character**, even those RFC 3987's `ucschar` takes: Unicode's `White_Space` and `Default_Ignorable_Code_Point` break the rule anywhere. They make a URL look like another one.
+- **A query and a fragment also take `[`, `]` and `|`**, which browsers send as they are: `?filter[x]=1`, `?family=A|B`.
 
 The recognizer is written by hand, as small functions named after the grammar's productions, and allocates nothing.
 
@@ -542,7 +552,7 @@ A type that implements `Validate` or `Deserialize` by hand answers no fields, un
 Where a schema says something a little different from the rule:
 
 - **`pattern`** is copied as written. The rule reads it as the `regex` crate does, and a schema's reader as ECMA-262 says. The two differ at the edges: `\d` is any Unicode digit for the rule, and `0` to `9` in a schema.
-- **`format`** names a kind of string and leaves its details to the reader. annotated's email address is HTML's, not RFC 5321's, and its URL is narrower than an IRI: it has an authority and one of the accepted schemes.
+- **`format`** names a kind of string and leaves its details to the reader. annotated's email address is HTML's, not RFC 5321's, and its URL is mostly narrower than an IRI: it has an authority and one of the accepted schemes. But it takes `[`, `]` and `|` in a query or a fragment, which an IRI has percent-encoded.
 - **`required` on a type of your own** that implements `Required` writes the keyword above when the type's schema is a string, an array or an object, whatever the type counts as present.
 
 ### Using it from a schema library
@@ -581,4 +591,4 @@ Each crate built on annotated works with one major version of its library, or on
 - **Compile-fail tests** in `crates/annotated/tests/ui/` pin every error the derives emit, including its span. `trybuild` runs them on the stable toolchain only: compiler output differs between versions, so the MSRV job skips them.
 - **Doc tests** are the examples in the docs, so every example compiles and runs. The README's test runs as a copy in `tests/json.rs`. Change both together.
 - **The crates built on annotated** are tested through their library: annotated-axum sends requests to an axum `Router`, and annotated-utoipa reads the schemas of a document utoipa derived. Each keyword annotated writes has a test that utoipa keeps it.
-- **Property tests** check that the `url` rule agrees, on generated text, with [`iri-string`](https://crates.io/crates/iri-string), a strict RFC 3986 and RFC 3987 validator.
+- **Property tests** check that the `url` rule agrees, on generated text, with [`iri-string`](https://crates.io/crates/iri-string), a strict RFC 3986 and RFC 3987 validator, and with the rule's departures from the RFCs.

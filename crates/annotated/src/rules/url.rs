@@ -8,16 +8,32 @@ use crate::{Problem, Rule};
 ///
 /// - [RFC 3987](https://www.rfc-editor.org/rfc/rfc3987#section-2.2) adds international characters: `ucschar` in the
 ///   host, path, query and fragment, and `iprivate` in the query. So `https://bücher.de/straße` is a URL.
-/// - The rule departs from that grammar twice. The host can't be empty, as
-///   [RFC 9110 section 4.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.1) requires of `http`. And a URL with
-///   userinfo, which [RFC 9110 section 4.2.4](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.4) deprecates, breaks
-///   the rule whatever its scheme.
 /// - The scheme is compared with the accepted ones ignoring ASCII case.
-/// - The host is an IP literal in brackets (an IPv6 address or an `IPvFuture`), an IPv4 address, or a registered name.
-///   The port is any run of digits, and can be empty.
+/// - The host is an IPv6 address in brackets, an IPv4 address, or a registered name. The port can be empty.
 /// - A `%` must be followed by two hexadecimal digits.
 /// - Anything the grammar doesn't allow breaks the rule: whitespace anywhere, including around the URL, a backslash, a
 ///   control character.
+///
+/// The rule departs from that grammar where it accepts what no one means by a URL, or refuses what browsers send:
+///
+/// - The host can't be empty, as [RFC 9110 section 4.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.1)
+///   requires of `http`.
+/// - A URL with userinfo, which [RFC 9110 section 4.2.4](https://www.rfc-editor.org/rfc/rfc9110#section-4.2.4)
+///   deprecates, breaks the rule whatever its scheme.
+/// - The port is at most 65535: `http://example.com:99999` breaks the rule.
+/// - The host is never an `IPvFuture` literal, such as `[v1.x]`.
+/// - A host that ends in a number is an IPv4 address: four decimal numbers from 0 to 255, without leading zeros. So
+///   `http://256.0.0.1`, `http://2130706433`, `http://1.2.3` and `http://0x7f.0.0.1` break the rule, where a browser
+///   would read some of them as another address. A host ends in a number as the
+///   [URL Standard](https://url.spec.whatwg.org/#ends-in-a-number-checker) says: its last label, after one trailing dot
+///   is set aside, is all digits, or `0x` followed by hexadecimal digits. So `http://192.0.2.16.` follows the rule and
+///   `http://256.0.0.1.` breaks it.
+/// - The host has no percent-encoding: `http://%31%32%37.0.0.1` breaks the rule.
+/// - Whitespace and invisible characters break the rule anywhere, even those RFC 3987 allows: Unicode's
+///   `White_Space`, such as U+00A0 and U+2028, and its `Default_Ignorable_Code_Point`, such as U+00AD, U+200B and the
+///   bidirectional controls U+202A to U+202E and U+2066 to U+2069.
+/// - A query and a fragment also take `[`, `]` and `|`, which browsers send as they are:
+///   `https://api.example/items?filter[x]=1` follows the rule.
 ///
 /// It checks anything that is `AsRef<str>`, exactly as written, and allocates nothing.
 ///
@@ -97,36 +113,45 @@ fn scheme(text: &str) -> Option<(&str, &str)> {
 /// `authority = host [ ":" port ]`: RFC 3986's without `userinfo "@"`, and with a host that isn't empty.
 fn authority(text: &str) -> Option<&str> {
     let after_host = host(text)?;
-    Some(after_host.strip_prefix(':').map_or(after_host, port))
+    match after_host.strip_prefix(':') {
+        Some(after_colon) => port(after_colon),
+        None => Some(after_host),
+    }
 }
 
-/// `ihost = IP-literal / IPv4address / ireg-name`, not empty.
+/// `ihost = IP-literal / IPv4address / ireg-name`, not empty, and an `IPv4address` when it ends in a number.
 fn host(text: &str) -> Option<&str> {
     if let Some(after_bracket) = text.strip_prefix('[') {
         return ip_literal(after_bracket);
     }
-    // Every `IPv4address` is an `ireg-name` too, so the `ireg-name` alone tells which hosts are accepted.
-    let after_name = ireg_name(text);
-    (after_name.len() < text.len()).then_some(after_name)
+    let (name, rest) = text.split_at(text.len() - ireg_name(text).len());
+    let is_host = if ends_in_a_number(name) {
+        ipv4_address(name.strip_suffix('.').unwrap_or(name))
+    } else {
+        !name.is_empty()
+    };
+    is_host.then_some(rest)
 }
 
-/// `IP-literal = "[" ( IPv6address / IPvFuture ) "]"`, after its `[`.
+/// Whether a browser reads `name` as an IPv4 address, by the URL Standard's ends-in-a-number checker: its last label,
+/// after one trailing dot is set aside, is all digits, or `0x` or `0X` followed by hexadecimal digits.
+fn ends_in_a_number(name: &str) -> bool {
+    let without_trailing_dot = name.strip_suffix('.').unwrap_or(name);
+    let last_label = without_trailing_dot
+        .rsplit_once('.')
+        .map_or(without_trailing_dot, |(_, last_label)| last_label);
+    let is_decimal = !last_label.is_empty() && last_label.bytes().all(|byte| byte.is_ascii_digit());
+    let is_hexadecimal = last_label
+        .strip_prefix("0x")
+        .or_else(|| last_label.strip_prefix("0X"))
+        .is_some_and(|digits| digits.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    is_decimal || is_hexadecimal
+}
+
+/// `IP-literal = "[" IPv6address "]"`, after its `[`: RFC 3986's without `IPvFuture`.
 fn ip_literal(text: &str) -> Option<&str> {
     let (address, rest) = text.split_once(']')?;
-    (ipv6_address(address) || ipv_future(address)).then_some(rest)
-}
-
-/// `IPvFuture = "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )`.
-fn ipv_future(text: &str) -> bool {
-    let Some((version, address)) = text.strip_prefix(['v', 'V']).and_then(|rest| rest.split_once('.')) else {
-        return false;
-    };
-    let is_version = !version.is_empty() && version.chars().all(|character| character.is_ascii_hexdigit());
-    let is_address = !address.is_empty()
-        && address
-            .chars()
-            .all(|character| is_unreserved(character) || is_sub_delim(character) || character == ':');
-    is_version && is_address
+    ipv6_address(address).then_some(rest)
 }
 
 /// `IPv6address`: eight 16-bit pieces separated by `:`, or fewer around one `::` standing for at least one
@@ -175,14 +200,16 @@ fn dec_octet(text: &str) -> bool {
     is_digits && !has_leading_zero && text.parse::<u8>().is_ok()
 }
 
-/// `ireg-name = *( iunreserved / pct-encoded / sub-delims )`, and what follows it.
+/// `ireg-name = *( iunreserved / sub-delims )`: RFC 3987's without `pct-encoded`, and what follows it.
 fn ireg_name(text: &str) -> &str {
-    after_run_of(text, |character| is_iunreserved(character) || is_sub_delim(character))
+    text.trim_start_matches(|character| is_iunreserved(character) || is_sub_delim(character))
 }
 
-/// `port = *DIGIT`, and what follows it.
-fn port(text: &str) -> &str {
-    text.trim_start_matches(|character: char| character.is_ascii_digit())
+/// `port = *DIGIT`, of a number up to 65535, and what follows it.
+fn port(text: &str) -> Option<&str> {
+    let rest = text.trim_start_matches(|character: char| character.is_ascii_digit());
+    let digits = &text[..text.len() - rest.len()];
+    (digits.is_empty() || digits.parse::<u16>().is_ok()).then_some(rest)
 }
 
 /// `ipath-abempty = *( "/" isegment )`, and what follows it.
@@ -193,16 +220,27 @@ fn path_abempty(text: &str) -> &str {
     after_run_of(text, |character| character == '/' || is_ipchar(character))
 }
 
-/// `iquery = *( ipchar / iprivate / "/" / "?" )`, and what follows it.
+/// `iquery = *( ipchar / iprivate / "/" / "?" )`, with what browsers leave unencoded, and what follows it.
 fn iquery(text: &str) -> &str {
     after_run_of(text, |character| {
-        is_ipchar(character) || is_iprivate(character) || matches!(character, '/' | '?')
+        is_ipchar(character)
+            || is_iprivate(character)
+            || matches!(character, '/' | '?')
+            || is_left_unencoded_by_browsers(character)
     })
 }
 
-/// `ifragment = *( ipchar / "/" / "?" )`, and what follows it.
+/// `ifragment = *( ipchar / "/" / "?" )`, with what browsers leave unencoded, and what follows it.
 fn ifragment(text: &str) -> &str {
-    after_run_of(text, |character| is_ipchar(character) || matches!(character, '/' | '?'))
+    after_run_of(text, |character| {
+        is_ipchar(character) || matches!(character, '/' | '?') || is_left_unencoded_by_browsers(character)
+    })
+}
+
+/// `[`, `]` and `|`, which RFC 3986 doesn't allow in a query or a fragment, but browsers send there as they are:
+/// `?filter[x]=1`, `?family=A|B`.
+fn is_left_unencoded_by_browsers(character: char) -> bool {
+    matches!(character, '[' | ']' | '|')
 }
 
 /// What follows the longest run at the start of `text` of percent-encodings and characters `is_allowed`.
@@ -235,9 +273,39 @@ fn is_ipchar(character: char) -> bool {
     is_iunreserved(character) || is_sub_delim(character) || matches!(character, ':' | '@')
 }
 
-/// `iunreserved = ALPHA / DIGIT / "-" / "." / "_" / "~" / ucschar`.
+/// `iunreserved = ALPHA / DIGIT / "-" / "." / "_" / "~" / ucschar`, without whitespace or invisible characters.
 fn is_iunreserved(character: char) -> bool {
-    is_unreserved(character) || is_ucschar(character)
+    is_unreserved(character) || (is_ucschar(character) && !is_whitespace_or_invisible(character))
+}
+
+/// Unicode's `White_Space` and `Default_Ignorable_Code_Point` characters: those that show as blank space, or not at
+/// all.
+fn is_whitespace_or_invisible(character: char) -> bool {
+    character.is_whitespace() || is_default_ignorable(character)
+}
+
+/// `Default_Ignorable_Code_Point`, as Unicode 18.0's `DerivedCoreProperties.txt` lists it.
+fn is_default_ignorable(character: char) -> bool {
+    matches!(
+        character,
+        '\u{AD}'
+            | '\u{34F}'
+            | '\u{61C}'
+            | '\u{115F}'..='\u{1160}'
+            | '\u{17B4}'..='\u{17B5}'
+            | '\u{180B}'..='\u{180F}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+            | '\u{FFF0}'..='\u{FFF8}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0000}'..='\u{E0FFF}'
+    )
 }
 
 /// `unreserved = ALPHA / DIGIT / "-" / "." / "_" / "~"`.
@@ -448,7 +516,6 @@ mod tests {
                 &[
                     "http://résumé.example.org",
                     "http://xn--rsum-bpad.example.org",
-                    "http://r%C3%A9sum%C3%A9.example.org",
                     "http://www.example.org/red%09ros%C3%A9#red",
                     "http://example.com/𐌀𐌁𐌂",
                     "http://www.example.org/Dürst",
@@ -463,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn a_host_can_be_an_ip_address_or_a_future_ip_literal() {
+    fn a_host_can_be_an_ip_address() {
         assert_eq!(
             refused_by(
                 url(),
@@ -478,10 +545,16 @@ mod tests {
                     "http://[::ffff:192.0.2.16]",
                     "http://[1:2:3:4:5:6:192.0.2.16]",
                     "http://[FEDC:BA98::7654:3210]",
-                    "http://[v1.fe80::a+en1]",
-                    "http://[V7.x]",
                 ]
             ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_host_that_is_a_future_ip_literal_breaks_the_rule() {
+        assert_eq!(
+            accepted_by(url(), &["http://[v1.fe80::a+en1]", "http://[V7.x]", "http://[v1.x]"]),
             NONE
         );
     }
@@ -521,13 +594,13 @@ mod tests {
             refused_by(
                 url(),
                 &[
-                    "http://256.0.0.1",
-                    "http://1.2.3",
                     "http://my_host.example",
                     "http://example.com.",
-                    "http://ex%41mple.com",
                     "http://a!$&'()*+,;=b",
                     "http://xn--a.example",
+                    "http://1.2.3.example",
+                    "http://example.123a",
+                    "http://example.0x1g",
                 ]
             ),
             NONE
@@ -535,14 +608,80 @@ mod tests {
     }
 
     #[test]
-    fn a_port_is_any_run_of_digits() {
+    fn a_host_ending_in_a_number_must_be_an_ipv4_address() {
+        assert_eq!(
+            accepted_by(
+                url(),
+                &[
+                    "http://256.0.0.1",
+                    "http://2130706433",
+                    "http://1.2.3",
+                    "http://1.2.3.4.5",
+                    "http://0x7f.0.0.1",
+                    "http://010.0.0.1",
+                    "http://example.123",
+                    "http://0x7f000001",
+                    "http://example.0X1f",
+                    "http://example.0x",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_host_ending_in_a_number_and_one_dot_must_be_an_ipv4_address() {
+        assert_eq!(
+            [url().check("http://192.0.2.16."), url().check("http://256.0.0.1.")],
+            [Ok(()), not_a_url()]
+        );
+    }
+
+    #[test]
+    fn a_host_ending_in_a_number_and_two_dots_is_a_registered_name() {
+        assert_eq!(url().check("http://256.0.0.1.."), Ok(()));
+    }
+
+    #[test]
+    fn a_host_with_percent_encoding_breaks_the_rule() {
+        assert_eq!(
+            accepted_by(
+                url(),
+                &[
+                    "http://ex%41mple.com",
+                    "http://r%C3%A9sum%C3%A9.example.org",
+                    "http://%31%32%37.0.0.1",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_port_is_a_number_up_to_65535() {
         assert_eq!(
             refused_by(
                 url(),
                 &[
                     "http://example.com:",
                     "http://example.com:0",
-                    "http://example.com:99999/a"
+                    "http://example.com:65535/a",
+                    "http://example.com:00080",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_port_above_65535_breaks_the_rule() {
+        assert_eq!(
+            accepted_by(
+                url(),
+                &[
+                    "http://example.com:65536",
+                    "http://example.com:99999/a",
+                    "http://example.com:4294967376",
                 ]
             ),
             NONE
@@ -618,10 +757,8 @@ mod tests {
                     "https://example.com/\"a\"",
                     "https://example.com/<a>",
                     "https://example.com/{a}",
-                    "https://example.com/a|b",
                     "https://example.com/a^b",
                     "https://example.com/a`b",
-                    "https://example.com/[a]",
                     "https://example.com/#a#b",
                     "https://example.com/\u{7F}",
                     "https://example.com/\u{85}",
@@ -629,6 +766,144 @@ mod tests {
                     "https://example.com/\u{FFFE}",
                     "https://example.com/\u{E0001}",
                     "https://exa mple.com",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_whitespace_character_breaks_the_rule_even_where_rfc_3987_allows_it() {
+        assert_eq!(
+            accepted_by(
+                url(),
+                &[
+                    "https://example.com/a\u{A0}b",
+                    "https://example.com/a\u{1680}b",
+                    "https://example.com/a\u{2000}b",
+                    "https://example.com/a\u{200A}b",
+                    "https://example.com/a\u{2028}b",
+                    "https://example.com/a\u{2029}b",
+                    "https://example.com/a\u{202F}b",
+                    "https://example.com/a\u{205F}b",
+                    "https://example.com/a\u{3000}b",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn an_invisible_character_breaks_the_rule_even_where_rfc_3987_allows_it() {
+        assert_eq!(
+            accepted_by(
+                url(),
+                &[
+                    "https://example.com/a\u{AD}b",
+                    "https://example.com/a\u{34F}b",
+                    "https://example.com/a\u{61C}b",
+                    "https://example.com/a\u{115F}b",
+                    "https://example.com/a\u{1160}b",
+                    "https://example.com/a\u{17B4}b",
+                    "https://example.com/a\u{17B5}b",
+                    "https://example.com/a\u{180B}b",
+                    "https://example.com/a\u{180E}b",
+                    "https://example.com/a\u{180F}b",
+                    "https://example.com/a\u{200B}b",
+                    "https://example.com/a\u{200F}b",
+                    "https://example.com/a\u{202A}b",
+                    "https://example.com/a\u{202E}b",
+                    "https://example.com/a\u{2060}b",
+                    "https://example.com/a\u{2064}b",
+                    "https://example.com/a\u{2065}b",
+                    "https://example.com/a\u{2066}b",
+                    "https://example.com/a\u{206F}b",
+                    "https://example.com/a\u{3164}b",
+                    "https://example.com/a\u{FE00}b",
+                    "https://example.com/a\u{FE0F}b",
+                    "https://example.com/a\u{FEFF}b",
+                    "https://example.com/a\u{FFA0}b",
+                    "https://example.com/a\u{1BCA0}b",
+                    "https://example.com/a\u{1BCA3}b",
+                    "https://example.com/a\u{1D173}b",
+                    "https://example.com/a\u{1D17A}b",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_whitespace_or_invisible_character_breaks_the_rule_anywhere() {
+        assert_eq!(
+            accepted_by(
+                url(),
+                &[
+                    "https://exa\u{200B}mple.com",
+                    "https://example.com\u{A0}",
+                    "https://example.com/?q=\u{2028}",
+                    "https://example.com/#\u{202E}",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_character_beside_the_whitespace_and_invisible_ones_follows_the_rule() {
+        assert_eq!(
+            refused_by(
+                url(),
+                &[
+                    "https://example.com/a\u{A1}\u{AC}\u{AE}b",
+                    "https://example.com/a\u{34E}\u{350}b",
+                    "https://example.com/a\u{61B}\u{61D}b",
+                    "https://example.com/a\u{115E}\u{1161}b",
+                    "https://example.com/a\u{167F}\u{1681}b",
+                    "https://example.com/a\u{17B3}\u{17B6}b",
+                    "https://example.com/a\u{180A}\u{1810}b",
+                    "https://example.com/a\u{1FFF}\u{2010}b",
+                    "https://example.com/a\u{2027}\u{2030}b",
+                    "https://example.com/a\u{205E}\u{2070}b",
+                    "https://example.com/a\u{2FFF}\u{3001}b",
+                    "https://example.com/a\u{3163}\u{3165}b",
+                    "https://example.com/a\u{FDFF}\u{FE10}b",
+                    "https://example.com/a\u{FEFE}\u{FF00}b",
+                    "https://example.com/a\u{FF9F}\u{FFA1}b",
+                    "https://example.com/a\u{1BC9F}\u{1BCA4}b",
+                    "https://example.com/a\u{1D172}\u{1D17B}b",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn a_query_or_a_fragment_takes_square_brackets_and_a_vertical_bar() {
+        assert_eq!(
+            refused_by(
+                url(),
+                &[
+                    "https://fonts.example/css?family=A|B",
+                    "https://api.example/items?filter[x]=1",
+                    "https://example.com/#a|b",
+                    "https://example.com/#[x]",
+                ]
+            ),
+            NONE
+        );
+    }
+
+    #[test]
+    fn square_brackets_or_a_vertical_bar_in_a_path_or_a_host_break_the_rule() {
+        assert_eq!(
+            accepted_by(
+                url(),
+                &[
+                    "https://example.com/a|b",
+                    "https://example.com/[a]",
+                    "https://exa|mple.com",
+                    "https://example.com]",
                 ]
             ),
             NONE

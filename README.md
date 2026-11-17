@@ -77,7 +77,7 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 | `length(min = 1, max = 50)` | Its length is within the bounds, or exactly `length(equal = 5)`. A string is counted in `char`s, or in bytes or graphemes with `unit = "bytes"` or `unit = "graphemes"`. A collection is counted in elements |
 | `range(min = 18, max = 120)` | It is within the bounds, both included |
 | `email` | It is an email address, as HTML's `<input type="email">` accepts one, of at most 254 bytes |
-| `url` | It is an absolute URL with a host and no userinfo (`user@`), using `http`, `https` or `ftp`. `url(schemes = &["https"])` accepts other schemes instead |
+| `url` | It is an absolute URL with a host and no userinfo (`user@`), using `http`, `https` or `ftp`. `url(schemes = &["https"])` accepts other schemes instead. A host that ends in a number must be an IPv4 address like `192.0.2.16`, the port is at most 65535, and whitespace or invisible characters break the rule anywhere |
 | `ip`, `ipv4`, `ipv6` | It is an IP address: of either version, only version 4, or only version 6 |
 | `contains = "@"`, `prefix = "SKU-"`, `suffix = ".pdf"` | The string contains, starts with or ends with the text |
 | `pattern = r"^\d{5}$"` | The string matches the regular expression, anywhere in it unless the expression is anchored with `^` and `$`. Needs the `regex` feature |

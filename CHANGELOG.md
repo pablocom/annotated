@@ -24,6 +24,13 @@ This file lists every change that users of the crates can notice. The format fol
   - To keep every issue, as before, pass `Report::unlimited()` to `validate_into` or `deserialize_at`, or call a `_limited_to` function with `usize::MAX`.
 - `Report::is_finished()` returns whether the report holds as many issues as its limit, so a report that doesn't fail fast is finished at its limit. `Report::new_alike()` starts a report with the same limit. `Report::append` takes only as many issues as the report has room for, and once it takes every issue of a finished report and still has room, the report keeps no more.
 - Two `Issues` are equal only when `is_complete()` is equal too.
+- The `url` rule refuses what no one means by a URL, and accepts URLs that browsers send, where RFC 3986 and RFC 3987 say otherwise.
+  - A port above 65535 breaks it: `http://example.com:99999`.
+  - A host that ends in a number must be an IPv4 address of four decimal numbers up to 255, which browsers would otherwise read as another address: `http://256.0.0.1`, `http://2130706433`, `http://1.2.3` and `http://0x7f.0.0.1` break it.
+  - A host with percent-encoding breaks it: `http://%31%32%37.0.0.1`, `http://r%C3%A9sum%C3%A9.example.org`.
+  - An `IPvFuture` host breaks it: `http://[v1.x]`.
+  - Whitespace and invisible characters break it anywhere, even those RFC 3987 allows: a no-break space (U+00A0), a zero-width space (U+200B), a line separator (U+2028), a right-to-left override (U+202E), and every other character in Unicode's `White_Space` or `Default_Ignorable_Code_Point`.
+  - A query and a fragment take `[`, `]` and `|`: `https://fonts.example/css?family=A|B` and `https://api.example/items?filter[x]=1` follow it.
 
 ### Fixed
 
