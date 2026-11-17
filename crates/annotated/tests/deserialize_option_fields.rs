@@ -351,3 +351,21 @@ fn null_in_a_required_option_read_by_a_function_is_what_the_function_returns() {
 
     assert_eq!(comment, Comment { signature: None });
 }
+
+macro_rules! with_a_field_of_type {
+    ($name:ident, $field_type:ty) => {
+        #[derive(Deserialize, Debug, PartialEq)]
+        struct $name {
+            nickname: $field_type,
+        }
+    };
+}
+
+with_a_field_of_type!(Alias, Option<String>);
+
+#[test]
+fn an_option_passed_to_a_macro_as_a_type_is_none_when_its_key_is_absent() {
+    let alias = deserialize::<Alias>("{}").unwrap();
+
+    assert_eq!(alias, Alias { nickname: None });
+}

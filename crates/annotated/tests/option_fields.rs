@@ -113,3 +113,24 @@ fn required_on_an_option_in_a_struct_variant_accepts_none() {
 
     assert_eq!(delivery.validate(), Ok(()));
 }
+
+macro_rules! with_a_field_of_type {
+    ($name:ident, $field_type:ty) => {
+        #[derive(Validate)]
+        struct $name {
+            #[validate(length(min = 3))]
+            nickname: $field_type,
+        }
+    };
+}
+
+with_a_field_of_type!(Alias, Option<String>);
+
+#[test]
+fn a_rule_on_an_option_passed_to_a_macro_as_a_type_checks_the_value_inside() {
+    let alias = Alias {
+        nickname: Some("Al".to_owned()),
+    };
+
+    assert_eq!(issues_of(&alias), ["nickname: length"]);
+}

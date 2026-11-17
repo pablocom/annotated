@@ -10,7 +10,7 @@ use annotated::{Deserialize, Validate};
 
 fn derives_both<T: Validate + for<'de> Deserialize<'de>>() {}
 
-#[derive(Debug, Validate, Deserialize)]
+#[derive(Debug, Default, Validate, Deserialize)]
 struct Address {
     #[validate(required)]
     street: String,
@@ -290,6 +290,95 @@ fn a_module_without_the_prelude_derives_both() {
     derives_both::<without_the_prelude::Account>();
     derives_both::<without_the_prelude::Adjacent>();
     derives_both::<without_the_prelude::Internal>();
+}
+
+// Tokens a `macro_rules!` passes on keep its hygiene, and a type it passes as `$t:ty` arrives in an invisible group.
+mod through_macros {
+    use annotated::{Deserialize, Validate};
+    use serde::Deserializer;
+
+    use super::Address;
+
+    fn trimmed<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Address, D::Error> {
+        let street: String = serde::Deserialize::deserialize(deserializer)?;
+        Ok(Address {
+            street: street.trim().to_owned(),
+        })
+    }
+
+    macro_rules! derived {
+        ($item:item) => {
+            #[derive(Debug, Validate, Deserialize)]
+            $item
+        };
+    }
+
+    derived! {
+        pub struct Order {
+            #[validate(length(max = 3))]
+            pub reference: String,
+            #[validate(each(nested))]
+            pub stops: Vec<Address>,
+            #[serde(default, deserialize_with = "trimmed")]
+            #[validate(nested)]
+            pub pickup: Address,
+            #[serde(flatten)]
+            #[validate(nested)]
+            pub address: Address,
+            #[serde(flatten)]
+            #[validate(nested)]
+            pub billing: Option<Address>,
+        }
+    }
+
+    derived! {
+        #[annotated(collect_type_errors)]
+        pub struct Collected {
+            #[validate(nested)]
+            pub address: Address,
+            #[serde(flatten)]
+            #[validate(each(length(max = 3)))]
+            pub rest: std::collections::BTreeMap<String, String>,
+        }
+    }
+
+    derived! {
+        #[serde(tag = "kind", content = "data")]
+        pub enum Delivery {
+            Courier(#[validate(nested)] Address),
+            Pickup {
+                #[validate(each(nested))]
+                stops: Vec<Address>,
+            },
+        }
+    }
+
+    macro_rules! with_fields_of_types {
+        ($name:ident, $text:ty, $address:ty) => {
+            #[derive(Debug, Validate, Deserialize)]
+            pub struct $name {
+                #[validate(length(max = 3))]
+                pub nickname: $text,
+                #[validate(nested)]
+                pub address: $address,
+                #[validate(each(nested))]
+                pub stops: Vec<$address>,
+                #[serde(flatten)]
+                #[validate(nested)]
+                pub billing: Option<$address>,
+            }
+        };
+    }
+
+    with_fields_of_types!(Note, Option<String>, Address);
+}
+
+#[test]
+fn items_and_types_passed_through_macros_derive_both() {
+    derives_both::<through_macros::Order>();
+    derives_both::<through_macros::Collected>();
+    derives_both::<through_macros::Delivery>();
+    derives_both::<through_macros::Note>();
 }
 
 // Every struct and enum shape the derives accept, in every serde tagging, with the serde attributes they read.

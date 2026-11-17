@@ -1,5 +1,5 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::quote;
 use syn::Ident;
 
 use crate::validated_struct::{CheckedValue, FieldRule, RuleCheck, ValidatedField, ValidatedStruct};
@@ -100,7 +100,7 @@ impl Description {
     fn problem_of(&self, check: &RuleCheck, checked_by_the_rule: &TokenStream) -> TokenStream {
         let value_rules = &self.value_rules;
         let RuleCheck { rule, span, .. } = check;
-        quote_spanned! {*span=>
+        quote_at! {*span=>
             let #value_rules = (&::annotated::__private::Said(&#rule, #checked_by_the_rule)).added_to(#value_rules);
         }
     }

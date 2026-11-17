@@ -1,5 +1,19 @@
 //! The derive macros of [`annotated`](https://docs.rs/annotated), which re-exports and documents them.
 
+// Quotes generated code at a place in the user's code, such as a field's type, so that an error in it points there.
+// The tokens resolve names as the rest of the generated code does, whatever hygiene the place's own tokens have: an
+// item passed to a `macro_rules!` brings the macro's, under which a generated `self` isn't the method's. Lints also
+// take the tokens for generated code, which the user can't change. `quote_spanned!` itself is disallowed in
+// `clippy.toml`, so that no generated code takes the hygiene of the user's tokens.
+macro_rules! quote_at {
+    ($place:expr=> $($tokens:tt)*) => {{
+        let generated_at_the_place = proc_macro2::Span::call_site().located_at($place);
+        #[allow(clippy::disallowed_macros)]
+        let tokens = quote::quote_spanned!(generated_at_the_place=> $($tokens)*);
+        tokens
+    }};
+}
+
 mod described_rules;
 mod deserialize_enum_expansion;
 mod deserialize_expansion;

@@ -1,5 +1,5 @@
 use proc_macro2::{Literal, Span, TokenStream, TokenTree};
-use quote::{ToTokens, format_ident, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, Type, WherePredicate, parse_quote};
@@ -165,7 +165,7 @@ impl<'a> DeserializeExpansion<'a> {
                 let function = self.serde_field_of(field).deserialize_with.as_ref()?;
                 let wrapper = self.wrapper_of(field);
                 let field_type = field.field_type;
-                let read_by_the_function = quote_spanned!(function.span()=> #function(#deserializer)?);
+                let read_by_the_function = quote_at!(function.span()=> #function(#deserializer)?);
                 Some(quote! {
                     struct #wrapper #wrapper_impl_generics #where_clause {
                         value: #field_type,
@@ -547,12 +547,12 @@ impl<'a> DeserializeExpansion<'a> {
             return quote!(<#wrapper_type as #serde::Deserialize<'de>>::deserialize(#deserializer)?.value);
         }
         if !self.is_read_with_issues(field) {
-            return quote_spanned! {field_type.span()=>
+            return quote_at! {field_type.span()=>
                 <#field_type as #serde::Deserialize<'de>>::deserialize(#deserializer)?
             };
         }
         let reading_with_its_issues = self.reading_with_its_issues(field);
-        let value = quote_spanned! {field_type.span()=>
+        let value = quote_at! {field_type.span()=>
             ::annotated::__private::serde::de::DeserializeSeed::deserialize(#reading_with_its_issues, #deserializer)?
         };
         if !is_read_by_a_function {
@@ -585,7 +585,7 @@ impl<'a> DeserializeExpansion<'a> {
             }
             let read_issues = read_issues_of(field);
             let reading_with_its_issues = self.reading_with_its_issues(field);
-            let mut element = quote_spanned! {field_type.span()=>
+            let mut element = quote_at! {field_type.span()=>
                 ::annotated::__private::serde::de::SeqAccess::next_element_seed(
                     &mut #seq,
                     #reading_with_its_issues,
@@ -626,14 +626,14 @@ impl<'a> DeserializeExpansion<'a> {
             Place::OfItsParent => quote!(self.#at),
         };
         if !self.deserialized_struct.collects_type_errors {
-            return quote_spanned! {field_type.span()=>
+            return quote_at! {field_type.span()=>
                 ::annotated::__private::DeserializeAt::<#field_type>::new(#at_the_field, &mut #read_issues)
             };
         }
         let type_name = type_name_of(field_type);
         if self.is_read_by_a_function(field) {
             let wrapper_type = self.wrapper_type_of(field);
-            return quote_spanned! {field_type.span()=>
+            return quote_at! {field_type.span()=>
                 ::annotated::__private::CollectingTypeErrorsOfAFunctionAt::<#wrapper_type>::new(
                     #type_name,
                     #at_the_field,
@@ -646,7 +646,7 @@ impl<'a> DeserializeExpansion<'a> {
         } else {
             quote!(CollectingTypeErrorsAt)
         };
-        quote_spanned! {field_type.span()=>
+        quote_at! {field_type.span()=>
             ::annotated::__private::#seed::<#field_type>::new(#type_name, #at_the_field, &mut #read_issues)
         }
     }
@@ -810,23 +810,23 @@ impl<'a> DeserializeExpansion<'a> {
             field_type.to_token_stream()
         };
         let read_value = match (self.reads_nested_values(field), content_type) {
-            (true, Some(content_type)) => quote_spanned! {field_type.span()=>
+            (true, Some(content_type)) => quote_at! {field_type.span()=>
                 ::core::option::Option::Some(::core::option::Option::flatten(::core::result::Result::ok(
                     <#content_type as ::annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues),
                 )))
             },
-            (true, None) => quote_spanned! {field_type.span()=>
+            (true, None) => quote_at! {field_type.span()=>
                 <#field_type as ::annotated::Deserialize<'de>>::deserialize_at(#flattened, self.#at, &mut #read_issues)?
             },
             (false, Some(content_type)) => {
-                let value_or_none = quote_spanned! {field_type.span()=>
+                let value_or_none = quote_at! {field_type.span()=>
                     ::core::result::Result::ok(<#content_type as #serde::Deserialize<'de>>::deserialize(#flattened))
                 };
                 self.as_its_slot_holds_it(field, &value_or_none)
             }
             (false, None) if self.deserialized_struct.collects_type_errors => {
                 let type_name = type_name_of(field_type);
-                let read = quote_spanned! {field_type.span()=>
+                let read = quote_at! {field_type.span()=>
                     ::annotated::__private::Leftovers::flattened_collecting_type_errors::<#read_type>(
                         &mut #leftovers,
                         #type_name,
@@ -841,7 +841,7 @@ impl<'a> DeserializeExpansion<'a> {
                 }
             }
             (false, None) => {
-                let read = quote_spanned! {field_type.span()=>
+                let read = quote_at! {field_type.span()=>
                     <#read_type as #serde::Deserialize<'de>>::deserialize(#flattened)?
                 };
                 if is_read_by_a_function {
@@ -868,7 +868,7 @@ impl<'a> DeserializeExpansion<'a> {
             return quote!(#serde::de::MapAccess::next_value::<#field_type>(&mut #map)?);
         }
         let reading_with_its_issues = self.reading_with_its_issues(field);
-        let value = quote_spanned! {field_type.span()=>
+        let value = quote_at! {field_type.span()=>
             ::annotated::__private::serde::de::MapAccess::next_value_seed(
                 &mut #map,
                 #reading_with_its_issues,
@@ -1247,7 +1247,7 @@ impl<'a> DeserializeExpansion<'a> {
         let (_, type_generics, _) = input.generics.split_for_impl();
         let struct_default_value = match struct_default {
             DefaultValue::OfItsType => quote!(<#name #type_generics as ::core::default::Default>::default()),
-            DefaultValue::ReturnedBy(function) => quote_spanned!(function.span()=> #function()),
+            DefaultValue::ReturnedBy(function) => quote_at!(function.span()=> #function()),
         };
         let values = quote! {
             let #name { #(#members: #defaults,)* .. } = #struct_default_value;
@@ -1387,7 +1387,7 @@ impl<'a> DeserializeExpansion<'a> {
         let validating = rules
             .iter()
             .find_map(|rule| match rule {
-                FieldRule::Nested { .. } => Some(quote_spanned! {*field_type_span=>
+                FieldRule::Nested { .. } => Some(quote_at! {*field_type_span=>
                     ::annotated::Validate::validate_into(#present_value, #value_at, &mut #read_issues);
                 }),
                 FieldRule::Each {
@@ -1457,9 +1457,9 @@ fn default_value(field: &ValidatedField, default: &DefaultValue) -> TokenStream 
     let field_type = field.field_type;
     match default {
         DefaultValue::OfItsType => {
-            quote_spanned!(field_type.span()=> <#field_type as ::core::default::Default>::default())
+            quote_at!(field_type.span()=> <#field_type as ::core::default::Default>::default())
         }
-        DefaultValue::ReturnedBy(function) => quote_spanned!(function.span()=> #function()),
+        DefaultValue::ReturnedBy(function) => quote_at!(function.span()=> #function()),
     }
 }
 

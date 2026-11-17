@@ -1,6 +1,9 @@
 error[E0277]: the rule `StringLength` can't check a value of type `Vec<String>`
  --> tests/ui/unit_on_a_collection.rs:5:16
   |
+3 | #[derive(Validate)]
+  |          -------- in this derive macro expansion
+4 | struct Post {
 5 |     #[validate(length(max = 3, unit = "chars"))]
   |                ^^^^^^ `StringLength` can't check a `Vec<String>`
   |
@@ -15,3 +18,4 @@ help: the following other types implement trait `Rule<T>`
   |
   | impl<T: Required + ?Sized> Rule<T> for Presence {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Presence`
+  = note: this error originates in the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)

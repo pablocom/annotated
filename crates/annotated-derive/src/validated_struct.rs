@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, format_ident, quote_spanned};
+use quote::{ToTokens, format_ident};
 use syn::spanned::Spanned;
 use syn::{
     Attribute, Data, DataStruct, DeriveInput, Error, Expr, ExprLit, Field, Fields, GenericArgument, Ident, Index, Lit,
@@ -229,7 +229,7 @@ pub fn option_content(checked_type: &Type) -> Option<&Type> {
 }
 
 fn content_of<'a>(wrapper: &str, checked_type: &'a Type) -> Option<&'a Type> {
-    let Type::Path(type_path) = checked_type else {
+    let Type::Path(type_path) = ungrouped(checked_type) else {
         return None;
     };
     let last_segment = type_path.path.segments.last()?;
@@ -243,13 +243,22 @@ fn element_type(collection: &Type) -> Option<&Type> {
     if let Some(boxed_collection) = content_of("Box", collection) {
         return element_type(boxed_collection);
     }
-    match collection {
+    match ungrouped(collection) {
         Type::Array(array) => Some(&array.elem),
         Type::Slice(slice) => Some(&slice.elem),
         Type::Reference(reference) => element_type(&reference.elem),
         Type::Path(map) if is_map(map) => type_arguments(map).nth(1),
         Type::Path(collection) => type_arguments(collection).next(),
         _ => None,
+    }
+}
+
+// A type passed to a `macro_rules!` as `$t:ty` arrives wrapped in an invisible group, and parentheses change nothing.
+pub fn ungrouped(written_type: &Type) -> &Type {
+    match written_type {
+        Type::Group(group) => ungrouped(&group.elem),
+        Type::Paren(parenthesized) => ungrouped(&parenthesized.elem),
+        other => other,
     }
 }
 
@@ -373,17 +382,17 @@ impl RuleCheck {
             });
         }
         let constructor = match call.path.get_ident() {
-            Some(built_in) => quote_spanned!(span=> ::annotated::rules::#built_in),
+            Some(built_in) => quote_at!(span=> ::annotated::rules::#built_in),
             None => call.path.to_token_stream(),
         };
         let constructor_value = &call.value;
-        let builder_calls = call
+        let builder_calls: TokenStream = call
             .builder_arguments
             .iter()
             .map(|argument| builder_call(&call.path, argument))
-            .collect::<syn::Result<Vec<_>>>()?;
+            .collect::<syn::Result<_>>()?;
         Ok(Self {
-            rule: quote_spanned!(span=> #constructor(#constructor_value) #(#builder_calls)*),
+            rule: quote_at!(span=> #constructor(#constructor_value) #builder_calls),
             is_required: call.path.is_ident("required"),
             message: call.message,
             span,
@@ -395,7 +404,7 @@ fn builder_call(rule: &Path, NamedArgument { name, value }: &NamedArgument) -> s
     if rule.is_ident("length") && name == "unit" {
         return length_unit_call(value);
     }
-    Ok(quote_spanned!(name.span()=> .#name(#value)))
+    Ok(quote_at!(name.span()=> .#name(#value)))
 }
 
 fn length_unit_call(unit: &Expr) -> syn::Result<TokenStream> {
@@ -412,6 +421,6 @@ fn length_unit_call(unit: &Expr) -> syn::Result<TokenStream> {
     };
     let counting_method =
         counting_method.ok_or_else(|| Error::new_spanned(unit, r#"`unit` is "chars", "bytes" or "graphemes""#))?;
-    let counting_method = Ident::new(counting_method, unit.span());
-    Ok(quote_spanned!(unit.span()=> .#counting_method()))
+    let counting_method = Ident::new(counting_method, Span::call_site().located_at(unit.span()));
+    Ok(quote_at!(unit.span()=> .#counting_method()))
 }

@@ -1,6 +1,9 @@
 error[E0277]: the trait bound `Address: serde::Deserialize<'de>` is not satisfied
   --> tests/ui/deserialize/field_serde_cannot_read_collecting_type_errors.rs:10:23
    |
+ 7 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+...
 10 |     shipping_address: Address,
    |                       ^^^^^^^ unsatisfied trait bound
    |
@@ -30,3 +33,4 @@ note: required by a bound in `annotated::__private::CollectingTypeErrorsAt::<'a,
    |     where
    |         T: serde::Deserialize<'de>,
    |            ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `CollectingTypeErrorsAt::<'a, 'l, T>::new`
+   = note: this error originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)

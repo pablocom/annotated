@@ -140,7 +140,7 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
   - Collecting deserialization reports an absent key as `Problem::Missing`, the problem of any other absent field, so absence has one code whatever the field's type. It does so even when serde would give the field a default, and the issue carries the rule's `message`.
   - A value that already exists can't say whether its key was there, so every `Option` passes the rule itself, `None` included. `validate()` checks nothing for it, and neither does `each(required)` on optional elements, which are always present.
   - Only a field read by its key has one to ask for. A skipped field, a flattened one and a tuple variant's element pass, as does an `Option` behind a type alias the derive can't see, whose absent key is `missing` already.
-- **Other rules on an `Option` field** check the value inside, and are skipped when the field is `None`. The derive recognizes an `Option` field by how its type is written: a path ending in `Option<T>`.
+- **Other rules on an `Option` field** check the value inside, and are skipped when the field is `None`. The derive recognizes an `Option` field by how its type is written: a path ending in `Option<T>`, in parentheses or not, and as a `macro_rules!` passes it as `$t:ty`.
 - **`nested`** validates a field whose type implements `Validate`. The field's segment is added to the location, so issues inside it are reported at their full path.
   - The crate implements `Validate` for `Box<T>`, `Rc<T>`, `Arc<T>`, `&T`, `&mut T` and `Cow<'_, T>`, which check the value they point to at their own location and answer its `rules()`, and for tuples of up to 16 elements, which check each element at its index. So a nested value can be behind a pointer, and the elements of a tuple are reported as a list's are: `leg[1].street`.
   - It isn't implemented for collections: their elements are checked with `each(nested)`, which goes through `HasElements`. That keeps a single way to reach elements, and `each` can hold other rules beside `nested`.
@@ -148,6 +148,14 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
   - It works on anything that implements the `HasElements` capability trait: `Vec`, `VecDeque`, arrays, slices, `HashMap` and `BTreeMap`, and any of these behind a reference or a `Box`, like `&'a [T]` or `Box<[T]>`.
   - Elements that are `Option`s are treated like `Option` fields. To find the element type, the derive again goes by how the collection's type is written, looking through `&` and `Box`. A map's values are its second type argument, whatever comes after it (`HashMap<K, V, S>`). Any other collection's elements are its first type argument. A type counts as a map when its name ends in `Map`.
 - **Struct-level `#[validate(custom(f))]`** takes an `Fn(&Self) -> Result<(), Problem>` and reports at the struct's own location. `custom(f, field = repeated_password)` reports at that field instead, under its serde name. It accepts `message` like any rule. On the struct, `#[validate(...)]` accepts only `custom(...)` rules and `report_all`, in one attribute or in several. Any other rule there is a compile error.
+
+### The generated code
+
+The derives generate code into the user's module, among the user's names, so it relies on none of them:
+
+- **Its locals are hygienic**, so a field named `value` or `found` is never one of them. Every path it names is absolute, so a user's `Option` or `Result` in scope changes nothing, and so does `#![no_implicit_prelude]`.
+- **Code at a place in the user's code**, such as a field's type, is there so that an error in it points at that place. It keeps the derive's own hygiene all the same, through `quote_at!`, so an item passed through a `macro_rules!` derives like any other, and lints take the code for generated code. `clippy.toml` disallows `quote_spanned!`, which would give the code the hygiene of the user's tokens.
+- **`crates/annotated/tests/hostile_shapes.rs`** derives both traits on shapes meant to break a macro, with every warning denied. A shape the derives break belongs there first.
 
 ## Semantics, settled
 

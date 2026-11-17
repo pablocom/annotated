@@ -1,5 +1,5 @@
 use proc_macro2::{Span, TokenStream};
-use quote::quote_spanned;
+
 use syn::{Error, Expr, ExprLit, Lit, LitStr};
 
 use crate::written_rule::RuleCall;
@@ -7,7 +7,7 @@ use crate::written_rule::RuleCall;
 pub fn pattern_rule(call: &RuleCall, span: Span) -> syn::Result<TokenStream> {
     let expression = regular_expression(call, span)?;
     check_regular_expression(expression, span)?;
-    Ok(quote_spanned! {span=>
+    Ok(quote_at! {span=>
         {
             static PATTERN: ::std::sync::LazyLock<::annotated::__private::Regex> =
                 ::std::sync::LazyLock::new(|| {

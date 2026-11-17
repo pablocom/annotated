@@ -1,5 +1,5 @@
 use proc_macro2::{Literal, Span, TokenStream};
-use quote::{ToTokens, format_ident, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{ExprPath, Generics, Ident, Lifetime, parse_quote};
 
@@ -707,7 +707,7 @@ impl EnumExpansion<'_> {
             .content
             .iter()
             .flat_map(|content| content.validated.fields.iter().map(|field| field.field_type));
-        let read_by_the_function = quote_spanned!(function.span()=> #function(#deserializer)?);
+        let read_by_the_function = quote_at!(function.span()=> #function(#deserializer)?);
         let wrapper = quote! {
             struct __DeserializeVariantWith #wrapper_impl_generics #where_clause {
                 value: (#(#field_types),*),

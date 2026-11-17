@@ -1,5 +1,5 @@
 use proc_macro2::{Group, Span, TokenStream, TokenTree};
-use quote::{ToTokens, quote, quote_spanned};
+use quote::{ToTokens, quote};
 use syn::{Expr, Ident};
 
 use crate::described_rules::rules_function;
@@ -256,7 +256,7 @@ impl Expansion {
             ..
         } = self;
         let NestedValues::ReadWithIssuesIn(read_issues) = &self.nested_values else {
-            return quote_spanned! {span=>
+            return quote_at! {span=>
                 {
                     let #found_before = #found.len();
                     ::annotated::Validate::validate_into(#value, #value_at, #found);
@@ -308,7 +308,7 @@ impl Expansion {
             ),
             _ => (TokenStream::new(), TokenStream::new()),
         };
-        quote_spanned! {span=>
+        quote_at! {span=>
             {
                 let #found_before = #found.len();
                 ::annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
@@ -331,7 +331,7 @@ impl Expansion {
             rule, message, span, ..
         } = check;
         let value = &self.value;
-        let outcome = quote_spanned!(*span=> ::annotated::Rule::check(&#rule, #value));
+        let outcome = quote_at!(*span=> ::annotated::Rule::check(&#rule, #value));
         self.passes_or_records(&outcome, value_at, message.as_ref(), *span)
     }
 
@@ -345,7 +345,7 @@ impl Expansion {
         let Self { found, problem, .. } = self;
         let message = message_override(message);
         let after_an_issue = self.after_an_issue();
-        quote_spanned! {span=>
+        quote_at! {span=>
             match #outcome {
                 ::core::result::Result::Ok(()) => true,
                 ::core::result::Result::Err(#problem) => {
@@ -445,8 +445,8 @@ impl Expansion {
             check, message, span, ..
         } = check;
         let CheckedStruct { value, value_type } = checked;
-        let value_type = spanned(value_type, *span);
-        let outcome = quote_spanned!(*span=>
+        let value_type = spanned(value_type, Span::call_site().located_at(*span));
+        let outcome = quote_at!(*span=>
             ::annotated::Rule::check(&::annotated::rules::custom::<#value_type, _>(#check), #value)
         );
         self.passes_or_records(&outcome, reported_at, message.as_ref(), *span)
