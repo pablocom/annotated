@@ -48,9 +48,9 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features -- ${{ matrix.test-args }}
-      # The examples and the crates built on annotated turn on features of annotated, so leaving them out tests
-      # annotated with its default features.
-      - run: cargo test --workspace --exclude annotated-example-axum --exclude annotated-example-utoipa --exclude annotated-axum --exclude annotated-utoipa -- ${{ matrix.test-args }}
+      # The crates built on annotated turn on features of annotated, so leaving them out tests it with its default
+      # features.
+      - run: cargo test --workspace --exclude annotated-axum --exclude annotated-utoipa -- ${{ matrix.test-args }}
 
   docs:
     runs-on: ubuntu-latest

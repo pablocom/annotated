@@ -430,11 +430,12 @@ Its message is `must be {expected}, found {found}`.
 
 ### Using it from a web framework
 
-There is no crate for any framework. [`examples/axum`](examples/axum) shows a short extractor instead:
+[`annotated-axum`](crates/annotated-axum) is an extractor for axum 0.8, `ValidJson<T>`:
 
 - It reads the body with `annotated::json::from_slice`.
-- It responds to a body that isn't JSON as axum's own `Json` does.
-- It responds to issues with 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body. The body's `errors` member lists each issue's JSON Pointer, code, params and message.
+- Its rejection, `ValidJsonRejection`, holds annotated's `DeserializeError` as it came, not a response. As a response, it is the issues as `ProblemDetails`: 422 and an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` body, whose `errors` member lists each issue's JSON Pointer, code, params and message. Anything else is refused as axum's own `Json` refuses it: 415, 413, 400, or 422 with serde_json's message.
+- Problem details are the answer the crate recommends: a standard format, with codes and params for code that reacts to them, and messages for people. An app that answers issues its own way converts the rejection into an error type of its own, through axum's own ways of replacing a rejection, such as `#[from_request(via(ValidJson), rejection(ApiError))]`. So the crate has no setting for it.
+- `ProblemDetails` converts from `Issues`, so a handler answers the issues `Validate::validate` finds with `?`.
 
 ## Rules in a JSON Schema
 
@@ -515,10 +516,12 @@ Where a schema says something a little different from the rule:
 
 ### Using it from a schema library
 
-There is no crate for any schema library. [`examples/utoipa`](examples/utoipa) shows a short function instead:
+[`annotated-utoipa`](crates/annotated-utoipa) writes the rules into an OpenAPI document that utoipa 6 generated. `json_schema` keeps to JSON Schema, and what is particular to utoipa stays in that crate:
 
-- It finds the schema utoipa generated for a type, among the document's components.
-- It turns that schema into JSON, writes the type's rules into it, and reads it back. It returns the rules it couldn't write, and the example's app panics on any.
+- **Finding the schema.** `write_rules_of::<T>` looks among the document's components for the schema named `T::name()`. utoipa names a generic type's schema after its arguments, `Page_Address`, which `name()` doesn't know, so `write_rules` takes the name and the rules.
+- **Writing into it.** utoipa's schema becomes JSON, `json_schema::write_rules` writes into it, and utoipa reads it back. utoipa reads a schema with a `type` as a schema of that type, which holds no `allOf`. So before it is read back, an `allOf` beside a `type`, which a second `pattern` makes, is made to stand on its own: the schema's other keywords become its first member, and each member takes the `type`, without which utoipa can't read it.
+- **Checking what utoipa kept.** The schema utoipa holds afterwards is compared with what was written, and each keyword it left out is reported at its JSON Pointer. The comparison starts from the schema as utoipa reads it back, since utoipa leaves a `default` of `null` out of its own schemas, and that isn't a rule left out.
+- **The report.** Each `Unwritten` is a rule annotated couldn't write, a type the document has no schema for, or a keyword utoipa left out. Like `json_schema::write_rules`, the crate never panics or logs for them: the caller decides.
 - Each type is named once, where the document is built. With utoipa-axum, that is after the routes have added their schemas.
 
 ## Crates and features
@@ -527,6 +530,10 @@ There is no crate for any schema library. [`examples/utoipa`](examples/utoipa) s
 |---|---|---|
 | `annotated` | The `Validate` trait, issues, problems and paths, the built-in rules, and collecting deserialization | `annotated-derive`, which it re-exports, and the optional dependencies its features add |
 | `annotated-derive` | The `Validate` and `Deserialize` derive macros. Derive macros have to live in a crate of their own | `syn`, `quote`, `proc-macro2` and `serde_derive_internals`. Its `regex` feature adds `regex-syntax`, to check patterns at compile time. Its `json-schema` feature makes the derives implement `rules()` |
+| `annotated-axum` | `ValidJson<T>`, an axum extractor, its rejection, and RFC 9457 problem details | `annotated` with `json`, `axum` 0.8, `mime`, `serde` and `serde_json` |
+| `annotated-utoipa` | `write_rules_of` and `write_rules`, which write rules into a document utoipa generated | `annotated` with `json-schema`, `utoipa` 6 and `serde_json` |
+
+Each crate built on annotated works with one major version of its library, or one minor version before 1.0, so it can rely on what that version does. It has a version of its own, and a new version of its library comes with a new version of the crate.
 
 | Feature of `annotated` | Dependency it adds | What it enables |
 |---|---|---|
@@ -542,4 +549,5 @@ There is no crate for any schema library. [`examples/utoipa`](examples/utoipa) s
 - **Integration tests** in `crates/annotated/tests/` use the derives from the outside. They pin what a struct accepts and the issues it reports, comparing whole values.
 - **Compile-fail tests** in `crates/annotated/tests/ui/` pin every error the derives emit, including its span. `trybuild` runs them on the stable toolchain only: compiler output differs between versions, so the MSRV job skips them.
 - **Doc tests** are the examples in the docs, so every example compiles and runs. The README's test runs as a copy in `tests/json.rs`. Change both together.
+- **The crates built on annotated** are tested through their library: annotated-axum sends requests to an axum `Router`, and annotated-utoipa reads the schemas of a document utoipa derived. Each keyword annotated writes has a test that utoipa keeps it.
 - **Property tests** check that the `url` rule agrees, on generated text, with [`iri-string`](https://crates.io/crates/iri-string), a strict RFC 3986 and RFC 3987 validator.

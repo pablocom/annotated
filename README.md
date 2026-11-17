@@ -55,7 +55,7 @@ fn every_problem_with_a_new_member_is_reported_at_once() {
 cargo add annotated --features json
 ```
 
-`annotated` is the only crate to add. It re-exports its derive macros, and the code they generate doesn't need serde among your dependencies.
+`annotated` is the only crate to add. It re-exports its derive macros, and the code they generate doesn't need serde among your dependencies. With axum, add [annotated-axum](#web-frameworks) too, and with utoipa, [annotated-utoipa](#openapi-and-json-schema).
 
 1. Derive `annotated::Deserialize` where you would derive `serde::Deserialize`.
 2. Write each field's rules in `#[validate(...)]`.
@@ -133,7 +133,7 @@ A value of the wrong type, like `"age": "twelve"`, ends deserialization with the
 
 ## Web frameworks
 
-There is no crate for any framework. [`examples/axum`](examples/axum) is an axum extractor to copy into your app instead. It responds with 422 and lists every issue as RFC 9457 problem details.
+[annotated-axum](crates/annotated-axum) is an axum extractor, `ValidJson<T>`. It answers every issue in a body with 422 and RFC 9457 problem details, which list each issue's JSON Pointer, code, params and message. Its rejection holds the issues as data, for an app that answers them with a response of its own.
 
 ## OpenAPI and JSON Schema
 
@@ -150,7 +150,7 @@ let unwritten = annotated::json_schema::write_rules(&<NewMember as Validate>::ru
 - It covers the rules on a struct's fields. Enums, flattened fields and rules across fields are not written yet.
 - `Validate` and `Deserialize` both have `rules()`, since a type can derive either. `NewMember` derives both, so the call says which one it means.
 
-[`examples/utoipa`](examples/utoipa) writes the rules into a document that utoipa generated.
+[annotated-utoipa](crates/annotated-utoipa) writes the rules into the document utoipa generates, and returns what the document still doesn't say.
 
 ## Learn more
 
