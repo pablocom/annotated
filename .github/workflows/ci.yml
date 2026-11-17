@@ -48,6 +48,40 @@ jobs:
             echo "::endgroup::"
           done
 
+  # Every push to main releases what its commits say, so a public API that breaks has to come with a breaking commit.
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The commits since the tag of the last release decide the next version.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      # cargo-semver-checks reads which changes a release allows from the version it writes: a breaking change is
+      # allowed only when the version is one a breaking commit asks for.
+      - name: Write the next releases
+        run: cargo run --quiet --package annotated-release -- "$(date --utc +%F)"
+      # A crate is compared with its latest version on crates.io, so one that was never published there is left out.
+      - name: List the crates published on crates.io
+        id: published
+        run: |
+          published=()
+          for crate in $(cargo metadata --no-deps --format-version 1 | jq --raw-output '.packages[] | select(.publish != []) | .name'); do
+            if info=$(cargo info --quiet --registry crates-io "$crate" 2>&1); then
+              published+=("$crate")
+            elif grep --quiet "could not find \`$crate\`" <<< "$info"; then
+              echo "::notice::$crate isn't on crates.io yet, so there is no API of it to break"
+            else
+              echo "$info"
+              exit 1
+            fi
+          done
+          echo "crates=$(IFS=,; echo "${published[*]}")" >> "$GITHUB_OUTPUT"
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: ${{ steps.published.outputs.crates }}
+          rust-toolchain: manual
+
   test:
     name: test (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
@@ -81,7 +115,7 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main'
-    needs: [format, lint, features, test, docs]
+    needs: [format, lint, features, semver, test, docs]
     runs-on: ubuntu-latest
     environment: release
     # A release reads what the one before it left on main, so they run one at a time.
