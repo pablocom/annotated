@@ -153,6 +153,16 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
         Content::number_in(self.content.number_kept_as_text()?)
     }
 
+    // Out of line, so that reading a name, which every key of a struct is, stays as small as it was before an index
+    // could name a field.
+    #[cold]
+    fn deserialize_index_as_a_name<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
+        if self.read_as.takes_an_index_for_a_name(&self.content) {
+            return self.deserialize_integer(visitor);
+        }
+        Err(self.invalid_type(&visitor))
+    }
+
     fn deserialize_float<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
         match self.content {
             Content::F32(float) => visitor.visit_f32(float),
@@ -441,8 +451,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
             Content::String(_) | Content::Str(_) | Content::ByteBuf(_) | Content::Bytes(_) => {
                 self.deserialize_string(visitor)
             }
-            _ if self.read_as.takes_an_index_for_a_name(&self.content) => self.deserialize_integer(visitor),
-            _ => Err(self.invalid_type(&visitor)),
+            _ => self.deserialize_index_as_a_name(visitor),
         }
     }
 
