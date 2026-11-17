@@ -52,6 +52,14 @@ impl Releasable {
                 "benchmarks/Cargo.lock",
                 "name = \"annotated-derive\"\nversion = \"{version}\"",
             ),
+            (
+                "serde-json-features/Cargo.lock",
+                "name = \"annotated\"\nversion = \"{version}\"",
+            ),
+            (
+                "serde-json-features/Cargo.lock",
+                "name = \"annotated-derive\"\nversion = \"{version}\"",
+            ),
         ];
         Self {
             name: "annotated".to_owned(),

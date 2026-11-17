@@ -71,6 +71,27 @@ version = \"0.2.1\"
 }
 
 #[test]
+fn the_lock_file_of_the_tests_under_serde_json_s_features_takes_the_version_of_both_crates() {
+    let repository = Repository::released("0.2.0");
+    repository.commit_to_the_crates("fix(core): accept an address with a quoted local part");
+
+    repository.write_next_release().expect("the release is written");
+
+    assert_eq!(
+        repository.read("serde-json-features/Cargo.lock"),
+        "\
+[[package]]
+name = \"annotated\"
+version = \"0.2.1\"
+
+[[package]]
+name = \"annotated-derive\"
+version = \"0.2.1\"
+"
+    );
+}
+
+#[test]
 fn a_requirement_on_another_version_of_the_derive_crate_is_not_released() {
     let repository = Repository::released("0.2.0");
     repository.write(

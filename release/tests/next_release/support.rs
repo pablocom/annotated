@@ -28,6 +28,7 @@ impl Repository {
         repository.write(CODE_OF_THE_CRATES, "");
         repository.write("Cargo.lock", &lock_file(version));
         repository.write("benchmarks/Cargo.lock", &lock_file(version));
+        repository.write("serde-json-features/Cargo.lock", &lock_file(version));
         repository.write("CHANGELOG.md", &changelog(version));
         repository.commit(&format!("chore(repo): release {version}"));
         repository.git(&["tag", &format!("v{version}")]);
