@@ -1,12 +1,15 @@
 //! An [axum](https://docs.rs/axum) extractor, [`ValidJson`], that reads a JSON body with
-//! [annotated](https://docs.rs/annotated)'s collecting deserialization, and answers every issue in it at once.
+//! [annotated](https://docs.rs/annotated)'s collecting deserialization, and answers its issues at once, up to 1,000 of
+//! them.
 //!
 //! Every refusal is [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, as
 //! `application/problem+json`: [`ProblemDetails`].
 //!
 //! - **Issues** are answered with 422, and the problem details list each issue's JSON Pointer, code, params and
 //!   message, as its `detail`. That is the answer this crate recommends. An app that answers with a body of its own
-//!   reads the issues from the [`ValidJsonRejection`] instead.
+//!   reads the issues from the [`ValidJsonRejection`] instead. annotated keeps at most 1,000 issues, so a body with
+//!   more is answered with the first 1,000 and a top-level `detail` that says so: `there may be more issues than
+//!   the 1000 listed`. [`Issues::is_complete`] says whether the issues are all of them.
 //! - **A request it can't read** is answered with the status axum's own `Json` answers it with: 415 when it isn't
 //!   sent as JSON, 413 when its body is larger than the app's limit, 400 when the body isn't JSON, and 422 when a
 //!   value has the wrong type in a struct that doesn't collect type errors. The problem details' `detail` says what
@@ -71,7 +74,8 @@
 //! The rejection is an error too, so your rejection can log it: its `Display` says why the request was refused, and
 //! its `source()` is the error it came from.
 //!
-//! It holds the issues as data. To answer them with a body of your own instead, match them in your rejection:
+//! It holds the issues as data, up to 1,000, and [`Issues::is_complete`] says whether the body may have more. To answer
+//! them with a body of your own instead, match them in your rejection:
 //!
 //! ```
 //! use annotated::{DeserializeError, Issues};
@@ -221,7 +225,8 @@ pub enum ValidJsonRejection {
     /// The body couldn't be read: 413 when it is larger than the app's limit, and 400 when reading it failed.
     BytesRejection(BytesRejection),
     /// The body couldn't be read as a `T`. Its issues are [`DeserializeError::Issues`], answered with 422 and listed
-    /// in the problem details. `serde_json`'s own error is answered with 400 when the body isn't JSON, and with 422
+    /// in the problem details: up to 1,000, and [`Issues::is_complete`] says whether the body may have more.
+    /// `serde_json`'s own error is answered with 400 when the body isn't JSON, and with 422
     /// when a value has the wrong type in a struct that doesn't collect type errors, with a `detail` that says
     /// where, and never `serde_json`'s message, which repeats the value.
     Deserialize(DeserializeError<serde_json::Error>),
@@ -242,7 +247,9 @@ impl ValidJsonRejection {
     }
 
     /// Why the request was refused, as its `Display` says it: `the body is not JSON: syntax error at line 1 column
-    /// 2`. It is the `detail` of the problem details it is answered with, except for issues, which those list.
+    /// 2`. It is the `detail` of the problem details it is answered with, except for issues, which those list, and
+    /// which it counts: `the body has 3 issues`, or `the body has 1000 issues, and may have more` when
+    /// [`Issues::is_complete`] is `false`.
     #[must_use]
     pub fn body_text(&self) -> String {
         self.to_string()
@@ -259,9 +266,22 @@ impl Display for ValidJsonRejection {
             }
             Self::BytesRejection(_) => formatter.write_str("the body couldn't be read"),
             Self::Deserialize(DeserializeError::Format(error)) => write_what_is_wrong_with_the_json(error, formatter),
+            Self::Deserialize(DeserializeError::Issues(issues)) => {
+                write_how_many_issues_the_body_has(issues, formatter)
+            }
             Self::Deserialize(_) => formatter.write_str("the body has issues"),
         }
     }
+}
+
+fn write_how_many_issues_the_body_has(issues: &Issues, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let issues_listed = issues.as_slice().len();
+    let noun = if issues_listed == 1 { "issue" } else { "issues" };
+    write!(formatter, "the body has {issues_listed} {noun}")?;
+    if !issues.is_complete() {
+        formatter.write_str(", and may have more")?;
+    }
+    Ok(())
 }
 
 fn write_what_is_wrong_with_the_json(error: &serde_json::Error, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -317,7 +337,9 @@ impl IntoResponse for ValidJsonRejection {
 ///   set. They are left out otherwise.
 ///
 /// The problem details of issues have the status 422, and an `errors` member that lists each issue, in the order
-/// found, as RFC 9457's own example of validation errors does:
+/// found, as RFC 9457's own example of validation errors does. annotated keeps at most 1,000 issues, so when
+/// [`Issues::is_complete`] is `false` they have a `detail` too, `there may be more issues than the 1000 listed`,
+/// which [`ProblemDetails::with_detail`] replaces. Each issue in `errors` has:
 ///
 /// - `pointer`: where the issue is, as an [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer in its
 ///   string form, `/age`, rather than as the fragment of a URI, `#/age`. The value itself is `""`.
@@ -443,8 +465,13 @@ fn reason_phrase(status: StatusCode) -> Option<&'static str> {
 
 impl From<Issues> for ProblemDetails {
     fn from(issues: Issues) -> Self {
-        let errors = issues.iter().map(IssueDetails::from).collect();
-        Self::with_errors(StatusCode::UNPROCESSABLE_ENTITY, errors)
+        let errors: Vec<IssueDetails> = issues.iter().map(IssueDetails::from).collect();
+        let issues_listed = errors.len();
+        let problem = Self::with_errors(StatusCode::UNPROCESSABLE_ENTITY, errors);
+        if issues.is_complete() {
+            return problem;
+        }
+        problem.with_detail(format!("there may be more issues than the {issues_listed} listed"))
     }
 }
 

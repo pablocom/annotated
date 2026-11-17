@@ -151,7 +151,7 @@ A value of the wrong type, like `"age": "twelve"`, ends deserialization with the
 
 ## Web frameworks
 
-[annotated-axum](crates/annotated-axum) is an axum extractor, `ValidJson<T>`. It answers every issue in a body with 422 and RFC 9457 problem details, which list each issue's JSON Pointer, code, params and message. Its rejection holds the issues as data, for an app that answers them with a response of its own.
+[annotated-axum](crates/annotated-axum) is an axum extractor, `ValidJson<T>`. It answers the issues in a body, up to 1,000, with 422 and RFC 9457 problem details, which list each issue's JSON Pointer, code, params and message. Its rejection holds the issues as data, for an app that answers them with a response of its own.
 
 ## OpenAPI and JSON Schema
 

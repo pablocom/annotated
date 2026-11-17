@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/annotated-axum)](https://crates.io/crates/annotated-axum)
 [![docs.rs](https://img.shields.io/docsrs/annotated-axum)](https://docs.rs/annotated-axum)
 
-An [axum](https://crates.io/crates/axum) extractor, `ValidJson<T>`, that reads a JSON body with [annotated](https://crates.io/crates/annotated)'s collecting deserialization, and answers every issue in it at once: missing fields and broken rules together, each at its JSON Pointer.
+An [axum](https://crates.io/crates/axum) extractor, `ValidJson<T>`, that reads a JSON body with [annotated](https://crates.io/crates/annotated)'s collecting deserialization, and answers its issues at once, up to 1,000: missing fields and broken rules together, each at its JSON Pointer.
 
 ## Getting started
 
@@ -38,7 +38,7 @@ async fn add_member(ValidJson(new_member): ValidJson<NewMember>) -> StatusCode {
 let app: Router = Router::new().route("/members", post(add_member));
 ```
 
-A body that breaks the rules is answered with 422 and [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, whose `errors` member lists every issue, as RFC 9457's own example of validation errors does: its JSON Pointer, its code and params, and its message as its `detail`:
+A body that breaks the rules is answered with 422 and [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details, whose `errors` member lists the issues, as RFC 9457's own example of validation errors does: its JSON Pointer, its code and params, and its message as its `detail`:
 
 ```sh
 curl -i http://127.0.0.1:3000/members -H 'content-type: application/json' -d '{ "fullName": "  ", "age": 12 }'
@@ -62,6 +62,8 @@ content-type: application/problem+json
 
 That is the answer annotated-axum recommends: a standard format, with the codes and params for a client that translates them, and an English message for people. A rule's own `message` replaces the English one. A `pointer` is an [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer in its string form, `/age`, not the fragment of a URI, `#/age`.
 
+annotated keeps at most 1,000 issues, so a body with more is answered with the first 1,000, and a top-level `detail` that says so: `there may be more issues than the 1000 listed`. `Issues::is_complete` says whether the issues are all of them, for an app that reads them from the rejection. An app can replace the `detail` with `with_detail`.
+
 RFC 9457 says the type `about:blank` means no more than the status. An app that documents its problems, the `errors` member among them, sets their type to the URI of that documentation, as [Problem details of your own](#problem-details-of-your-own) shows.
 
 ## What it refuses
@@ -70,7 +72,7 @@ Every refusal is problem details, with the status axum's own `Json` answers the 
 
 | The request | The status | The problem details |
 |---|---|---|
-| Has issues: missing fields, broken rules, and values of the wrong type in a struct with `#[annotated(collect_type_errors)]` | 422 | `errors` lists every issue |
+| Has issues: missing fields, broken rules, and values of the wrong type in a struct with `#[annotated(collect_type_errors)]` | 422 | `errors` lists the issues, up to 1,000 |
 | Isn't sent as JSON: its `Content-Type` is neither `application/json` nor a type built on JSON, such as `application/vnd.api+json` | 415 | `detail` says so |
 | Has a body larger than the app's limit | 413 | `detail` says so |
 | Has a body that isn't JSON | 400 | `detail` says where: `the body is not JSON: syntax error at line 1 column 2` |
@@ -149,7 +151,7 @@ Handlers then take `AppJson<T>`.
 
 The rejection is an error, as axum's own rejections are: its `Display` says why the request was refused, `status()` says the status it is answered with, and `source()` is the error it came from, axum's rejection, `serde_json`'s error or the issues. So your rejection can log it, or build a response of its own from it.
 
-It holds the issues as data. To answer them with a body of your own, convert the rejection into an error type of yours:
+It holds the issues as data, up to 1,000, and `Issues::is_complete` says whether the body may have more. To answer them with a body of your own, convert the rejection into an error type of yours:
 
 ```rust
 use annotated::{DeserializeError, Issues};

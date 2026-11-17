@@ -42,18 +42,29 @@ fn description_of(rejection: &ValidJsonRejection) -> Description {
 }
 
 async fn rejection_of(content_type: &'static str, body: Body) -> ValidJsonRejection {
+    rejection_of_reading::<NewMember>(content_type, body).await
+}
+
+async fn rejection_of_reading<T>(content_type: &'static str, body: Body) -> ValidJsonRejection
+where
+    T: for<'de> annotated::Deserialize<'de> + std::fmt::Debug,
+{
     let request = Request::post("/")
         .header(header::CONTENT_TYPE, content_type)
         .body(body)
         .expect("a request with a body");
 
-    <ValidJson<NewMember> as FromRequest<()>>::from_request(request, &())
+    <ValidJson<T> as FromRequest<()>>::from_request(request, &())
         .await
         .expect_err("a request ValidJson refuses")
 }
 
 async fn rejection_of_json(body: &'static str) -> ValidJsonRejection {
     rejection_of("application/json", Body::from(body)).await
+}
+
+async fn rejection_of_a_json_list_of_members(body: String) -> ValidJsonRejection {
+    rejection_of_reading::<Vec<NewMember>>("application/json", Body::from(body)).await
 }
 
 #[tokio::test]
@@ -138,10 +149,46 @@ async fn a_rejection_of_issues_has_the_issues_as_its_source() {
         description_of(&rejection),
         Description {
             status: StatusCode::UNPROCESSABLE_ENTITY,
-            text: "the body has issues".to_owned(),
+            text: "the body has 3 issues".to_owned(),
             source: Some("fullName: is required\nemail: is missing\nage: must be between 18 and 120".to_owned()),
         }
     );
+}
+
+#[tokio::test]
+async fn a_rejection_of_one_issue_says_how_many_in_the_singular() {
+    let rejection = rejection_of_json(r#"{ "fullName": "Alex Morgan", "email": "alex@example.com", "age": 12 }"#).await;
+
+    let text = rejection.to_string();
+
+    assert_eq!(text, "the body has 1 issue");
+}
+
+#[tokio::test]
+async fn a_rejection_of_three_issues_says_how_many() {
+    let rejection = rejection_of_json(r#"{ "fullName": "  ", "age": 12 }"#).await;
+
+    let text = rejection.to_string();
+
+    assert_eq!(text, "the body has 3 issues");
+}
+
+#[tokio::test]
+async fn a_rejection_of_issues_cut_off_at_the_limit_says_the_body_may_have_more() {
+    let rejection = rejection_of_a_json_list_of_members(support::a_json_list_of_empty_objects(1_001)).await;
+
+    let text = rejection.to_string();
+
+    assert_eq!(text, "the body has 1000 issues, and may have more");
+}
+
+#[tokio::test]
+async fn the_body_text_of_a_rejection_of_issues_says_how_many() {
+    let rejection = rejection_of_json(r#"{ "fullName": "  ", "age": 12 }"#).await;
+
+    let body_text = rejection.body_text();
+
+    assert_eq!(body_text, "the body has 3 issues");
 }
 
 #[tokio::test]

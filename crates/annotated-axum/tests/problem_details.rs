@@ -25,6 +25,15 @@ fn issues_of_a_short_password() -> Issues {
         .expect_err("a password shorter than 8 characters")
 }
 
+fn issues_of_a_short_password_found_failing_fast() -> Issues {
+    let new_password = NewPassword {
+        password: "hunter2".to_owned(),
+    };
+    new_password
+        .validate_fail_fast()
+        .expect_err("a password shorter than 8 characters")
+}
+
 #[tokio::test]
 async fn a_problem_is_answered_with_its_status_as_problem_json() {
     let problem = ProblemDetails::new(StatusCode::CONFLICT);
@@ -96,6 +105,57 @@ async fn the_problem_details_of_issues_keep_their_errors_under_a_type_of_the_app
             "type": "https://example.com/problems/invalid-body",
             "title": "The body is invalid",
             "status": 422,
+            "errors": [
+                {
+                    "pointer": "/password",
+                    "code": "length",
+                    "params": { "min": 8, "unit": "chars" },
+                    "detail": "must be at least 8 characters long"
+                }
+            ]
+        })
+    );
+}
+
+#[tokio::test]
+async fn the_problem_details_of_issues_cut_off_say_the_body_may_have_more_issues_than_the_ones_listed() {
+    let problem = ProblemDetails::from(issues_of_a_short_password_found_failing_fast());
+
+    let response = problem.into_response();
+
+    assert_eq!(
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Unprocessable Content",
+            "status": 422,
+            "detail": "there may be more issues than the 1 listed",
+            "errors": [
+                {
+                    "pointer": "/password",
+                    "code": "length",
+                    "params": { "min": 8, "unit": "chars" },
+                    "detail": "must be at least 8 characters long"
+                }
+            ]
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_app_s_detail_replaces_the_one_saying_the_body_may_have_more_issues() {
+    let problem =
+        ProblemDetails::from(issues_of_a_short_password_found_failing_fast()).with_detail("fix the password first");
+
+    let response = problem.into_response();
+
+    assert_eq!(
+        json_body_of(response).await,
+        json!({
+            "type": "about:blank",
+            "title": "Unprocessable Content",
+            "status": 422,
+            "detail": "fix the password first",
             "errors": [
                 {
                     "pointer": "/password",

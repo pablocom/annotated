@@ -1,10 +1,11 @@
-//! `ValidJson` reads a JSON body with annotated, and answers every refusal as RFC 9457 problem details: every issue
-//! in the body with 422, and a request it can't read with the status axum's own `Json` answers it with.
+//! `ValidJson` reads a JSON body with annotated, and answers every refusal as RFC 9457 problem details: the issues in
+//! the body, up to 1,000, with 422, and a request it can't read with the status axum's own `Json` answers it with.
 
 mod support;
 
 use annotated::Deserialize;
 use annotated_axum::ValidJson;
+use axum::body::Body;
 use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -45,7 +46,7 @@ async fn create<T: Serialize>(ValidJson(value): ValidJson<T>) -> (StatusCode, Js
     (StatusCode::CREATED, Json(value))
 }
 
-async fn post_json<T>(body: &'static str) -> axum::response::Response
+async fn post_json<T>(body: impl Into<Body>) -> axum::response::Response
 where
     T: for<'de> annotated::Deserialize<'de> + Serialize + Send + 'static,
 {
@@ -65,7 +66,7 @@ async fn a_body_keeping_every_rule_is_read() {
 }
 
 #[tokio::test]
-async fn every_issue_in_a_body_is_answered_with_422_as_problem_details() {
+async fn the_issues_in_a_body_are_answered_with_422_as_problem_details() {
     let response = post_json::<NewMember>(r#"{ "fullName": "  ", "age": 12 }"#).await;
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -88,6 +89,28 @@ async fn every_issue_in_a_body_is_answered_with_422_as_problem_details() {
             ]
         })
     );
+}
+
+#[tokio::test]
+async fn a_body_whose_issues_are_all_listed_has_no_detail() {
+    let response = post_json::<NewMember>(r#"{ "fullName": "  ", "age": 12 }"#).await;
+
+    let problem = json_body_of(response).await;
+
+    assert_eq!(problem.get("detail"), None);
+}
+
+#[tokio::test]
+async fn a_body_with_more_issues_than_the_limit_is_answered_with_the_first_1000_and_a_detail_saying_it_may_have_more() {
+    let response = post_json::<Vec<NewMember>>(support::a_json_list_of_empty_objects(1_001)).await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let problem = json_body_of(response).await;
+    assert_eq!(
+        problem["detail"],
+        json!("there may be more issues than the 1000 listed")
+    );
+    assert_eq!(problem["errors"].as_array().map(Vec::len), Some(1_000));
 }
 
 #[tokio::test]

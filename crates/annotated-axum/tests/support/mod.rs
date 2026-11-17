@@ -12,10 +12,10 @@ use serde_json::Value;
 use tower::ServiceExt;
 
 /// What `app` answers to a `POST /` with `body`, sent as `content_type`.
-pub async fn post(app: Router, content_type: &'static str, body: &'static str) -> Response {
+pub async fn post(app: Router, content_type: &'static str, body: impl Into<Body>) -> Response {
     let request = Request::post("/")
         .header(header::CONTENT_TYPE, content_type)
-        .body(Body::from(body))
+        .body(body.into())
         .expect("a request with a body");
 
     app.oneshot(request).await.expect("a router always answers")
@@ -38,6 +38,11 @@ pub async fn post_a_body_that_fails(app: Router) -> Response {
         .expect("a request with a body");
 
     app.oneshot(request).await.expect("a router always answers")
+}
+
+/// A JSON list of `count` empty objects, which has an issue for each field its elements require.
+pub fn a_json_list_of_empty_objects(count: usize) -> String {
+    format!("[{}]", vec!["{}"; count].join(","))
 }
 
 /// A body that fails while it is read, as when the connection breaks.
