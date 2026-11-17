@@ -349,21 +349,21 @@ impl<'a> DeserializeExpansion<'a> {
                     ::core::fmt::Formatter::write_str(#formatter, "field identifier")
                 }
 
-                fn visit_u64<__E: #serde::de::Error>(self, #value: u64) -> ::core::result::Result<__Field, __E> {
+                fn visit_u64<__E: #serde::de::Error>(self, #value: ::core::primitive::u64) -> ::core::result::Result<__Field, __E> {
                     match #value {
                         #(#index_arms)*
                         _ => #by_index,
                     }
                 }
 
-                fn visit_str<__E: #serde::de::Error>(self, #value: &str) -> ::core::result::Result<__Field, __E> {
+                fn visit_str<__E: #serde::de::Error>(self, #value: &::core::primitive::str) -> ::core::result::Result<__Field, __E> {
                     match #value {
                         #(#name_arms)*
                         _ => #by_name,
                     }
                 }
 
-                fn visit_bytes<__E: #serde::de::Error>(self, #value: &[u8]) -> ::core::result::Result<__Field, __E> {
+                fn visit_bytes<__E: #serde::de::Error>(self, #value: &[::core::primitive::u8]) -> ::core::result::Result<__Field, __E> {
                     match #value {
                         #(#byte_arms)*
                         _ => #by_bytes,
@@ -449,7 +449,8 @@ impl<'a> DeserializeExpansion<'a> {
         let checked_value = self.checked_value();
         let names_read = self.read_serde_fields().flat_map(|field| &field.names_read);
         let has_field_names = form == Form::Struct && !has_flattened_fields && !is_read_whole_by_a_function;
-        let field_names = has_field_names.then(|| quote!(const __FIELDS: &[&str] = &[#(#names_read),*];));
+        let field_names =
+            has_field_names.then(|| quote!(const __FIELDS: &[&::core::primitive::str] = &[#(#names_read),*];));
         let reading = match form {
             _ if is_read_whole_by_a_function => TokenStream::new(),
             Form::Newtype => self.newtype_seed(),

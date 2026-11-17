@@ -154,16 +154,53 @@ mod names_the_derives_use {
     }
 }
 
+// A field's or a variant's name is no item's, so it can be any name the derives give an item of their own.
+mod items_named_as_the_derives_name_theirs {
+    #![allow(non_snake_case)]
+
+    use annotated::{Deserialize, Validate};
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Fields {
+        #[validate(required)]
+        pub __Visitor: String,
+        #[validate(required)]
+        pub __Field: String,
+        #[validate(range(max = 3))]
+        pub __D: u8,
+        #[validate(required)]
+        pub _serde: String,
+        #[validate(required)]
+        pub _annotated: String,
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub enum Variants {
+        __Visitor(#[validate(required)] String),
+        __Variant {
+            #[validate(required)]
+            __VARIANTS: String,
+        },
+    }
+}
+
 #[test]
 fn fields_and_type_parameters_take_the_names_the_derives_use() {
     derives_both::<names_the_derives_use::Locals<u8, u8, u8, u8>>();
     derives_both::<names_the_derives_use::Variants>();
+    derives_both::<items_named_as_the_derives_name_theirs::Fields>();
+    derives_both::<items_named_as_the_derives_name_theirs::Variants>();
 }
 
 // User items named as std's are in scope where the code is generated.
 mod names_shadowing_std_s {
-    #![allow(dead_code, clippy::partial_pub_fields)]
+    #![allow(dead_code, non_camel_case_types, clippy::partial_pub_fields)]
 
+    pub struct str;
+    pub struct u8;
+    pub struct u64;
+    pub struct usize;
+    pub struct bool;
     pub struct Option;
     pub struct Result;
     pub struct Some;
@@ -196,7 +233,7 @@ mod names_shadowing_std_s {
         pub address: super::Address,
         #[serde(default)]
         #[validate(range(max = 3))]
-        pub count: u8,
+        pub count: ::core::primitive::u8,
     }
 
     #[derive(Debug, annotated::Validate, annotated::Deserialize)]

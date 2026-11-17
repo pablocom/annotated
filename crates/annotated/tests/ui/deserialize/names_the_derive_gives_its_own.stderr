@@ -1,0 +1,29 @@
+error: `__Field` is a name `#[derive(Deserialize)]` gives an item or a parameter of its own: give yours another name
+ --> tests/ui/deserialize/names_the_derive_gives_its_own.rs:6:8
+  |
+6 | struct __Field {
+  |        ^^^^^^^
+
+error: `__Visitor` is a name `#[derive(Deserialize)]` gives an item or a parameter of its own: give yours another name
+  --> tests/ui/deserialize/names_the_derive_gives_its_own.rs:12:13
+   |
+12 | struct Page<__Visitor> {
+   |             ^^^^^^^^^
+
+error: `__D` is a name `#[derive(Deserialize)]` gives an item or a parameter of its own: give yours another name
+  --> tests/ui/deserialize/names_the_derive_gives_its_own.rs:17:16
+   |
+17 | struct Reading<__D> {
+   |                ^^^
+
+error: `'de` is a lifetime `#[derive(Deserialize)]` gives its impls: give yours another name
+  --> tests/ui/deserialize/names_the_derive_gives_its_own.rs:22:13
+   |
+22 | struct Note<'de> {
+   |             ^^^
+
+error: `_serde` is a name `#[derive(Deserialize)]` gives an item or a parameter of its own: give yours another name
+  --> tests/ui/deserialize/names_the_derive_gives_its_own.rs:34:42
+   |
+34 |     #[validate(custom(|_: &u8| { let _ = _serde::Id; Ok(()) }))]
+   |                                          ^^^^^^

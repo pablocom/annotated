@@ -1,0 +1,11 @@
+error: `_annotated` is a name `#[derive(Validate)]` gives an item or a parameter of its own: give yours another name
+  --> tests/ui/names_the_derive_gives_its_own.rs:11:23
+   |
+11 |     #[validate(custom(_annotated::is_short))]
+   |                       ^^^^^^^^^^
+
+error: `__ANNOTATED_PATTERN_LIMIT` begins with `__ANNOTATED_PATTERN_`, as the names `#[derive(Validate)]` gives items of its own do: give yours another name
+  --> tests/ui/names_the_derive_gives_its_own.rs:19:29
+   |
+19 |     #[validate(length(max = __ANNOTATED_PATTERN_LIMIT))]
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^

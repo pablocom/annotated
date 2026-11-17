@@ -25,6 +25,7 @@ mod generated;
 mod options;
 mod pattern;
 mod receiver;
+mod reserved_names;
 mod serde_names;
 mod validated_enum;
 mod validated_struct;
@@ -49,6 +50,7 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
 }
 
 fn validate_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    reserved_names::OF_VALIDATE.refuse_those_in(&input)?;
     let input = receiver::without_self(input)?;
     let paths = CratePaths::of_validate(&Options::of(&input)?);
     match &input.data {
@@ -72,6 +74,7 @@ pub fn derive_deserialize(input: TokenStream) -> TokenStream {
 }
 
 fn deserialize_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    reserved_names::OF_DESERIALIZE.refuse_those_in(&input)?;
     let input = receiver::without_self(input)?;
     let options = Options::of(&input)?;
     match &input.data {

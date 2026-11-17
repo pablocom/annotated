@@ -218,7 +218,7 @@ impl<'a> EnumExpansion<'a> {
         quote! {
             #variants
 
-            const __VARIANTS: &[&str] = &[#(#all_names_read),*];
+            const __VARIANTS: &[&::core::primitive::str] = &[#(#all_names_read),*];
 
             struct __VariantVisitor;
 
@@ -230,21 +230,21 @@ impl<'a> EnumExpansion<'a> {
                     ::core::fmt::Formatter::write_str(#formatter, "variant identifier")
                 }
 
-                fn visit_u64<__E: #serde::de::Error>(self, #value: u64) -> ::core::result::Result<__Variant, __E> {
+                fn visit_u64<__E: #serde::de::Error>(self, #value: ::core::primitive::u64) -> ::core::result::Result<__Variant, __E> {
                     match #value {
                         #(#index_arms)*
                         _ => #unknown_index,
                     }
                 }
 
-                fn visit_str<__E: #serde::de::Error>(self, #value: &str) -> ::core::result::Result<__Variant, __E> {
+                fn visit_str<__E: #serde::de::Error>(self, #value: &::core::primitive::str) -> ::core::result::Result<__Variant, __E> {
                     match #value {
                         #(#name_arms)*
                         _ => #unknown_name,
                     }
                 }
 
-                fn visit_bytes<__E: #serde::de::Error>(self, #value: &[u8]) -> ::core::result::Result<__Variant, __E> {
+                fn visit_bytes<__E: #serde::de::Error>(self, #value: &[::core::primitive::u8]) -> ::core::result::Result<__Variant, __E> {
                     match #value {
                         #(#byte_arms)*
                         _ => #unknown_bytes,
@@ -901,7 +901,7 @@ impl EnumExpansion<'_> {
         let buffered_content_read = self.buffered_content_read(content);
         let missing_content = self.missing_content(content);
         quote! {
-            const __ADJACENT_FIELDS: &[&str] = &[#tag, #content];
+            const __ADJACENT_FIELDS: &[&::core::primitive::str] = &[#tag, #content];
 
             struct __AdjacentVisitor #visitor_definition_generics #visitor_where_clause {
                 #at: &#visitor_lifetime _annotated::Location<#visitor_lifetime>,
