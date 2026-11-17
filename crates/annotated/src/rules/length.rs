@@ -63,11 +63,18 @@ impl StringUnit {
     }
 
     fn count(self, text: &str) -> usize {
+        self.count_until(text, usize::MAX)
+    }
+
+    /// How long `text` is in this unit, up to `enough`: a longer text counts as `enough`.
+    fn count_until(self, text: &str, enough: usize) -> usize {
         match self {
-            Self::Chars => text.chars().count(),
-            Self::Bytes => text.len(),
+            Self::Chars => text.chars().count().min(enough),
+            Self::Bytes => text.len().min(enough),
             #[cfg(feature = "unicode")]
-            Self::Graphemes => unicode_segmentation::UnicodeSegmentation::graphemes(text, true).count(),
+            Self::Graphemes => unicode_segmentation::UnicodeSegmentation::graphemes(text, true)
+                .take(enough)
+                .count(),
         }
     }
 
@@ -121,6 +128,15 @@ impl LengthBounds {
             return Some(false);
         }
         None
+    }
+
+    /// The length past which counting further changes no verdict: one over the max, or else the min.
+    fn enough_to_decide(self) -> usize {
+        match (self.min, self.max) {
+            (_, Some(max)) => max.saturating_add(1),
+            (Some(min), None) => min,
+            (None, None) => 0,
+        }
     }
 
     fn accepts(self, length: usize) -> bool {
@@ -237,7 +253,7 @@ impl<T: AsRef<str> + ?Sized> Rule<T> for StringLength {
         let text = value.as_ref();
         self.bounds.check(
             self.unit.possible_counts(text),
-            || self.unit.count(text),
+            || self.unit.count_until(text, self.bounds.enough_to_decide()),
             self.unit.length_unit(),
         )
     }
@@ -781,5 +797,102 @@ mod tests {
     #[test]
     fn a_string_with_as_many_bytes_as_its_max_in_graphemes_follows_the_rule() {
         assert_eq!(length().max(3).in_graphemes().check("Sam"), Ok(()));
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_at_its_max_in_graphemes_follows_the_rule_when_a_combining_mark_ends_it() {
+        let a_and_e_with_an_acute_accent = "ae\u{301}";
+
+        assert_eq!(
+            length().max(2).in_graphemes().check(a_and_e_with_an_acute_accent),
+            Ok(())
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_one_grapheme_over_its_max_breaks_the_rule_after_a_combining_mark() {
+        let a_e_with_an_acute_accent_and_b = "ae\u{301}b";
+
+        assert_eq!(
+            length().max(2).in_graphemes().check(a_e_with_an_acute_accent_and_b),
+            at_most(2, LengthUnit::Graphemes)
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_at_its_max_in_graphemes_follows_the_rule_when_an_emoji_joined_by_zero_width_joiners_ends_it() {
+        let a_and_a_family_of_five_chars = "a👩\u{200D}👩\u{200D}👧";
+
+        assert_eq!(
+            length().max(2).in_graphemes().check(a_and_a_family_of_five_chars),
+            Ok(())
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_one_grapheme_over_its_max_breaks_the_rule_when_an_emoji_joined_by_zero_width_joiners_ends_it() {
+        let a_b_and_a_family_of_five_chars = "ab👩\u{200D}👩\u{200D}👧";
+
+        assert_eq!(
+            length().max(2).in_graphemes().check(a_b_and_a_family_of_five_chars),
+            at_most(2, LengthUnit::Graphemes)
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_far_longer_than_its_max_in_graphemes_breaks_the_rule() {
+        let six_hundred_forty_thousand_letters = "a".repeat(640_000);
+
+        assert_eq!(
+            length()
+                .max(50)
+                .in_graphemes()
+                .check(&six_hundred_forty_thousand_letters),
+            at_most(50, LengthUnit::Graphemes)
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_at_its_min_in_graphemes_follows_the_rule_when_combining_marks_make_it_longer_in_bytes() {
+        let three_e_with_an_acute_accent = "e\u{301}e\u{301}e\u{301}";
+
+        assert_eq!(
+            length().min(3).in_graphemes().check(three_e_with_an_acute_accent),
+            Ok(())
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_far_longer_than_its_min_in_graphemes_follows_the_rule() {
+        let six_hundred_forty_thousand_letters = "a".repeat(640_000);
+
+        assert_eq!(
+            length()
+                .min(3)
+                .in_graphemes()
+                .check(&six_hundred_forty_thousand_letters),
+            Ok(())
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn a_string_one_grapheme_over_its_equal_length_breaks_the_rule() {
+        let three_e_with_an_acute_accent = "e\u{301}e\u{301}e\u{301}";
+
+        assert_eq!(
+            length().equal(2).in_graphemes().check(three_e_with_an_acute_accent),
+            Err(Problem::Length {
+                bounds: Bounds::Between { min: 2, max: 2 },
+                unit: LengthUnit::Graphemes,
+            })
+        );
     }
 }
