@@ -135,6 +135,7 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
 - A single name is a built-in rule, looked up in `annotated::rules`. A path is your own rule, looked up at that path and written with the same syntax. So a team's rules module reads exactly like the built-ins.
 - `name = value` and `name(value)` pass one value to the constructor. `name(key = value, …)` calls the builder method `key` for each pair. Mixing the two forms in one rule is a compile error.
 - `message = "…"` is reserved in every rule's arguments. The derive takes it out and attaches it to the issue, so the rule never sees it.
+- A rule takes each named argument once, `message` included, since a builder method called twice would leave only its last value. A built-in `length` or `range` whose `min` is greater than its `max`, and a `length` with `equal` beside `min` or `max`, are compile errors too: they would refuse every value. The derive can compare bounds only when both are written as literals, numbers with or without a sign. Others, such as constants, are left to the rule, and a rule of your own is left alone.
 - `custom(f)` takes any `Fn(&T) -> Result<(), Problem>`.
 
 ### Rules the derive handles itself

@@ -1,0 +1,23 @@
+error: `min` is greater than `max`, so `length` would refuse every value
+ --> tests/ui/bounds_the_wrong_way_round.rs:5:23
+  |
+5 |     #[validate(length(min = 10, max = 5))]
+  |                       ^^^
+
+error: `min` is greater than `max`, so `range` would refuse every value
+  --> tests/ui/bounds_the_wrong_way_round.rs:11:22
+   |
+11 |     #[validate(range(min = 120, max = 18))]
+   |                      ^^^
+
+error: `min` is greater than `max`, so `range` would refuse every value
+  --> tests/ui/bounds_the_wrong_way_round.rs:17:22
+   |
+17 |     #[validate(range(min = -1.5, max = -2.5))]
+   |                      ^^^
+
+error: `min` is greater than `max`, so `length` would refuse every value
+  --> tests/ui/bounds_the_wrong_way_round.rs:23:37
+   |
+23 |     #[validate(each(length(max = 1, min = 2)))]
+   |                                     ^^^

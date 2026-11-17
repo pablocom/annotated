@@ -2,7 +2,7 @@ use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{Attribute, Error, Expr, Ident, Path, Token, parenthesized, token};
+use syn::{Attribute, Error, Expr, ExprLit, ExprUnary, Ident, Lit, Path, Token, UnOp, parenthesized, token};
 
 pub enum WrittenRule {
     Each {
@@ -194,9 +194,9 @@ impl StructCustom {
                 Argument::Value(value) if check.is_none() => check = Some(value),
                 Argument::Named(named) if named.name == "field" => match whole_value_rules.field_refusal {
                     Some(field_refusal) => return Err(Error::new_spanned(named.name, field_refusal)),
-                    None => field = Some(named.value),
+                    None => given_once(&mut field, named)?,
                 },
-                Argument::Named(named) if named.name == "message" => message = Some(named.value),
+                Argument::Named(named) if named.name == "message" => given_once(&mut message, named)?,
                 Argument::Value(value) => return Err(Error::new_spanned(value, refusal)),
                 Argument::Named(named) => return Err(Error::new_spanned(named.name, refusal)),
             }
@@ -242,7 +242,10 @@ impl RuleCall {
         let mut rule = Self::without_arguments(path);
         for argument in arguments {
             match argument {
-                Argument::Named(named) if named.name == "message" => rule.message = Some(named.value),
+                Argument::Named(named) if named.name == "message" => given_once(&mut rule.message, named)?,
+                Argument::Named(named) if rule.named_argument(&named.name.to_string()).is_some() => {
+                    return Err(given_twice(&named.name));
+                }
                 Argument::Named(named) => rule.builder_arguments.push(named),
                 Argument::Value(value) if rule.value.is_some() => {
                     return Err(Error::new_spanned(value, "a rule takes one value at most"));
@@ -256,11 +259,105 @@ impl RuleCall {
                 "a rule takes either one value or named arguments, not both",
             ));
         }
+        rule.refuse_bounds_that_contradict()?;
         Ok(rule)
+    }
+
+    fn named_argument(&self, name: &str) -> Option<&NamedArgument> {
+        self.builder_arguments.iter().find(|argument| argument.name == name)
+    }
+
+    // A built-in rule whose bounds contradict each other refuses every value. Bounds can be compared only when they are
+    // written as literals: `min = SHORTEST` is left to the rule.
+    fn refuse_bounds_that_contradict(&self) -> syn::Result<()> {
+        let Some(rule_name) = ["length", "range"].into_iter().find(|name| self.path.is_ident(name)) else {
+            return Ok(());
+        };
+        let equal = self.named_argument("equal").filter(|_| rule_name == "length");
+        if let Some(equal) = equal
+            && (self.named_argument("min").is_some() || self.named_argument("max").is_some())
+        {
+            return Err(Error::new_spanned(
+                &equal.name,
+                "`equal` is both bounds of `length`, so it takes no `min` or `max` beside it",
+            ));
+        }
+        let (Some(min), Some(max)) = (self.named_argument("min"), self.named_argument("max")) else {
+            return Ok(());
+        };
+        if is_greater(&min.value, &max.value) {
+            return Err(Error::new_spanned(
+                &min.name,
+                format!("`min` is greater than `max`, so `{rule_name}` would refuse every value"),
+            ));
+        }
+        Ok(())
     }
 
     pub fn has_arguments(&self) -> bool {
         self.value.is_some() || !self.builder_arguments.is_empty() || self.message.is_some()
+    }
+}
+
+fn given_once(given: &mut Option<Expr>, argument: NamedArgument) -> syn::Result<()> {
+    if given.is_some() {
+        return Err(given_twice(&argument.name));
+    }
+    *given = Some(argument.value);
+    Ok(())
+}
+
+fn given_twice(name: &Ident) -> Error {
+    Error::new_spanned(
+        name,
+        format!("`{name}` is given twice: a rule takes each argument once"),
+    )
+}
+
+fn is_greater(min: &Expr, max: &Expr) -> bool {
+    match (number_written(min), number_written(max)) {
+        (Some(Number::Integer(min)), Some(Number::Integer(max))) => min > max,
+        (Some(min), Some(max)) => min.as_float() > max.as_float(),
+        _ => false,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Number {
+    Integer(i128),
+    Float(f64),
+}
+
+impl Number {
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a bound past 2^53 is compared as near as a float can"
+    )]
+    const fn as_float(self) -> f64 {
+        match self {
+            Self::Integer(integer) => integer as f64,
+            Self::Float(float) => float,
+        }
+    }
+}
+
+fn number_written(value: &Expr) -> Option<Number> {
+    match value {
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(integer), ..
+        }) => integer.base10_parse().ok().map(Number::Integer),
+        Expr::Lit(ExprLit {
+            lit: Lit::Float(float), ..
+        }) => float.base10_parse().ok().map(Number::Float),
+        Expr::Unary(ExprUnary {
+            op: UnOp::Neg(_), expr, ..
+        }) => match number_written(expr)? {
+            Number::Integer(integer) => Some(Number::Integer(-integer)),
+            Number::Float(float) => Some(Number::Float(-float)),
+        },
+        Expr::Group(group) => number_written(&group.expr),
+        Expr::Paren(parenthesized) => number_written(&parenthesized.expr),
+        _ => None,
     }
 }
 

@@ -1,0 +1,17 @@
+error: `message` is given twice: a rule takes each argument once
+ --> tests/ui/message_given_twice.rs:5:48
+  |
+5 |     #[validate(required(message = "is needed", message = "can't be blank"))]
+  |                                                ^^^^^^^
+
+error: `message` is given twice: a rule takes each argument once
+  --> tests/ui/message_given_twice.rs:14:76
+   |
+14 | #[validate(custom(is_consistent, message = "must match", field = repeated, message = "must be equal"))]
+   |                                                                            ^^^^^^^
+
+error: `field` is given twice: a rule takes each argument once
+  --> tests/ui/message_given_twice.rs:25:45
+   |
+25 | #[validate(custom(is_unique, field = first, field = second))]
+   |                                             ^^^^^

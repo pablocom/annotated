@@ -121,6 +121,11 @@ pub use validate::Validate;
 ///   is a compile error.
 /// - `pattern`, with the `regex` feature, takes its regular expression as a string literal. The expression is compiled
 ///   once, and one that doesn't parse, or is too big to compile, is a compile error.
+/// - A rule takes each named argument once, `message` included: one given twice is a compile error.
+/// - A `length` or a `range` whose `min` is greater than its `max` would refuse every value, so it is a compile error,
+///   as is `equal` beside `min` or `max` in a `length`. Only bounds written as literals can be compared:
+///   `length(min = SHORTEST, max = 5)` compiles whatever `SHORTEST` is, and the rule refuses every value when it is
+///   greater than 5.
 ///
 /// # How fields are checked
 ///

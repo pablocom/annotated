@@ -200,7 +200,7 @@ fn a_minimum_on_an_f32_is_the_f32_the_rule_compares_against_not_the_decimal_it_i
 fn a_bound_on_an_f64_is_written_as_it_is() {
     #[derive(Validate)]
     struct Measure {
-        #[validate(range(min = 0.7, max = 0.1))]
+        #[validate(range(min = 0.1, max = 0.7))]
         ratio: f64,
     }
 
@@ -208,7 +208,7 @@ fn a_bound_on_an_f64_is_written_as_it_is() {
 
     assert_eq!(
         schema,
-        object_with(json!({ "ratio": { "type": "number", "minimum": 0.7, "maximum": 0.1 } }))
+        object_with(json!({ "ratio": { "type": "number", "minimum": 0.1, "maximum": 0.7 } }))
     );
 }
 

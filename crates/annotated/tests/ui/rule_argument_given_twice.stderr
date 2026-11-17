@@ -1,0 +1,11 @@
+error: `max` is given twice: a rule takes each argument once
+ --> tests/ui/rule_argument_given_twice.rs:5:32
+  |
+5 |     #[validate(length(max = 5, max = 6))]
+  |                                ^^^
+
+error: `min` is given twice: a rule takes each argument once
+  --> tests/ui/rule_argument_given_twice.rs:11:53
+   |
+11 |     #[validate(each(length(min = 1, unit = "bytes", min = 2)))]
+   |                                                     ^^^

@@ -1,0 +1,11 @@
+error: `equal` is both bounds of `length`, so it takes no `min` or `max` beside it
+ --> tests/ui/length_with_equal_and_a_bound.rs:5:23
+  |
+5 |     #[validate(length(equal = 16, max = 19))]
+  |                       ^^^^^
+
+error: `equal` is both bounds of `length`, so it takes no `min` or `max` beside it
+  --> tests/ui/length_with_equal_and_a_bound.rs:11:32
+   |
+11 |     #[validate(length(min = 3, equal = 3))]
+   |                                ^^^^^
