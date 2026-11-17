@@ -138,8 +138,19 @@ impl<'de, E: de::Error> ContentDeserializer<'de, E> {
             Content::I32(integer) => visitor.visit_i32(integer),
             Content::I64(integer) => visitor.visit_i64(integer),
             Content::I128(integer) => visit_i128(visitor, integer),
-            _ => Err(self.invalid_type(&visitor)),
+            _ => match self.number_the_format_kept_as_text() {
+                Some(number) => Self::new(number, self.read_as).deserialize_float(visitor),
+                None => Err(self.invalid_type(&visitor)),
+            },
         }
+    }
+
+    // serde_json reads a number it kept whole as the number a type asks for. serde's buffer doesn't.
+    fn number_the_format_kept_as_text(&self) -> Option<Content<'static>> {
+        if !matches!(self.read_as, ReadAs::TheFormat { .. }) {
+            return None;
+        }
+        Content::number_in(self.content.number_kept_as_text()?)
     }
 
     fn deserialize_float<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, E> {
@@ -1072,6 +1083,63 @@ mod tests {
     #[test]
     fn a_float_is_refused_as_an_integer() {
         assert_eq!(read::<u8>(Content::F64(1.5)), Err(wrong_type("u8", ValueKind::Float)));
+    }
+
+    fn kept_as_text(number: &str) -> Content<'static> {
+        Content::Map(vec![(
+            Content::Str("$serde_json::private::Number"),
+            Content::String(number.to_owned()),
+        )])
+    }
+
+    #[test]
+    fn a_number_serde_json_kept_as_text_is_read_as_the_number_a_type_asks_for() {
+        assert_eq!(
+            (
+                read::<f64>(kept_as_text("0.5")),
+                read::<f32>(kept_as_text("1.25")),
+                read::<u128>(kept_as_text("1180591620717411303424")),
+                read::<i128>(kept_as_text("-1180591620717411303424"))
+            ),
+            (
+                Ok(0.5),
+                Ok(1.25),
+                Ok(1_180_591_620_717_411_303_424),
+                Ok(-1_180_591_620_717_411_303_424)
+            )
+        );
+    }
+
+    #[test]
+    fn negative_zero_kept_as_text_is_read_as_a_float_as_serde_json_reads_it() {
+        assert_eq!(
+            (
+                read::<f64>(kept_as_text("-0")).map(f64::to_bits),
+                read::<i64>(kept_as_text("-0"))
+            ),
+            (Ok((-0.0_f64).to_bits()), Err(wrong_type("i64", ValueKind::Float)))
+        );
+    }
+
+    #[test]
+    fn a_number_kept_as_text_beyond_the_range_of_a_float_is_refused_as_a_float() {
+        assert_eq!(
+            read::<f64>(kept_as_text("1e400")),
+            Err(wrong_type("f64", ValueKind::Float))
+        );
+    }
+
+    #[test]
+    fn a_number_kept_as_text_is_read_as_its_text_by_any_value() {
+        assert_eq!(read::<Content>(kept_as_text("2.50")), Ok(kept_as_text("2.50")));
+    }
+
+    #[test]
+    fn a_number_kept_as_text_is_refused_as_serde_s_buffer_refuses_it() {
+        assert_eq!(
+            read_as_serde_s_buffer::<f64>(kept_as_text("0.5")),
+            Err(wrong_type("f64", ValueKind::Float))
+        );
     }
 
     #[test]

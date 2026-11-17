@@ -527,6 +527,8 @@ A key given twice, or an unknown key a struct denies, isn't a value of the wrong
 
 JSON writes every map key as a string. So a key written as a string is read as the integer or boolean its type asks for, as `serde_json` reads it. A well-typed body therefore reads the same with the option as without it.
 
+`serde_json`, with its `arbitrary_precision` feature, hands any type a number that isn't a 64-bit integer as a map of one entry, a key of its own and the number's text, and reads the number as usual for a type that asks for one. annotated's buffer, standing for the format, does the same: it reads that map as the number a type asks for, a 128-bit integer whole, and hands it as a map to a type that keeps the text, such as `serde_json::Number`. Standing for serde's buffer, it refuses the map where a number is asked for, as serde's buffer does. Either way the map is found as the number it holds.
+
 `Content` and `ContentDeserializer` are the crate's own and are kept private. serde has an equivalent, but it is private to serde.
 
 `Problem::InvalidType` has two parameters:
@@ -670,4 +672,5 @@ Each crate built on annotated works with one major version of its library, or on
 - **Doc tests** are the examples in the docs, so every example compiles and runs. The README's test runs as a copy in `tests/json.rs`. Change both together.
 - **The crates built on annotated** are tested through their library: annotated-axum sends requests to an axum `Router`, and annotated-utoipa reads the schemas of a document utoipa derived. Each keyword annotated writes has a test that utoipa keeps it.
 - **Property tests** check that the `url` rule agrees, on generated text, with [`iri-string`](https://crates.io/crates/iri-string), a strict RFC 3986 and RFC 3987 validator, and with the rule's departures from the RFCs.
+- **`serde_json`'s features.** `arbitrary_precision` and `raw_value` change `serde_json` for every crate built with it, so their tests are a workspace of their own, [`serde-json-features`](serde-json-features), run with `cargo test --manifest-path serde-json-features/Cargo.toml`. CI doesn't run them yet.
 - **Differential tests** in `tests/deserialize_as_serde.rs` pin the promise that a body with no issue reads as serde's derive reads it. Each shape, a struct, an enum in each tagging, flattened fields and `Option`s, is declared once and derived by serde and by annotated, with and without `collect_type_errors`, and each reads a table of bodies in JSON and in MessagePack. Both read the same value or both refuse the body, but for the differences the table lists as known, each with the reason.

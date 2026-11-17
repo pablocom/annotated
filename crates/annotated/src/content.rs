@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Unexpected, Visitor};
 
+use crate::content_deserializer::integer_written_in;
 use crate::deserialize_containers::room_for;
 
 /// Any well-formed value, as a self-describing format presents it. It is kept so that it can be read again as the type
@@ -104,7 +105,47 @@ impl ValueKind {
     }
 }
 
+// serde_json, with its `arbitrary_precision` feature, hands any type a number that isn't a 64-bit integer as a map of
+// one entry: this key, and the number's text. That is how a type keeping a number exactly, such as its own `Number`,
+// asks for one, and serde_json reads the number as usual for any other type.
+const NUMBER_KEPT_AS_TEXT: &str = "$serde_json::private::Number";
+
 impl Content<'_> {
+    /// The text of a number `serde_json` kept whole, as a map of one entry, with its `arbitrary_precision` feature.
+    pub(crate) fn number_kept_as_text(&self) -> Option<&str> {
+        let Self::Map(entries) = self else {
+            return None;
+        };
+        let [(key, number)] = entries.as_slice() else {
+            return None;
+        };
+        if key.text()? != NUMBER_KEPT_AS_TEXT {
+            return None;
+        }
+        number.text()
+    }
+
+    fn text(&self) -> Option<&str> {
+        match self {
+            Self::Str(text) => Some(text),
+            Self::String(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    /// The number `text` holds, as `serde_json` reads it for a type that asks for a number: an integer as the narrowest
+    /// of 64 and 128 bits that holds it, and anything else as a float, `-0` included. `None` for a float beyond
+    /// `f64`'s range, which `serde_json` refuses.
+    pub(crate) fn number_in(text: &str) -> Option<Self> {
+        if text == "-0" {
+            return Some(Self::F64(-0.0));
+        }
+        integer_written_in(text).or_else(|| {
+            let float = text.parse::<f64>().ok()?;
+            float.is_finite().then_some(Self::F64(float))
+        })
+    }
+
     /// The kind of this value, seeing through an option or a newtype to what it holds.
     pub(crate) fn kind(&self) -> ValueKind {
         match self {
@@ -126,7 +167,10 @@ impl Content<'_> {
             Self::None | Self::Unit => ValueKind::Null,
             Self::Some(inner) | Self::Newtype(inner) => inner.kind(),
             Self::Seq(_) => ValueKind::Sequence,
-            Self::Map(_) => ValueKind::Map,
+            Self::Map(_) => match self.number_kept_as_text() {
+                Some(text) => Self::number_in(text).map_or(ValueKind::Float, |number| number.kind()),
+                None => ValueKind::Map,
+            },
         }
     }
 
@@ -154,8 +198,19 @@ impl Content<'_> {
             Self::None | Self::Unit => Unexpected::Unit,
             Self::Some(inner) | Self::Newtype(inner) => inner.unexpected(),
             Self::Seq(_) => Unexpected::Seq,
-            Self::Map(_) => Unexpected::Map,
+            Self::Map(_) => self.number_kept_as_text().map_or(Unexpected::Map, unexpected_number),
         }
+    }
+}
+
+// A float beyond `f64`'s range is named as the infinity it rounds to, and a 128-bit integer beyond 64 bits as serde
+// names one.
+fn unexpected_number(text: &str) -> Unexpected<'static> {
+    match Content::number_in(text) {
+        Some(Content::U64(integer)) => Unexpected::Unsigned(integer),
+        Some(Content::I64(integer)) => Unexpected::Signed(integer),
+        Some(Content::U128(_) | Content::I128(_)) => Unexpected::Other("integer"),
+        _ => text.parse().map_or(Unexpected::Other("number"), Unexpected::Float),
     }
 }
 
@@ -579,6 +634,48 @@ mod tests {
                 ValueKind::Map,
             ]
         );
+    }
+
+    fn kept_as_text(number: &str) -> Content<'static> {
+        Content::Map(vec![(
+            Content::Str(NUMBER_KEPT_AS_TEXT),
+            Content::String(number.to_owned()),
+        )])
+    }
+
+    #[test]
+    fn a_number_serde_json_kept_as_text_is_of_the_kind_of_the_number() {
+        assert_eq!(
+            [
+                kept_as_text("0.5").kind(),
+                kept_as_text("1180591620717411303424").kind(),
+                kept_as_text("1e400").kind(),
+            ],
+            [ValueKind::Float, ValueKind::Integer, ValueKind::Float]
+        );
+    }
+
+    #[test]
+    fn a_number_serde_json_kept_as_text_is_unexpected_as_the_number() {
+        assert_eq!(
+            [
+                kept_as_text("0.5").unexpected(),
+                kept_as_text("1180591620717411303424").unexpected(),
+                kept_as_text("1e400").unexpected(),
+            ],
+            [
+                Unexpected::Float(0.5),
+                Unexpected::Other("integer"),
+                Unexpected::Float(f64::INFINITY)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_map_of_one_entry_whose_key_is_any_other_is_a_map() {
+        let labels = Content::Map(vec![(Content::Str("en"), Content::String("0.5".to_owned()))]);
+
+        assert_eq!((labels.kind(), labels.unexpected()), (ValueKind::Map, Unexpected::Map));
     }
 
     #[test]

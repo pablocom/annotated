@@ -449,6 +449,8 @@ pub use annotated_derive::Validate;
 ///   of the wrong type. It is found once the value is read from the buffer, so `serde_json` places it past that value
 ///   rather than at the key, and nowhere when that value is the whole body.
 /// - The buffer borrows the strings and bytes the format lends.
+/// - With `serde_json`'s `arbitrary_precision` feature, a number is read as `serde_json` reads it, a 128-bit integer
+///   whole.
 /// - It needs a self-describing format, such as JSON.
 ///
 /// ```

@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/*", "release"]
-exclude = ["benchmarks"]
+exclude = ["benchmarks", "serde-json-features"]
 resolver = "3"
 
 [workspace.package]

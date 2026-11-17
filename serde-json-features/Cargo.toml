@@ -1,0 +1,21 @@
+[package]
+name = "annotated-serde-json-features"
+description = "Tests of annotated with serde_json's arbitrary_precision and raw_value features, which change serde_json for every crate built with it"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[dev-dependencies]
+annotated = { path = "../crates/annotated", features = ["json"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+[workspace]
