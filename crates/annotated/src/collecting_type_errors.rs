@@ -7,7 +7,9 @@ use serde::Deserializer;
 use serde::de::{DeserializeSeed, EnumAccess, Error as _, VariantAccess, Visitor};
 
 use crate::content::{Content, ValueKind};
-use crate::content_deserializer::{ContentDeserializer, FunctionError, READ_IN_PLACE, ReadAs, TypeError, WrongType};
+use crate::content_deserializer::{
+    ContentDeserializer, FunctionError, READ_IN_PLACE, ReadAs, TypeError, WrongType, is_annotated_s_flattened_entries,
+};
 use crate::deserialize::DeserializeAt;
 use crate::{Deserialize, Location, Problem, Report};
 
@@ -142,9 +144,13 @@ impl<'de, T: serde::Deserialize<'de>> DeserializeSeed<'de> for CollectingTypeErr
 /// enum, or a value that isn't the enum at all, becomes the [`Problem`] returned instead of ending deserialization.
 /// `type_name` says what was expected when serde's error doesn't.
 ///
+/// A flattened enum is the first entry left that names one of its variants, as with serde, and only that entry is
+/// buffered, so the others are left to the flattened fields after it.
+///
 /// # Errors
 ///
-/// The format's own error, when the value isn't well-formed.
+/// The format's own error, when the value isn't well-formed, or when no entry left names a variant of a flattened
+/// enum.
 pub fn deserialize_enum_collecting_type_errors<'de, D, V, T>(
     deserializer: D,
     name: &'static str,
@@ -161,7 +167,43 @@ where
         variants,
         visitor,
     };
+    if is_annotated_s_flattened_entries::<D>() {
+        return read_flattened(deserializer, reading_the_enum, type_name);
+    }
     read_collecting_type_errors(deserializer, reading_the_enum, type_name)
+}
+
+fn read_flattened<'de, D, V>(
+    deserializer: D,
+    reading_the_enum: EnumNamed<V>,
+    type_name: &'static str,
+) -> Result<Result<V::Value, Problem>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Visitor<'de>,
+{
+    let read_as = ReadAs::of_a_value_from(&deserializer);
+    let entry = deserializer.deserialize_enum(reading_the_enum.name, reading_the_enum.variants, EntryNamingAVariant)?;
+    Ok(reading_the_enum
+        .deserialize(ContentDeserializer::<TypeError>::new(entry, read_as))
+        .map_err(|error| problem_of(error.into_wrong_type(), type_name, ValueKind::Map)))
+}
+
+/// Takes the entry a flattened enum is read from, as a map of that entry alone.
+struct EntryNamingAVariant;
+
+impl<'de> Visitor<'de> for EntryNamingAVariant {
+    type Value = Content<'de>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("an entry naming a variant")
+    }
+
+    fn visit_enum<A: EnumAccess<'de>>(self, entry: A) -> Result<Content<'de>, A::Error> {
+        let (variant, content) = entry.variant::<Content<'de>>()?;
+        let content = content.newtype_variant::<Content<'de>>()?;
+        Ok(Content::Map(vec![(variant, content)]))
+    }
 }
 
 /// Like [`deserialize_enum_collecting_type_errors`], for an adjacently tagged enum, which is read as a struct with the

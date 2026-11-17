@@ -487,7 +487,8 @@ pub use annotated_derive::Validate;
 /// - Without `tag`, a name that is no variant of the enum is the format's error. With `collect_type_errors` on the
 ///   enum, the enum is buffered whole first, so such a name is a [`Problem::UnknownVariant`] at the enum's location
 ///   instead, and a value that isn't the enum at all is a [`Problem::InvalidType`] there. A value of the wrong type in
-///   a variant's field is an issue at its path, as in a struct.
+///   a variant's field is an issue at its path, as in a struct. A flattened enum buffers only the first key that
+///   names one of its variants, as serde reads it, and a struct with no such key is the format's error.
 /// - With `tag`, every key but the tag is buffered, as serde does, and the variant is read from them. A missing tag is
 ///   [`Problem::Missing`] at the tag's name, and a tag that names no variant is a [`Problem::UnknownVariant`] there,
 ///   with or without `collect_type_errors`, so reading goes on.

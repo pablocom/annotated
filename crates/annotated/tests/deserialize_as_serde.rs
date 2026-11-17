@@ -990,20 +990,6 @@ mod flattened_fields {
         "null",
     ];
 
-    /// A flattened enum collecting type errors reads every key left, where serde reads only the first that names a
-    /// variant, and leaves that key to the flattened fields after it.
-    const FLATTENED_ENUMS_READING_EVERY_KEY_LEFT: &[KnownDifference] = &[
-        in_both_formats(r#"{"id": 1, "Cash": null}"#),
-        in_both_formats(r#"{"id": 1, "Card": {"number": "4111"}}"#),
-        in_both_formats(r#"{"Card": {"number": "4111"}, "id": 1}"#),
-        in_both_formats(r#"{"id": 1, "Card": {"number": "4111"}, "note": "leave at the door"}"#),
-        in_both_formats(r#"{"note": "leave at the door", "id": 1, "Cash": null}"#),
-        in_both_formats(r#"{"id": 1, "Card": ["4111"]}"#),
-        in_both_formats(r#"{"id": 1, "Cash": null, "street": "Gran Vía"}"#),
-        in_both_formats(r#"{"id": 1, "Cash": null, "street": 1}"#),
-        in_both_formats(r#"{"id": 1, "Cash": null, "street": "Gran Vía", "street": "Alcalá"}"#),
-    ];
-
     #[test]
     fn flattened_fields_read_each_body_as_serde_reads_it() {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, by_annotated::Order>(
@@ -1027,7 +1013,7 @@ mod flattened_fields {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Order, collecting_throughout::Order>(
             "flattened fields collecting type errors throughout",
             BODIES,
-            &[FLATTENED_ENUMS_READING_EVERY_KEY_LEFT],
+            &[],
         );
     }
 }

@@ -356,6 +356,58 @@ fn a_flattened_struct_variant_is_read_from_a_sequence_as_with_serde() {
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
+#[annotated(collect_type_errors)]
+enum CollectedPayment {
+    Card { number: String },
+    Transfer { iban: String },
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct CollectedCheckout {
+    #[validate(required)]
+    email: String,
+    #[serde(flatten)]
+    #[validate(nested)]
+    payment: CollectedPayment,
+    #[serde(flatten)]
+    notes: BTreeMap<String, String>,
+}
+
+#[test]
+fn a_flattened_enum_collecting_type_errors_takes_the_key_that_names_its_variant_and_leaves_the_others() {
+    let body = r#"{ "email": "ada@example.com", "note": "leave at the door", "Transfer": { "iban": "ES91" } }"#;
+
+    let checkout = deserialize::<CollectedCheckout>(body).unwrap();
+
+    assert_eq!(
+        checkout,
+        CollectedCheckout {
+            email: "ada@example.com".to_owned(),
+            payment: CollectedPayment::Transfer {
+                iban: "ES91".to_owned()
+            },
+            notes: BTreeMap::from([("note".to_owned(), "leave at the door".to_owned())]),
+        }
+    );
+}
+
+#[test]
+fn under_collect_type_errors_a_value_of_the_wrong_type_in_a_flattened_variant_is_an_issue_at_its_path() {
+    assert_eq!(
+        issues_reading::<CollectedCheckout>(r#"{ "email": "ada@example.com", "Card": { "number": 4111 } }"#),
+        ["Card.number: invalid_type(expected: a string, found: integer)"]
+    );
+}
+
+#[test]
+fn a_flattened_enum_collecting_type_errors_without_a_key_naming_one_of_its_variants_is_the_format_s_error() {
+    assert_eq!(
+        format_error_reading::<CollectedCheckout>(r#"{ "email": "ada@example.com", "note": "leave at the door" }"#),
+        "no variant of enum CollectedPayment found in flattened data at line 1 column 59"
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
 struct Envelope<T> {
     #[validate(required)]
     recipient: String,

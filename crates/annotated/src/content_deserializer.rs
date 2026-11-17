@@ -53,7 +53,7 @@ impl ReadAs {
     pub(crate) fn of_a_value_from<'de, D: Deserializer<'de>>(deserializer: &D) -> Self {
         let is_human_readable = deserializer.is_human_readable();
         let name = std::any::type_name::<D>();
-        if name.starts_with(BUFFER_TYPE_NAME) {
+        if name.starts_with(BUFFER_TYPE_NAME) || name.starts_with(FLATTENED_ENTRIES_TYPE_NAME) {
             return Self::SerdesBuffer { is_human_readable };
         }
         if name.starts_with(BUFFER_BY_REFERENCE_TYPE_NAME) {
@@ -81,6 +81,12 @@ impl ReadAs {
 // them, as `may_be_annotated_s_buffer` in `collecting_type_errors.rs` says, so the name of its type is compared.
 const BUFFER_TYPE_NAME: &str = concat!(module_path!(), "::ContentDeserializer<");
 const BUFFER_BY_REFERENCE_TYPE_NAME: &str = "annotated::content_ref_deserializer::ContentRefDeserializer<";
+const FLATTENED_ENTRIES_TYPE_NAME: &str = "annotated::flattened::FlatMapDeserializer<";
+
+/// Whether `D` reads a flattened field from the entries a struct kept, whatever its error.
+pub(crate) fn is_annotated_s_flattened_entries<'de, D: Deserializer<'de>>() -> bool {
+    std::any::type_name::<D>().starts_with(FLATTENED_ENTRIES_TYPE_NAME)
+}
 
 impl<'de, E: de::Error> ContentDeserializer<'de, E> {
     #[cold]
@@ -826,6 +832,7 @@ mod tests {
 
     use super::*;
     use crate::content_ref_deserializer::ContentRefDeserializer;
+    use crate::flattened::FlatMapDeserializer;
 
     fn read<'de, T: Deserialize<'de>>(content: Content<'de>) -> Result<T, WrongType> {
         T::deserialize(ContentDeserializer::new(
@@ -1193,6 +1200,20 @@ mod tests {
                     is_human_readable: false
                 }
             )
+        );
+    }
+
+    #[test]
+    fn annotated_s_buffers_are_known_by_the_names_of_their_types_whatever_their_error() {
+        assert_eq!(
+            [
+                std::any::type_name::<ContentDeserializer<'static, serde_json::Error>>().starts_with(BUFFER_TYPE_NAME),
+                std::any::type_name::<ContentRefDeserializer<'static, 'static, serde_json::Error>>()
+                    .starts_with(BUFFER_BY_REFERENCE_TYPE_NAME),
+                std::any::type_name::<FlatMapDeserializer<'static, 'static, serde_json::Error>>()
+                    .starts_with(FLATTENED_ENTRIES_TYPE_NAME),
+            ],
+            [true, true, true]
         );
     }
 
