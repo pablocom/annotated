@@ -608,6 +608,211 @@ fn items_and_types_passed_through_macros_derive_both() {
     derives_both::<through_macros::Note>();
 }
 
+// Lints a crate may deny find nothing to say about the generated code, which its author can't change: clippy's
+// pedantic and nursery groups, the restriction lints crates commonly deny, and rustc's allowed-by-default lints.
+mod linted {
+    #![deny(
+        clippy::pedantic,
+        clippy::nursery,
+        clippy::expect_used,
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::indexing_slicing,
+        clippy::as_conversions,
+        clippy::arithmetic_side_effects,
+        clippy::std_instead_of_core,
+        clippy::std_instead_of_alloc,
+        clippy::alloc_instead_of_core,
+        clippy::absolute_paths,
+        clippy::shadow_unrelated,
+        clippy::shadow_reuse,
+        clippy::shadow_same,
+        clippy::pattern_type_mismatch,
+        clippy::question_mark_used,
+        clippy::default_numeric_fallback,
+        clippy::min_ident_chars,
+        clippy::single_char_lifetime_names,
+        clippy::let_underscore_untyped,
+        clippy::let_underscore_must_use,
+        clippy::ref_patterns,
+        clippy::str_to_string,
+        clippy::redundant_type_annotations,
+        clippy::wildcard_enum_match_arm,
+        clippy::else_if_without_else,
+        clippy::if_then_some_else_none,
+        clippy::missing_docs_in_private_items,
+        clippy::allow_attributes,
+        clippy::allow_attributes_without_reason,
+        clippy::same_name_method,
+        clippy::multiple_inherent_impl,
+        clippy::impl_trait_in_params,
+        clippy::semicolon_outside_block,
+        clippy::unneeded_field_pattern,
+        clippy::unwrap_in_result,
+        clippy::panic_in_result_fn,
+        clippy::unseparated_literal_suffix,
+        clippy::integer_division,
+        clippy::float_arithmetic,
+        clippy::string_slice,
+        clippy::missing_trait_methods,
+        clippy::iter_over_hash_type,
+        clippy::renamed_function_params,
+        clippy::used_underscore_binding,
+        clippy::used_underscore_items,
+        clippy::exhaustive_structs,
+        clippy::exhaustive_enums,
+        clippy::partial_pub_fields
+    )]
+    #![deny(
+        unused_qualifications,
+        unused_results,
+        unused_lifetimes,
+        unused_import_braces,
+        single_use_lifetimes,
+        elided_lifetimes_in_paths,
+        trivial_casts,
+        trivial_numeric_casts,
+        variant_size_differences,
+        let_underscore_drop,
+        unit_bindings,
+        redundant_lifetimes,
+        explicit_outlives_requirements,
+        meta_variable_misuse,
+        keyword_idents,
+        deprecated_safe_2024,
+        unsafe_code
+    )]
+
+    use annotated::{Deserialize, Problem, Validate};
+
+    /// A member.
+    #[derive(Debug, Validate, Deserialize)]
+    #[annotated(collect_type_errors)]
+    #[validate(custom(is_consistent, field = name))]
+    pub struct Member {
+        /// Its name.
+        #[validate(required, length(max = 50))]
+        #[cfg_attr(feature = "regex", validate(pattern = r"^\w{1,64}$"))]
+        name: String,
+        /// Its nickname.
+        #[validate(length(max = 50))]
+        nickname: Option<String>,
+        /// Its friends.
+        #[validate(length(max = 10), each(nested))]
+        friends: Vec<Friend>,
+        /// Its age.
+        #[serde(default)]
+        #[validate(range(min = 18_u8, max = 120_u8))]
+        age: u8,
+        /// Its address.
+        #[serde(flatten)]
+        #[validate(nested)]
+        address: Friend,
+    }
+
+    /// Checks a member.
+    fn is_consistent(member: &Member) -> Result<(), Problem> {
+        if member.name == "nobody" {
+            return Err(Problem::custom("nobody", "is nobody"));
+        }
+        Ok(())
+    }
+
+    /// A friend.
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Friend {
+        /// Their name.
+        #[validate(required)]
+        nickname: String,
+    }
+
+    /// A payment.
+    #[derive(Debug, Validate, Deserialize)]
+    #[serde(tag = "kind", content = "data")]
+    pub enum Payment {
+        /// By card.
+        Card {
+            /// Its number.
+            #[validate(length(min = 12_usize))]
+            number: String,
+        },
+        /// By transfer.
+        Transfer(#[validate(nested)] Friend),
+        /// In cash.
+        Cash,
+        /// Something else.
+        #[serde(untagged)]
+        Other(#[validate(required)] String),
+    }
+
+    /// A kind.
+    #[derive(Debug, Validate, Deserialize)]
+    #[serde(tag = "kind")]
+    pub enum Internal {
+        /// One.
+        One {
+            /// Its name.
+            #[validate(required)]
+            name: String,
+        },
+        /// Two.
+        Two(#[validate(nested)] Friend),
+    }
+
+    /// Another kind.
+    #[derive(Debug, Validate, Deserialize)]
+    pub enum External {
+        /// One.
+        One {
+            /// Its name.
+            #[validate(required)]
+            name: String,
+        },
+        /// Two.
+        Two(#[validate(range(max = 3_u8))] u8, #[validate(range(max = 3_u8))] u8),
+    }
+
+    /// Untagged.
+    #[derive(Debug, Validate, Deserialize)]
+    #[serde(untagged)]
+    pub enum Untagged {
+        /// One.
+        One {
+            /// Its name.
+            #[validate(required)]
+            name: String,
+        },
+        /// Two.
+        Two(#[validate(nested)] Friend),
+    }
+
+    /// No longer used.
+    #[deprecated = "use Member"]
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct OldMember {
+        /// Its name.
+        #[validate(required)]
+        name: String,
+    }
+}
+
+#[test]
+fn denied_lints_find_nothing_in_the_generated_code() {
+    derives_both::<linted::Member>();
+    derives_both::<linted::Payment>();
+    derives_both::<linted::Internal>();
+    derives_both::<linted::External>();
+    derives_both::<linted::Untagged>();
+    #[allow(
+        deprecated,
+        reason = "the derives allow what they generate for a deprecated type, not the test"
+    )]
+    derives_both::<linted::OldMember>();
+}
+
 // A crate that re-exports annotated, and serde, offers the derives under paths of its own.
 mod through_a_re_export {
     mod facade {

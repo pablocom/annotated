@@ -114,6 +114,7 @@ impl<'a> DeserializeExpansion<'a> {
             )
         };
         let impls = quote! {
+            #[automatically_derived]
             impl #impl_generics _annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
@@ -129,6 +130,7 @@ impl<'a> DeserializeExpansion<'a> {
                 #rules_function
             }
 
+            #[automatically_derived]
             impl #impl_generics #serde::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
@@ -137,7 +139,7 @@ impl<'a> DeserializeExpansion<'a> {
                 }
             }
         };
-        in_a_scope_of_its_own(paths, &patterns_compiled_once(self.fields()), &impls)
+        in_a_scope_of_its_own(input, paths, &patterns_compiled_once(self.fields()), &impls)
     }
 
     pub fn new_visitor(&self) -> TokenStream {
@@ -179,6 +181,7 @@ impl<'a> DeserializeExpansion<'a> {
                         marker: ::core::marker::PhantomData<fn() -> (#name #type_generics, &'de ())>,
                     }
 
+                    #[automatically_derived]
                     impl #impl_generics #serde::Deserialize<'de> for #wrapper #wrapper_type_generics
                     #reading_where_clause
                     {
@@ -338,6 +341,7 @@ impl<'a> DeserializeExpansion<'a> {
 
             struct __FieldVisitor;
 
+            #[automatically_derived]
             impl<'de> #serde::de::Visitor<'de> for __FieldVisitor {
                 type Value = __Field;
 
@@ -367,6 +371,7 @@ impl<'a> DeserializeExpansion<'a> {
                 }
             }
 
+            #[automatically_derived]
             impl<'de> #serde::Deserialize<'de> for __Field {
                 #[inline]
                 fn deserialize<__D: #serde::Deserializer<'de>>(
@@ -462,6 +467,7 @@ impl<'a> DeserializeExpansion<'a> {
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
+            #[automatically_derived]
             impl #impl_generics #serde::de::Visitor<'de> for __Visitor #visitor_type_generics #where_clause {
                 type Value = ::core::option::Option<#name #type_generics>;
 
@@ -476,6 +482,7 @@ impl<'a> DeserializeExpansion<'a> {
 
             #reading
 
+            #[automatically_derived]
             impl #impl_generics __Visitor #visitor_type_generics #where_clause {
                 #checked_value
             }
@@ -499,6 +506,7 @@ impl<'a> DeserializeExpansion<'a> {
         let generics_reading_fields = self.visitor_impl_generics();
         let (impl_generics, _, where_clause) = generics_reading_fields.split_for_impl();
         quote! {
+            #[automatically_derived]
             impl #impl_generics #serde::de::DeserializeSeed<'de> for __Visitor #visitor_type_generics #where_clause {
                 type Value = ::core::option::Option<#name #type_generics>;
 
@@ -533,6 +541,7 @@ impl<'a> DeserializeExpansion<'a> {
         let read_value = self.value_read_whole(field);
         let read_issues: Vec<_> = self.fields_read_with_issues().map(read_issues_of).collect();
         quote! {
+            #[automatically_derived]
             impl #impl_generics #serde::de::DeserializeSeed<'de> for __Visitor #visitor_type_generics #where_clause {
                 type Value = ::core::option::Option<#name #type_generics>;
 

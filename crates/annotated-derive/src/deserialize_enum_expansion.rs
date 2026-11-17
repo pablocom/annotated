@@ -85,6 +85,7 @@ impl<'a> EnumExpansion<'a> {
         };
         let reading = self.reading();
         let impls = quote! {
+            #[automatically_derived]
             impl #impl_generics _annotated::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize_at<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
@@ -97,6 +98,7 @@ impl<'a> EnumExpansion<'a> {
                 }
             }
 
+            #[automatically_derived]
             impl #impl_generics #serde::Deserialize<'de> for #name #type_generics #where_clause {
                 fn deserialize<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,
@@ -111,7 +113,7 @@ impl<'a> EnumExpansion<'a> {
             .iter()
             .flat_map(|variant| &variant.content)
             .flat_map(|content| &content.validated.fields);
-        in_a_scope_of_its_own(paths, &patterns_compiled_once(fields), &impls)
+        in_a_scope_of_its_own(input, paths, &patterns_compiled_once(fields), &impls)
     }
 
     // The bounds of the fields of every variant read, as each variant's own reading needs them, and those the enum's
@@ -220,6 +222,7 @@ impl<'a> EnumExpansion<'a> {
 
             struct __VariantVisitor;
 
+            #[automatically_derived]
             impl<'de> #serde::de::Visitor<'de> for __VariantVisitor {
                 type Value = __Variant;
 
@@ -249,6 +252,7 @@ impl<'a> EnumExpansion<'a> {
                 }
             }
 
+            #[automatically_derived]
             impl<'de> #serde::Deserialize<'de> for __Variant {
                 #[inline]
                 fn deserialize<__D: #serde::Deserializer<'de>>(
@@ -288,6 +292,7 @@ impl<'a> EnumExpansion<'a> {
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
+            #[automatically_derived]
             impl #impl_generics #serde::de::Visitor<'de> for __EnumVisitor #visitor_type_generics #where_clause {
                 type Value = ::core::option::Option<#name #type_generics>;
 
@@ -440,6 +445,7 @@ impl<'a> EnumExpansion<'a> {
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
+            #[automatically_derived]
             impl #impl_generics #serde::de::DeserializeSeed<'de> for __VariantSeed #visitor_type_generics #where_clause {
                 type Value = ::core::option::Option<#name #type_generics>;
 
@@ -723,6 +729,7 @@ impl EnumExpansion<'_> {
                 marker: ::core::marker::PhantomData<fn() -> (#name #type_generics, &'de ())>,
             }
 
+            #[automatically_derived]
             impl #impl_generics #serde::Deserialize<'de> for __DeserializeVariantWith #wrapper_type_generics
             #reading_where_clause
             {
@@ -902,6 +909,7 @@ impl EnumExpansion<'_> {
                 marker: ::core::marker::PhantomData<fn() -> #name #type_generics>,
             }
 
+            #[automatically_derived]
             impl #impl_generics #serde::de::Visitor<'de> for __AdjacentVisitor #visitor_type_generics #where_clause {
                 type Value = ::core::option::Option<#name #type_generics>;
 
@@ -914,6 +922,7 @@ impl EnumExpansion<'_> {
                 #visit_seq
             }
 
+            #[automatically_derived]
             impl #impl_generics __AdjacentVisitor #visitor_type_generics #where_clause {
                 #finished
 
