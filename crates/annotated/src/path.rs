@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Write};
 use std::hash::{Hash, Hasher};
 
@@ -6,6 +7,10 @@ use std::hash::{Hash, Hasher};
 /// The root path has no segments and stands for the validated value itself. An issue a struct-level rule finds on that
 /// value has the root path. [`Display`] prints a path in dotted form, and [`Path::json_pointer`] returns it as an RFC
 /// 6901 JSON Pointer.
+///
+/// A map's key comes from the input, so [`Display`] prints it with `\` and every char that could break a line or hide
+/// text escaped, as [`str::escape_debug`] escapes them: a newline is printed `\n` and U+202E `\u{202e}`. Quotes and
+/// other printable chars are printed as they are. So a key can't forge another line of [`Issues`](crate::Issues).
 ///
 /// ```
 /// use annotated::Path;
@@ -42,6 +47,8 @@ pub enum PathSegment {
     ///
     /// A key in a path is at most [`MAX_KEY_CHARS`](Self::MAX_KEY_CHARS) `char`s: a longer one is cut to its first
     /// that many, followed by `…`. So an issue holds a bounded copy of its key, however long the key in the input is.
+    ///
+    /// The segment's [`Display`] prints the key escaped, as a [`Path`] does.
     Key(String),
 }
 
@@ -54,6 +61,14 @@ impl PathSegment {
         let mut rendered = String::new();
         write_cut_key(key, &mut rendered).expect("a Display implementation returned an error unexpectedly");
         Self::Key(rendered)
+    }
+
+    fn text(&self) -> Cow<'_, str> {
+        match self {
+            Self::Field(name) => Cow::Borrowed(name),
+            Self::Index(index) => Cow::Owned(index.to_string()),
+            Self::Key(key) => Cow::Borrowed(key),
+        }
     }
 }
 
@@ -101,13 +116,14 @@ impl Path {
 
     /// The path as an [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer: `/members/1/name`.
     ///
-    /// The root path is the empty pointer, `""`. A `~` in a segment is written `~0` and a `/` is written `~1`.
+    /// The root path is the empty pointer, `""`. A `~` in a segment is written `~0` and a `/` is written `~1`. A map's
+    /// key is otherwise kept as it is, unlike in [`Display`]: a newline in it stays a newline.
     #[must_use]
     pub fn json_pointer(&self) -> String {
         let mut pointer = String::new();
         for segment in self.segments() {
             pointer.push('/');
-            pointer.push_str(&segment.to_string().replace('~', "~0").replace('/', "~1"));
+            pointer.push_str(&segment.text().replace('~', "~0").replace('/', "~1"));
         }
         pointer
     }
@@ -185,9 +201,21 @@ impl Display for PathSegment {
         match self {
             Self::Field(name) => formatter.write_str(name),
             Self::Index(index) => write!(formatter, "{index}"),
-            Self::Key(key) => formatter.write_str(key),
+            Self::Key(key) => write_escaped(key, formatter),
         }
     }
+}
+
+/// Writes `key` with `\` and every char that could break a line or hide text escaped, as
+/// [`str::escape_debug`] escapes them, and its quotes as they are.
+fn write_escaped(key: &str, written_to: &mut impl Write) -> fmt::Result {
+    const QUOTES: [char; 2] = ['\'', '"'];
+    for text_then_quote in key.split_inclusive(QUOTES) {
+        let text = text_then_quote.strip_suffix(QUOTES).unwrap_or(text_then_quote);
+        write!(written_to, "{}", text.escape_debug())?;
+        written_to.write_str(&text_then_quote[text.len()..])?;
+    }
+    Ok(())
 }
 
 /// Writes how `key` renders, cut to its first [`PathSegment::MAX_KEY_CHARS`] `char`s followed by `…` when it is

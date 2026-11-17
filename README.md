@@ -106,7 +106,7 @@ The error holds its issues in the order of the struct's fields, followed by thos
 
 In a path, a map's key longer than 256 characters is cut to its first 256 followed by `…`, so an issue holds a bounded copy of the key however long it is in the input.
 
-Printed, the error is one issue per line: `age: must be between 18 and 120`.
+Printed, the error is one issue per line: `age: must be between 18 and 120`. A map's key is printed with a newline, and any other char that could break a line or hide text, escaped: `labels[a\nb]`.
 
 ## Ways to validate
 
