@@ -31,6 +31,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+  # Users can turn the default features off and pick the others one by one, which the other jobs never build.
+  features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Lint annotated without its default features, alone and with each feature
+        run: |
+          for feature in "" serde json regex unicode json-schema; do
+            echo "::group::features: ${feature:-none}"
+            cargo clippy --package annotated --all-targets --no-default-features --features "$feature" -- -D warnings
+            echo "::endgroup::"
+          done
+
   test:
     name: test (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
@@ -64,7 +81,7 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main'
-    needs: [format, lint, test, docs]
+    needs: [format, lint, features, test, docs]
     runs-on: ubuntu-latest
     environment: release
     # A release reads what the one before it left on main, so they run one at a time.
