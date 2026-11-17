@@ -55,8 +55,7 @@
 //!
 //! | Rule | Written on | Keywords |
 //! |---|---|---|
-//! | `required` | an `Option` | `null` is removed from `type`, and from `oneOf` or `anyOf` |
-//! | | | An alternative left alone there is written in their place |
+//! | `required` | an `Option` | none, so `null` stays allowed: it asks for the field's key, which takes no default |
 //! | | a string, an array, an object | `minLength: 1`, `minItems: 1`, `minProperties: 1` |
 //! | | a field without a default | its name is added to the object's `required` |
 //! | `length` | a string | `minLength`, `maxLength` |
@@ -336,10 +335,7 @@ fn why_unconstrained(schema: &Map<String, Value>) -> Reason {
 
 fn write_problem(problem: &Problem, is_value_optional: bool, schema: &mut Map<String, Value>) -> Result<(), Reason> {
     match problem {
-        Problem::Required if is_value_optional => {
-            refuse_null(schema);
-            Ok(())
-        }
+        Problem::Required if is_value_optional => Ok(()),
         Problem::Required => write_counts(&[CHARS, ITEMS, PROPERTIES], Some(1), None, schema),
         Problem::Length { bounds, unit } => write_length(bounds, *unit, schema),
         Problem::Range { bounds } => write_range(bounds, schema),
@@ -361,45 +357,6 @@ fn accepts(value_type: &str, schema: &Map<String, Value>) -> bool {
         Some(Value::Array(types)) => types.iter().any(|accepted| accepted == value_type),
         _ => false,
     }
-}
-
-fn refuse_null(schema: &mut Map<String, Value>) {
-    if let Some(Value::Array(types)) = schema.get_mut("type") {
-        types.retain(|accepted| accepted != "null");
-        if let [only_type] = types.as_slice() {
-            let only_type = only_type.clone();
-            schema.insert("type".to_owned(), only_type);
-        }
-    }
-    for alternatives in ["oneOf", "anyOf"] {
-        if let Some(Value::Array(schemas)) = schema.get_mut(alternatives) {
-            schemas.retain(|alternative| !accepts_only_null(alternative));
-        }
-        replace_by_its_only_alternative(alternatives, schema);
-    }
-}
-
-// One alternative alone says what its own keywords say, so they are written in its place: a `$ref` beside `null`
-// becomes that `$ref`. It stays an alternative when one of its keywords would replace one the schema has.
-fn replace_by_its_only_alternative(alternatives: &str, schema: &mut Map<String, Value>) {
-    let Some(Value::Array(schemas)) = schema.get(alternatives) else {
-        return;
-    };
-    let [Value::Object(only_alternative)] = schemas.as_slice() else {
-        return;
-    };
-    if only_alternative.keys().any(|keyword| schema.contains_key(keyword)) {
-        return;
-    }
-    let only_alternative = only_alternative.clone();
-    schema.remove(alternatives);
-    schema.extend(only_alternative);
-}
-
-fn accepts_only_null(schema: &Value) -> bool {
-    schema
-        .as_object()
-        .is_some_and(|schema| schema.len() == 1 && schema.get("type").is_some_and(|only_type| only_type == "null"))
 }
 
 fn write_length(bounds: &Bounds<usize>, unit: LengthUnit, schema: &mut Map<String, Value>) -> Result<(), Reason> {

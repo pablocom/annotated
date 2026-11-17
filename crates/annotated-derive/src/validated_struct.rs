@@ -38,6 +38,7 @@ pub struct ValidatedField<'a> {
     pub is_flattened: bool,
     pub checked_value: CheckedValue,
     pub is_optional: bool,
+    pub requires_its_key: bool,
     pub rules: Vec<FieldRule>,
 }
 
@@ -177,10 +178,12 @@ impl<'a> ValidatedField<'a> {
             .ident
             .clone()
             .map_or_else(|| Member::Unnamed(Index::from(index)), Member::Named);
-        let rules = written_rules(&field.attrs)?
+        let rules: Vec<_> = written_rules(&field.attrs)?
             .into_iter()
             .map(|written| FieldRule::from_written(written, Some(&field.ty)))
             .collect::<syn::Result<_>>()?;
+        let is_optional = option_content(&field.ty).is_some();
+        let is_read_by_its_key = matches!(place, Place::Named(_)) && !serde_field.is_skipped;
         Ok(Self {
             member,
             field_type: &field.ty,
@@ -189,10 +192,25 @@ impl<'a> ValidatedField<'a> {
             name: serde_field.name,
             place,
             is_flattened: serde_field.is_flattened,
-            is_optional: option_content(&field.ty).is_some(),
+            is_optional,
+            requires_its_key: is_optional && is_read_by_its_key && required_rule_among(&rules).is_some(),
             rules,
         })
     }
+
+    pub fn message_when_missing(&self) -> Option<&Expr> {
+        if !self.requires_its_key {
+            return None;
+        }
+        required_rule_among(&self.rules)?.message.as_ref()
+    }
+}
+
+fn required_rule_among(rules: &[FieldRule]) -> Option<&RuleCheck> {
+    rules.iter().find_map(|rule| match rule {
+        FieldRule::Check(check) if check.is_required => Some(check),
+        _ => None,
+    })
 }
 
 impl CheckedValue {

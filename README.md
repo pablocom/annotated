@@ -73,7 +73,7 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 
 | Rule | The value passes when |
 |---|---|
-| `required` | It is present: an `Option` is `Some`, a string isn't empty or only whitespace, a collection isn't empty |
+| `required` | It is present: a string isn't empty or only whitespace, a collection isn't empty. On an `Option`, its key is in the input, and `null` is accepted |
 | `length(min = 1, max = 50)` | Its length is within the bounds, or exactly `length(equal = 5)`. A string is counted in `char`s, or in bytes or graphemes with `unit = "bytes"` or `unit = "graphemes"`. A collection is counted in elements |
 | `range(min = 18, max = 120)` | It is within the bounds, both included |
 | `email` | It is an email address, as HTML's `<input type="email">` accepts one, of at most 254 bytes |
@@ -86,7 +86,7 @@ To check a value that already exists, derive `annotated::Validate` and call `val
 | `each(...)` | Every element of the collection, or every value of the map, passes the rules inside: `each(length(max = 20))`, `each(nested)` |
 
 - **Order.** A field's rules run in the order written, and the field stops at its first broken rule. So a blank name isn't also reported as too short. Put `#[validate(report_all)]` on the struct to report every broken rule instead.
-- **`Option` fields.** `required` checks that the field is `Some`. Every other rule checks the value inside, and is skipped when the field is `None`.
+- **`Option` fields.** `required` asks for the field's key. Deserializing reports an absent key as `missing`, as for a field of any other type, even when serde would give it a `default`, and reads `null` as `None`. A value that already exists can't say whether its key was there, so `validate()` checks nothing for `required` on an `Option`. To refuse `null` too, declare the field as `T` instead. Every other rule checks the value inside, and is skipped when the field is `None`.
 - **Messages.** Give a rule `message = "..."` to replace its English message. `{param}` placeholders are filled from the problem's parameters: `length(max = 50, message = "use {max} characters or fewer")`.
 - **Rules across fields.** `#[validate(custom(function))]` on the struct checks the whole struct, after its fields, with any `Fn(&Self) -> Result<(), Problem>`. `custom(function, field = repeated_password)` reports the problem at that field.
 - **Enums.** Rules go on the fields of an enum's variants, named or not. The variant the value holds is checked, and each issue is at the path where serde reads its value, such as `card.number` under the variant's name. For a rule across a variant's fields, put `#[validate(custom(function))]` on the variant: the function gets the enum, and runs when the value is that variant. `custom(function, field = expires_in)` reports the problem at that field.
@@ -145,7 +145,7 @@ A schema library documents a type's fields, and knows nothing of its rules. With
 let unwritten = annotated::json_schema::write_rules(&<NewMember as Validate>::rules(), schema);
 ```
 
-- `length(max = 50)` becomes `maxLength: 50`, `range(min = 18)` becomes `minimum: 18`, and `required` on an `Option` makes the field required and never `null`. The [module's documentation](https://docs.rs/annotated/latest/annotated/json_schema/) lists what each rule writes.
+- `length(max = 50)` becomes `maxLength: 50`, `range(min = 18)` becomes `minimum: 18`, and `required` on an `Option` makes the field required, with `null` still allowed. The [module's documentation](https://docs.rs/annotated/latest/annotated/json_schema/) lists what each rule writes.
 - The schema never rejects a value the rules accept. Where no keyword says exactly what a rule requires, a looser one is written, or none.
 - Each rule it couldn't write is returned, with where its keyword belongs and why: `ip`, which no keyword says, or a property that is a `$ref`. Your app decides which of them its document can do without.
 - The schema is JSON, so this works with any library that generates JSON Schema or OpenAPI 3.1, and annotated depends on none of them.

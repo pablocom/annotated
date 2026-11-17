@@ -6,7 +6,7 @@ use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, T
 
 use crate::described_rules::rules_function;
 use crate::deserialized_struct::{DeserializedStruct, Form};
-use crate::expansion::{Expansion, validity_of};
+use crate::expansion::{Expansion, message_override, validity_of};
 use crate::serde_names::{DefaultValue, SerdeField};
 use crate::validated_struct::{FieldRule, Place, ValidatedField, nested_rules_in, option_content};
 
@@ -1127,13 +1127,14 @@ impl<'a> DeserializeExpansion<'a> {
     fn missing(&self, field: &ValidatedField) -> TokenStream {
         let found = &self.rules.found;
         let missing_at = self.rules.field_location(field);
+        let message = message_override(field.message_when_missing());
         let stop_if_finished = self.rules.stop_if_finished();
         quote! {
             ::annotated::__private::record_issue(
                 #found,
                 #missing_at,
                 ::annotated::Problem::Missing,
-                ::core::option::Option::None,
+                #message,
             );
             #stop_if_finished
         }
@@ -1269,6 +1270,9 @@ impl<'a> DeserializeExpansion<'a> {
         let is_read_with_its_variant = self.deserialized_struct.read_whole_by.is_some();
         if is_read_with_its_variant || (is_its_parent_s_value(field) && !self.is_skipped(field)) {
             return WhenAbsent::IsNeverAbsent;
+        }
+        if field.requires_its_key {
+            return WhenAbsent::IsMissing;
         }
         if let Some(default) = &self.serde_field_of(field).default {
             return WhenAbsent::TakesDefault(default);

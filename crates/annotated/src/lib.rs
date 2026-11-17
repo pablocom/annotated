@@ -109,8 +109,9 @@ pub use validate::Validate;
 ///
 /// - Every field is checked. The first rule a field breaks stops that field's other rules. `#[validate(report_all)]` on
 ///   the struct reports every rule a field breaks instead.
-/// - On an `Option` field, `required` checks the `Option` itself. Every other rule checks the value inside, and is
-///   skipped when there is none.
+/// - On an `Option` field, `required` asks for the field's key, which only deserializing can tell, so a value that
+///   already exists passes it, `None` included. Every other rule checks the value inside, and is skipped when there
+///   is none.
 /// - `nested` validates a field whose type implements [`Validate`], and reports under the field's name.
 /// - `each(...)` applies its rules to every element of a collection, reported at its index, or to every value of a map,
 ///   reported at its key. It works on anything that implements [`rules::HasElements`]. `each(nested)` validates every
@@ -287,11 +288,12 @@ pub use annotated_derive::Validate;
 /// Once the input is read to its end, every field is checked in the order the struct declares them:
 ///
 /// - A field absent from the input is [`Problem::Missing`], at its name. An `Option` field is `None` instead, as with
-///   serde, and `required` on it reports [`Problem::Required`].
+///   serde, unless it has `required`, which asks for its key: then it is [`Problem::Missing`] too, with the `message`
+///   of `required` when it has one. `null` is `None` either way.
 /// - A field with `#[serde(default)]` or `#[serde(default = "path")]` takes its default when it is absent. With
 ///   either on the struct, an absent field without a default of its own takes its value in the struct's default.
 ///   Its rules check that value like a value read. A `nested` rule checks it with [`Validate`], so the nested type
-///   must implement `Validate` too.
+///   must implement `Validate` too. An `Option` with `required` takes no default: its absent key is missing.
 /// - A field with `#[serde(skip_deserializing)]` or `#[serde(skip)]` is never read. It takes its default, or
 ///   `Default::default()` when it has none, and its rules check that value the same way. A key with its name is an
 ///   unknown field.
@@ -300,8 +302,9 @@ pub use annotated_derive::Validate;
 ///   field is [`Problem::Missing`] when it is absent, even an `Option`, unless it has a default.
 /// - A field with `#[serde(flatten)]` is read, as with serde, from the keys that aren't the struct's own fields, once
 ///   the input is read. Its issues are at the struct's own location, where its keys are in the input. A flattened
-///   `Option` is `None` when its value can't be built from those keys, and the issues found trying are dropped. As
-///   with serde, a struct with a flattened field can't be read from a sequence.
+///   `Option` is `None` when its value can't be built from those keys, and the issues found trying are dropped. It has
+///   no key of its own, so `required` on it checks nothing. As with serde, a struct with a flattened field can't be
+///   read from a sequence.
 /// - A field that is present is checked by its `#[validate(...)]` rules exactly as [`Validate`] checks it. So for input
 ///   that has every field, the issues are the same, in the same order, as when deserializing with serde and then
 ///   validating.

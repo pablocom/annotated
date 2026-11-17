@@ -375,7 +375,7 @@ struct Delivery {
     #[validate(nested)]
     sender: Address,
     #[serde(default = "maybe_an_unnamed_address")]
-    #[validate(required, nested)]
+    #[validate(nested)]
     recipient: Option<Address>,
     #[serde(default = "a_restricted_stop_then_an_unnamed_one")]
     #[validate(each(custom(not_a_restricted_stop), nested))]
@@ -425,7 +425,7 @@ struct DeliveryThenValidated {
     #[validate(nested)]
     sender: AddressThenValidated,
     #[serde(default = "maybe_an_unnamed_address_then_validated")]
-    #[validate(required, nested)]
+    #[validate(nested)]
     recipient: Option<AddressThenValidated>,
     #[serde(default = "a_restricted_stop_then_an_unnamed_one_then_validated")]
     #[validate(each(custom(not_a_restricted_stop_once_validated), nested))]

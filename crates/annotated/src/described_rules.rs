@@ -75,7 +75,8 @@ impl FieldRules {
     }
 
     /// Whether the field takes a default when the input lacks it: `#[serde(default)]` on the field or on its struct.
-    /// Its rules then check that default, so the input may leave out even a `required` field.
+    /// Its rules then check that default, so the input may leave out even a `required` field, unless it is an `Option`:
+    /// `required` asks for the key of an `Option`, which then takes no default.
     #[must_use]
     pub fn has_default(&self) -> bool {
         self.has_default
@@ -128,8 +129,8 @@ impl ValueRules {
         }
     }
 
-    /// Whether the value is an `Option`. `required` then asks for a `Some`, and every other rule checks the value
-    /// inside and accepts a `None`.
+    /// Whether the value is an `Option`. `required` then asks for the field's key and accepts `null`, and every other
+    /// rule checks the value inside and accepts a `None`.
     #[must_use]
     pub fn is_optional(&self) -> bool {
         self.is_optional

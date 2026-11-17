@@ -125,8 +125,8 @@ fn a_missing_optional_field_is_none_without_an_issue() {
 }
 
 #[test]
-fn a_missing_optional_field_that_is_required_breaks_the_required_rule() {
-    assert_eq!(issues_reading::<Profile>("{}"), ["phone: required"]);
+fn a_missing_optional_field_that_is_required_is_missing() {
+    assert_eq!(issues_reading::<Profile>("{}"), ["phone: missing"]);
 }
 
 #[test]

@@ -330,22 +330,29 @@ fn failing_fast_answers_the_first_issue_of_a_map_s_values_in_the_order_of_their_
     );
 }
 
+fn not_a_guest(member: &Member) -> Result<(), Problem> {
+    if member.name == "Guest" {
+        return Err(Problem::custom("guest", "can't be a guest"));
+    }
+    Ok(())
+}
+
 #[derive(Deserialize, Debug)]
 struct Pickups {
-    #[validate(each(required, nested))]
+    #[validate(each(custom(not_a_guest), nested))]
     #[allow(dead_code)]
-    members: Vec<Option<Member>>,
+    members: Vec<Member>,
 }
 
 #[test]
 fn failing_fast_answers_an_element_breaking_a_rule_before_one_with_issues_inside() {
-    let body = r#"{ "members": [{ "name": "Alex" }, null, { "name": "" }] }"#;
+    let body = r#"{ "members": [{ "name": "Alex" }, { "name": "Guest" }, { "name": "" }] }"#;
 
     assert_eq!(
         issues_reading::<Pickups>(body),
-        ["members[1]: required", "members[2].name: required"]
+        ["members[1]: guest", "members[2].name: required"]
     );
-    assert_eq!(fail_fast_issues_reading::<Pickups>(body), ["members[1]: required"]);
+    assert_eq!(fail_fast_issues_reading::<Pickups>(body), ["members[1]: guest"]);
 }
 
 #[derive(Deserialize, Debug)]

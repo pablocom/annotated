@@ -4,6 +4,15 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+### Changed
+
+- `required` on an `Option` field asks for the field's key, and accepts `null`, where it asked for a `Some`. **Nothing tells you at compile time: a `required` `Option` that refused `null` now accepts it, as `None`.**
+  - `#[derive(Deserialize)]` reports an absent key as `Problem::Missing`, code `missing`, as for a field of any other type, where it reported `Problem::Required`. It does so even when the field or its struct has `#[serde(default)]`, and the issue carries the `message` of `required` when it has one. In an untagged enum, a variant without that key isn't built, as for any other missing field.
+  - A value that already exists can't say whether its key was there, so `validate()` checks nothing for `required` on an `Option`, and `rules::required()` passes every `Option`, `None` included. `each(required)` no longer refuses an element that is `None`.
+  - A skipped or flattened `Option`, and one in a tuple variant, has no key of its own, and `required` on it checks nothing.
+  - With the `json-schema` feature, `json_schema::write_rules` lists a `required` `Option` in the object's `required`, even when it has a serde default, and leaves `null` allowed, where it removed `null` from the field's schema. `rules()` describes such a field as taking no default.
+  - To keep refusing `null`, declare the field as `T` instead of `Option<T>`. An absent key is then `missing`, and `null` is a value of the wrong type: the format's error, or a `Problem::InvalidType` under `#[annotated(collect_type_errors)]`. Keep `required` on it only to check the value too: on a `String`, it refuses blank text.
+
 ### Fixed
 
 - `#[validate(pattern = r"...")]` is a compile error when the regular expression is too big for the `regex` crate to compile, such as `^[\p{L}\p{N}_-]{1,1000}$`. It compiled before, then panicked the first time the field was validated, and every validation after that panicked too. The derive builds the expression with the same `regex` crate, so one that compiles can't panic at run time. The error says to use a smaller repetition or a simpler class. The `regex` feature now builds the `regex` crate for the derive too, which adds about 0.2 seconds to a clean build.

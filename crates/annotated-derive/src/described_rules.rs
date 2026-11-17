@@ -65,7 +65,8 @@ impl Description {
             field.is_optional,
             &quote!(::annotated::__private::Checked::<#field_type>::new()),
         );
-        if has_default || has_its_struct_a_default {
+        let takes_a_default = (has_default || has_its_struct_a_default) && !field.requires_its_key;
+        if takes_a_default {
             return Some(quote!(::annotated::FieldRules::new(#name, #value_rules).with_default()));
         }
         Some(quote!(::annotated::FieldRules::new(#name, #value_rules)))

@@ -120,13 +120,13 @@ fn each_nested_validates_every_element_as_a_struct() {
 }
 
 #[test]
-fn required_on_optional_elements_checks_each_option() {
+fn required_on_optional_elements_accepts_none_since_an_element_is_always_present() {
     let post = Post {
         reviewers: vec![Some("Sam".to_owned()), None],
         ..post()
     };
 
-    assert_eq!(issues_of(&post), ["reviewers[1]: required"]);
+    assert_eq!(post.validate(), Ok(()));
 }
 
 #[test]

@@ -134,8 +134,13 @@ fn every_keyword_annotated_writes_is_kept_in_the_document() {
                     "propertyNames": { "type": "string" },
                     "maxProperties": 7
                 },
-                "ownerName": { "type": "string" },
-                "address": { "$ref": "#/components/schemas/Address", "description": "Where the shop is." }
+                "ownerName": { "type": ["string", "null"] },
+                "address": {
+                    "oneOf": [
+                        { "$ref": "#/components/schemas/Address", "description": "Where the shop is." },
+                        { "type": "null" }
+                    ]
+                }
             }
         })
     );

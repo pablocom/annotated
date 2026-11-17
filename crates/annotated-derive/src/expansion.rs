@@ -478,7 +478,7 @@ fn spanned(tokens: &TokenStream, span: Span) -> TokenStream {
         .collect()
 }
 
-fn message_override(message: Option<&Expr>) -> TokenStream {
+pub fn message_override(message: Option<&Expr>) -> TokenStream {
     if let Some(message) = message {
         quote!(::core::option::Option::Some(#message))
     } else {

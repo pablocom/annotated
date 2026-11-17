@@ -108,13 +108,10 @@ impl Validate for InlineChecksSignUp {
         } else if let Err(problem) = rules::pattern(&USERNAME).check(&self.username) {
             record(found, at, "username", problem);
         }
-        match &self.full_name {
-            None => record(found, at, "fullName", Problem::Required),
-            Some(full_name) => {
-                if let Err(problem) = rules::length().max(50).check(full_name) {
-                    record(found, at, "fullName", problem);
-                }
-            }
+        if let Some(full_name) = &self.full_name
+            && let Err(problem) = rules::length().max(50).check(full_name)
+        {
+            record(found, at, "fullName", problem);
         }
         if let Err(problem) = rules::email().check(&self.email) {
             record(found, at, "email", problem);

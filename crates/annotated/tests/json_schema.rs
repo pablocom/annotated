@@ -240,7 +240,7 @@ fn required_on_a_list_or_a_map_asks_for_one_element() {
 }
 
 #[test]
-fn required_on_an_option_refuses_null_and_lists_the_field_as_required() {
+fn required_on_an_option_lists_the_field_as_required_and_leaves_null_allowed() {
     #[derive(Validate)]
     struct Member {
         #[validate(required)]
@@ -258,14 +258,14 @@ fn required_on_an_option_refuses_null_and_lists_the_field_as_required() {
         schema,
         json!({
             "type": "object",
-            "properties": { "nickname": { "type": "string" }, "age": { "type": "integer" } },
+            "properties": { "nickname": { "type": ["string", "null"] }, "age": { "type": "integer" } },
             "required": ["age", "nickname"]
         })
     );
 }
 
 #[test]
-fn required_on_an_option_refuses_null_among_alternatives() {
+fn required_on_an_option_leaves_null_among_its_alternatives() {
     #[derive(Validate)]
     struct Address {
         street: String,
@@ -289,8 +289,8 @@ fn required_on_an_option_refuses_null_among_alternatives() {
         json!({
             "type": "object",
             "properties": {
-                "address": { "$ref": "#/components/schemas/Address" },
-                "billing": { "$ref": "#/$defs/Address" }
+                "address": { "oneOf": [{ "type": "null" }, { "$ref": "#/components/schemas/Address" }] },
+                "billing": { "anyOf": [{ "$ref": "#/$defs/Address" }, { "type": "null" }] }
             },
             "required": ["address", "billing"]
         })
@@ -298,40 +298,64 @@ fn required_on_an_option_refuses_null_among_alternatives() {
 }
 
 #[test]
-fn the_alternative_left_once_null_is_refused_stays_one_when_it_would_replace_a_keyword() {
+fn required_on_an_option_with_a_default_lists_the_field_as_required() {
     #[derive(Validate)]
     struct Member {
         #[validate(required)]
+        #[serde(default)]
         nickname: Option<String>,
-        #[validate(required)]
-        pronouns: Option<String>,
     }
 
-    let schema = with_the_rules_of::<Member>(object_with(json!({
-        "nickname": {
-            "description": "What to call them",
-            "oneOf": [{ "type": "null" }, { "type": "string", "description": "A name" }]
-        },
-        "pronouns": {
-            "oneOf": [{ "type": "null" }, { "type": "string" }, { "type": "array" }]
-        }
-    })));
+    let schema = with_the_rules_of::<Member>(object_with(json!({ "nickname": { "type": ["string", "null"] } })));
 
     assert_eq!(
         schema,
         json!({
             "type": "object",
-            "properties": {
-                "nickname": {
-                    "description": "What to call them",
-                    "oneOf": [{ "type": "string", "description": "A name" }]
-                },
-                "pronouns": {
-                    "oneOf": [{ "type": "string" }, { "type": "array" }]
-                }
-            },
-            "required": ["nickname", "pronouns"]
+            "properties": { "nickname": { "type": ["string", "null"] } },
+            "required": ["nickname"]
         })
+    );
+}
+
+#[test]
+fn required_on_an_option_in_a_struct_with_a_default_lists_the_field_as_required() {
+    #[derive(Validate)]
+    #[serde(default)]
+    struct Member {
+        #[validate(required)]
+        nickname: Option<String>,
+    }
+
+    let schema = with_the_rules_of::<Member>(object_with(json!({ "nickname": { "type": ["string", "null"] } })));
+
+    assert_eq!(
+        schema,
+        json!({
+            "type": "object",
+            "properties": { "nickname": { "type": ["string", "null"] } },
+            "required": ["nickname"]
+        })
+    );
+}
+
+#[test]
+fn required_on_optional_elements_writes_nothing_since_an_element_is_always_present() {
+    #[derive(Validate)]
+    struct Review {
+        #[validate(each(required))]
+        reviewers: Vec<Option<String>>,
+    }
+
+    let schema = with_the_rules_of::<Review>(object_with(json!({
+        "reviewers": { "type": "array", "items": { "type": ["string", "null"] } }
+    })));
+
+    assert_eq!(
+        schema,
+        object_with(json!({
+            "reviewers": { "type": "array", "items": { "type": ["string", "null"] } }
+        }))
     );
 }
 
@@ -692,7 +716,7 @@ fn writing_the_rules_a_second_time_changes_nothing() {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string",
+                        "type": ["string", "null"],
                         "maxLength": 50,
                         "pattern": "^img-",
                         "allOf": [{ "pattern": r"\.png$" }]
@@ -704,7 +728,7 @@ fn writing_the_rules_a_second_time_changes_nothing() {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string",
+                        "type": ["string", "null"],
                         "maxLength": 50,
                         "pattern": "^img-",
                         "allOf": [{ "pattern": r"\.png$" }]
@@ -786,7 +810,7 @@ fn a_required_field_declared_in_a_member_of_all_of_is_listed_as_required_there()
                 { "$ref": "#/components/schemas/Audited" },
                 {
                     "type": "object",
-                    "properties": { "nickname": { "type": "string" } },
+                    "properties": { "nickname": { "type": ["string", "null"] } },
                     "required": ["nickname"]
                 }
             ]

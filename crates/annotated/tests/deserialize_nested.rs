@@ -149,16 +149,15 @@ struct Order {
 }
 
 #[test]
-fn an_optional_nested_struct_that_is_required_and_absent_breaks_the_required_rule() {
-    assert_eq!(issues_reading::<Order>("{}"), ["billingAddress: required"]);
+fn an_optional_nested_struct_that_is_required_and_absent_is_missing() {
+    assert_eq!(issues_reading::<Order>("{}"), ["billingAddress: missing"]);
 }
 
 #[test]
-fn an_optional_nested_struct_that_is_required_and_null_breaks_the_required_rule() {
-    assert_eq!(
-        issues_reading::<Order>(r#"{ "billingAddress": null }"#),
-        ["billingAddress: required"]
-    );
+fn an_optional_nested_struct_that_is_required_and_null_is_none() {
+    let order = deserialize::<Order>(r#"{ "billingAddress": null }"#).unwrap();
+
+    assert_eq!(order, Order { billing_address: None });
 }
 
 #[test]

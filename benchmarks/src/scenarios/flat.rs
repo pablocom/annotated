@@ -6,7 +6,7 @@
 //! | Field | Type | Rules |
 //! |---|---|---|
 //! | `username` | `String` | length 3 to 30 chars, pattern `^[a-z0-9_]+$` |
-//! | `fullName` | `Option<String>` | required (is `Some`), length at most 50 chars |
+//! | `fullName` | `Option<String>` | required (is `Some`; in annotated, its key is in the input), length at most 50 chars |
 //! | `email` | `String` | email |
 //! | `website` | `Option<String>` | url, when present |
 //! | `age` | `u8` | range 18 to 120 |
@@ -45,11 +45,12 @@ pub const ONE_FIELD_INVALID_BODY: &str = r#"{
 /// Every field breaks a rule, and `username` breaks two: too short and not matching its pattern.
 #[must_use]
 pub fn every_field_invalid_body() -> String {
+    let too_long_full_name = "a".repeat(51);
     let too_long_bio = "a".repeat(281);
     format!(
         r#"{{
     "username": "A!",
-    "fullName": null,
+    "fullName": "{too_long_full_name}",
     "email": "alex.morgan.example.com",
     "website": "example dot com",
     "age": 12,

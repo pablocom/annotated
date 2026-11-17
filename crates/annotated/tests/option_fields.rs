@@ -1,4 +1,5 @@
-//! Rules on `Option` fields: `required` checks the `Option`, every other rule the value inside.
+//! Rules on `Option` fields: every rule but `required` checks the value inside. `required` asks for the field's key,
+//! which only deserializing can tell, so it accepts every value that already exists.
 
 mod support;
 
@@ -27,13 +28,13 @@ fn profile() -> Profile {
 }
 
 #[test]
-fn required_on_an_option_is_broken_by_none() {
+fn required_on_an_option_accepts_none() {
     let profile = Profile {
         nickname: None,
         ..profile()
     };
 
-    assert_eq!(issues_of(&profile), ["nickname: required"]);
+    assert_eq!(profile.validate(), Ok(()));
 }
 
 #[test]
@@ -81,4 +82,34 @@ fn an_option_written_with_its_full_path_is_an_option_too() {
     };
 
     assert_eq!(issues_of(&profile), ["website: length"]);
+}
+
+#[derive(Validate)]
+struct Badge {
+    #[validate(required, length(min = 1))]
+    caption: Option<String>,
+}
+
+#[test]
+fn an_empty_string_in_a_required_option_passes_required_and_breaks_the_rule_beside_it() {
+    let badge = Badge {
+        caption: Some(String::new()),
+    };
+
+    assert_eq!(issues_of(&badge), ["caption: length"]);
+}
+
+#[derive(Validate)]
+enum Delivery {
+    Courier {
+        #[validate(required)]
+        tracking: Option<String>,
+    },
+}
+
+#[test]
+fn required_on_an_option_in_a_struct_variant_accepts_none() {
+    let delivery = Delivery::Courier { tracking: None };
+
+    assert_eq!(delivery.validate(), Ok(()));
 }

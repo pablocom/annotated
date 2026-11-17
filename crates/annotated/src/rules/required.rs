@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use crate::{Problem, Rule};
 
-/// The rule that a value is present: an `Option` is `Some`, a string is not empty and not only whitespace, and a
-/// collection is not empty.
+/// The rule that a value is present: a string is not empty and not only whitespace, and a collection is not empty.
 ///
-/// It checks anything that implements [`Required`]. On an `Option` field, `#[derive(Validate)]` applies it to the
-/// `Option` itself, while every other rule checks the value inside.
+/// It checks anything that implements [`Required`]. On an `Option` field, it asks for the field's key and accepts
+/// `null`: `#[derive(Deserialize)]` reports an absent key as [`Problem::Missing`], and an `Option` that exists passes,
+/// `None` included. Every other rule on the field checks the value inside.
 #[must_use]
 pub const fn required() -> Presence {
     Presence
@@ -59,7 +59,7 @@ impl Required for String {
 
 impl<T> Required for Option<T> {
     fn is_present(&self) -> bool {
-        self.is_some()
+        true
     }
 }
 
@@ -185,8 +185,8 @@ mod tests {
     }
 
     #[test]
-    fn none_is_missing_a_required_value() {
-        assert_eq!(required().check(&None::<String>), Err(Problem::Required));
+    fn none_passes_required_since_only_its_key_could_be_absent() {
+        assert_eq!(required().check(&None::<String>), Ok(()));
     }
 
     #[test]

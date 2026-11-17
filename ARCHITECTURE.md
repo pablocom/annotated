@@ -119,7 +119,10 @@ Each entry in `#[validate(...)]` is one rule. The derive turns the entry into a 
 
 ### Rules the derive handles itself
 
-- **`required`** means the value is present: an `Option` is `Some`, a string is not empty and not only whitespace, and a collection is not empty. It is an ordinary rule over the `Required` capability trait. The only special handling is that, on an `Option` field, it checks the `Option` itself and not the value inside.
+- **`required`** means the value is present: a string is not empty and not only whitespace, and a collection is not empty. It is an ordinary rule over the `Required` capability trait. On an `Option` field, it checks the `Option` itself and not the value inside, and it means that the field's key is in the input, with `null` accepted:
+  - Collecting deserialization reports an absent key as `Problem::Missing`, the problem of any other absent field, so absence has one code whatever the field's type. It does so even when serde would give the field a default, and the issue carries the rule's `message`.
+  - A value that already exists can't say whether its key was there, so every `Option` passes the rule itself, `None` included. `validate()` checks nothing for it, and neither does `each(required)` on optional elements, which are always present.
+  - Only a field read by its key has one to ask for. A skipped field, a flattened one and a tuple variant's element pass, as does an `Option` behind a type alias the derive can't see, whose absent key is `missing` already.
 - **Other rules on an `Option` field** check the value inside, and are skipped when the field is `None`. The derive recognizes an `Option` field by how its type is written: a path ending in `Option<T>`.
 - **`nested`** validates a field whose type implements `Validate`. The field's segment is added to the location, so issues inside it are reported at their full path.
 - **`each(...)`** applies its rules to every element of a collection, reported at the element's index, or to every value of a map, reported at its key. `each(nested)` validates every element as a struct.
@@ -233,7 +236,7 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 
 **A checking pass after the last field is read.** The pass goes through the fields in declaration order. It runs inside the visitor, where the slots are, so the struct is built straight from them.
 
-- A field that was absent from the input is `Problem::Missing` (code `missing`) at its name. An absent `Option` field is `None` instead, as with serde.
+- A field that was absent from the input is `Problem::Missing` (code `missing`) at its name. An absent `Option` field is `None` instead, as with serde, unless `required` asks for its key.
 - A field that was present runs its rules exactly as `Validate` does. The same expansion code generates them, reading the slot instead of `self`.
 - At a field's `nested` rule, the field's buffered issues are appended to `found`, and they count as a failure of the field.
 - When a nested field's value couldn't be built, its buffered issues are reported and its other rules are skipped, since they need the value.
@@ -275,13 +278,13 @@ The derive reads a field the way serde's derive reads it with the same attribute
 | The struct | `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` |
 | A field | `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow`, `flatten` |
 
-**Rules check every value the struct ends up with.** A value from `default`, a skipped field's value, and a value read by `deserialize_with` are checked by the field's rules like any other. So the report stays the one serde followed by `validate()` gives.
+**Rules check every value the struct ends up with.** A value from `default`, a skipped field's value, and a value read by `deserialize_with` are checked by the field's rules like any other. So the report stays the one serde followed by `validate()` gives, but for the absent key of an `Option` that `required` asks for, which serde reads as its default or `None`.
 
 - annotated doesn't read such a value itself, so it can't check a `nested` rule while reading it. It checks the value with `Validate::validate_into` at the field's location instead, after the last key. The field's type must implement `Validate`, and when it doesn't, the compile error points at the field's type.
 
 #### `default`
 
-- On a field, `#[serde(default)]` gives an absent field `Default::default()`, and `#[serde(default = "path")]` gives it `path()`. The field is never `Problem::Missing`.
+- On a field, `#[serde(default)]` gives an absent field `Default::default()`, and `#[serde(default = "path")]` gives it `path()`. The field is never `Problem::Missing`, unless it is an `Option` with `required`, which asks for its key whatever the default.
 - On the struct, `#[serde(default)]` gives each absent field its value in `Self::default()`, and `#[serde(default = "path")]` its value in `path()`. A field's own `default` comes first.
 - annotated makes a default only when a field is absent, so a complete input pays nothing for it.
 - Only an absent field takes its default. An `Option` field given as `null` is `None`, as with serde.
@@ -296,7 +299,7 @@ The derive reads a field the way serde's derive reads it with the same attribute
 
 - The field is read by `path(deserializer)`, or by `module::deserialize(deserializer)` for `with = "module"`. Its rules check the value the function returns.
 - Without `collect_type_errors`, the function's error ends deserialization, as with serde.
-- As with serde, the field is `Problem::Missing` when it is absent, even an `Option`, unless it has a default: only the function knows what an absent value would be.
+- As with serde, the field is `Problem::Missing` when it is absent, even an `Option`, unless it has a default: only the function knows what an absent value would be. The function reads the field's key like any other, so `required` on an `Option` asks for that key here too, default or not.
 - With `collect_type_errors`, the field is read into `Content` first, and the function reads it from there:
   - When the function fails because a value has the wrong type, is out of range or has the wrong length, through serde's `invalid_type`, `invalid_value` or `invalid_length`, the failure is a `Problem::InvalidType` at the field, as for any other field. None of these quote the input.
   - Any other error, such as one the function makes with `Error::custom`, ends deserialization as the format's error. Its message may repeat the input, so it never becomes an issue.
@@ -318,7 +321,7 @@ The derive reads a field the way serde's derive reads it with the same attribute
 - A flattened field has the struct's own location. Issues inside a flattened `Address` are at `street`, not at `address.street`, because that is where they are in the input. The `Validate` derive agrees: `nested` on a flattened field validates it at the struct's location.
   - A rule on the flattened value as a whole, such as `length` on a flattened map, reports at the struct's location. A rule under `each` reports at each key.
   - A flattened field's issues come at its place among the fields.
-- A flattened `Option<T>` is `None` when `T` can't be built from the buffer, as with serde, and the issues found trying are dropped. The derive recognizes the `Option` by how its type is written, like every `Option` it handles. A flattened `Option` hidden behind a type alias is read as `Some` of its value.
+- A flattened `Option<T>` is `None` when `T` can't be built from the buffer, as with serde, and the issues found trying are dropped. The derive recognizes the `Option` by how its type is written, like every `Option` it handles. A flattened `Option` hidden behind a type alias is read as `Some` of its value. It has no key of its own, so `required` on it checks nothing: a flattened `T` reports what is missing inside it.
 - With `collect_type_errors` on the struct, a flattened field without `nested` whose buffered keys don't fit its type is a `Problem::InvalidType` at the struct's location. A `nested` flattened field follows its own type's option.
 - As in serde, a struct with a flattened field is read with `deserialize_map`, so it can't be read from a sequence.
 - `flatten` together with `deny_unknown_fields` on the same struct is a compile error: a key meant for a flattened field can't be told from an unknown one while the struct reads its own keys.
@@ -463,9 +466,9 @@ The method needs no feature, so a crate of rules can implement it without turnin
 
 With the feature on, `Validate` and `Deserialize` each have a `rules()` function, and both derives implement it for a struct. It returns the type's `Rules`: one `FieldRules` for each field that has rules, in the order the fields are declared.
 
-- **`FieldRules`** holds the field's name, as serde reads it, whether the field takes a default when the input lacks it (`#[serde(default)]` on the field or on its struct), and the `ValueRules` of its value.
+- **`FieldRules`** holds the field's name, as serde reads it, whether the field takes a default when the input lacks it (`#[serde(default)]` on the field or on its struct, unless `required` asks for the key of an `Option`), and the `ValueRules` of its value.
 - **`ValueRules`** holds what the rules require of one value:
-  - Whether the value is an `Option`. `required` then asks for a `Some`, and every other rule checks the value inside.
+  - Whether the value is an `Option`. `required` then asks for the field's key and accepts `null`, and every other rule checks the value inside.
   - The problem of each rule that says one, in the order the rules are written.
   - The `ValueRules` of its elements, from `each(...)`. Several `each(...)` on a field are described together.
 
@@ -488,7 +491,7 @@ A type that implements `Validate` or `Deserialize` by hand answers no fields, un
 
 | Problem | Written on | Keywords |
 |---|---|---|
-| `Required` | an `Option` | `null` is removed from `type`, and from `oneOf` or `anyOf`. An alternative left alone there is written in their place |
+| `Required` | an `Option` | None, so `null` stays allowed. The field takes no default, so its name is added to the object's `required` |
 | | a string, an array, an object | `minLength: 1`, `minItems: 1`, `minProperties: 1` |
 | | a field without a default | Its name is added to the object's `required` |
 | `Length` in chars | a string | `minLength`, `maxLength` |

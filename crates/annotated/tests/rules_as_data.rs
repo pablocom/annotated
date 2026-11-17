@@ -187,7 +187,7 @@ fn a_rule_of_your_own_is_described_by_the_problem_it_says() {
 }
 
 #[test]
-fn on_an_optional_field_required_asks_for_the_option_and_other_rules_look_inside() {
+fn on_an_optional_field_required_asks_for_its_key_and_other_rules_look_inside() {
     #[derive(Validate)]
     struct Profile {
         #[validate(required, length(max = 3))]
@@ -315,6 +315,24 @@ fn every_field_of_a_struct_with_a_default_is_described_as_having_one() {
         Rules::of_fields([
             FieldRules::new("full_name", ValueRules::new().with_problem(Problem::Required)).with_default()
         ])
+    );
+}
+
+#[test]
+fn a_required_option_with_a_default_is_described_without_one_since_its_key_is_required() {
+    #[derive(Validate)]
+    struct Member {
+        #[validate(required)]
+        #[serde(default)]
+        nickname: Option<String>,
+    }
+
+    assert_eq!(
+        Member::rules(),
+        Rules::of_fields([FieldRules::new(
+            "nickname",
+            ValueRules::optional().with_problem(Problem::Required)
+        )])
     );
 }
 
