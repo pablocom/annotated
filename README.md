@@ -150,6 +150,11 @@ A value of the wrong type, like `"age": "twelve"`, ends deserialization with the
 | `unicode` | `length(unit = "graphemes")` |
 | `json-schema` | `annotated::json_schema`, which writes a struct's rules into its JSON Schema, built on `serde_json` |
 
+## Generic types and re-exports
+
+- **Generic types.** As serde's derive does, both derives bound each type parameter a field reads or checks: by `annotated::Validate` for the values `nested` checks, by `annotated::Deserialize<'de>` for those it reads, and by serde's `Deserialize<'de>` for the rest. When a bound asks more than a type needs, give `Deserialize`'s bounds with `#[serde(bound = "...")]`, as with serde.
+- **Re-exports.** A crate that re-exports annotated, so that its users don't depend on it, puts `#[annotated(crate = "my_api::checks")]` on each type deriving through it. `#[serde(crate = "...")]` names another path to serde, as with serde's derive.
+
 ## Web frameworks
 
 [annotated-axum](crates/annotated-axum) is an axum extractor, `ValidJson<T>`. It answers the issues in a body, up to 1,000, with 422 and RFC 9457 problem details, which list each issue's JSON Pointer, code, params and message. Its rejection holds the issues as data, for an app that answers them with a response of its own.
