@@ -506,7 +506,8 @@ pub use annotated_derive::Validate;
 /// - With `tag` and `content`, the content is read straight from the input when the tag comes first, and buffered
 ///   when it comes after, as with serde. A missing tag, or one that names no variant, is reported at the tag's name as
 ///   with `tag` alone. Missing content is [`Problem::Missing`] at the content's name, unless the variant needs none: a
-///   unit variant, or a newtype variant whose value is an `Option`, which is then `None`.
+///   unit variant, or a newtype variant whose value is an `Option`, which is then `None`. A sequence needs its content
+///   whatever the variant, as with serde.
 /// - With `untagged`, the value is buffered, as serde does, and the variants are tried in order. The value is the
 ///   first variant that can be built, with every field present and of the right type. Its broken rules are reported,
 ///   and the issues found trying the others are dropped. A value no variant fits is a [`Problem::InvalidType`] at the

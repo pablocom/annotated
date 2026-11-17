@@ -1128,6 +1128,11 @@ fn a_sequence_without_content_is_missing_it_at_the_content_s_name() {
 }
 
 #[test]
+fn a_sequence_without_content_is_missing_it_even_for_a_variant_that_needs_none() {
+    assert_eq!(issues_reading::<Event>(r#"["loggedOut"]"#), ["data: missing"]);
+}
+
+#[test]
 fn without_collect_type_errors_content_of_the_wrong_type_is_the_format_s_error() {
     assert_eq!(
         issues_reading::<Event>(r#"{ "type": "renamed", "data": 12 }"#),

@@ -1061,7 +1061,7 @@ impl EnumExpansion<'_> {
                     ::core::option::Option::Some(content) => {
                         self.buffered_content_read(#variant, _annotated::__private::Buffered::read_as_the_format(content))
                     }
-                    ::core::option::Option::None => self.missing_content(#variant),
+                    ::core::option::Option::None => self.content_missing(),
                 }
             }
         } else {
@@ -1069,7 +1069,7 @@ impl EnumExpansion<'_> {
             quote! {
                 match #serde::de::SeqAccess::next_element_seed(&mut #seq, #variant_seed)? {
                     ::core::option::Option::Some(read) => ::core::result::Result::Ok(read),
-                    ::core::option::Option::None => self.missing_content(#variant),
+                    ::core::option::Option::None => self.content_missing(),
                 }
             }
         };
@@ -1224,19 +1224,7 @@ impl EnumExpansion<'_> {
                 ),
             }
         });
-        let missing = (!variants_needing_content.is_empty()).then(|| {
-            quote! {
-                _ => {
-                    _annotated::__private::record_issue(
-                        self.#found,
-                        &self.#at.field(#content),
-                        _annotated::Problem::Missing,
-                        ::core::option::Option::None,
-                    );
-                    ::core::result::Result::Ok(::core::option::Option::None)
-                }
-            }
-        });
+        let missing = (!variants_needing_content.is_empty()).then(|| quote!(_ => self.content_missing(),));
         quote! {
             fn missing_content<__E: _serde::de::Error>(
                 self,
@@ -1246,6 +1234,18 @@ impl EnumExpansion<'_> {
                     #read_without_content
                     #missing
                 }
+            }
+
+            fn content_missing<__E: _serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<::core::option::Option<#name #type_generics>, __E> {
+                _annotated::__private::record_issue(
+                    self.#found,
+                    &self.#at.field(#content),
+                    _annotated::Problem::Missing,
+                    ::core::option::Option::None,
+                );
+                ::core::result::Result::Ok(::core::option::Option::None)
             }
         }
     }

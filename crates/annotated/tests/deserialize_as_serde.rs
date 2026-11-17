@@ -706,10 +706,6 @@ mod an_adjacently_tagged_enum {
         "null",
     ];
 
-    /// annotated reads a unit variant from a sequence of its tag alone, which serde takes for a sequence of the wrong
-    /// length.
-    const CONTENT_MISSING_FROM_A_SEQUENCE: &[KnownDifference] = &[in_both_formats(r#"["Cash"]"#)];
-
     /// MessagePack reads a unit struct from an empty sequence, which annotated's buffer doesn't.
     const UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER: &[KnownDifference] =
         &[in_message_pack(r#"{"type": "Marked", "data": []}"#)];
@@ -719,7 +715,7 @@ mod an_adjacently_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, by_annotated::Payment>(
             "an adjacently tagged enum",
             BODIES,
-            &[CONTENT_MISSING_FROM_A_SEQUENCE],
+            &[],
         );
     }
 
@@ -728,10 +724,7 @@ mod an_adjacently_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_at_the_root::Payment>(
             "an adjacently tagged enum collecting type errors",
             BODIES,
-            &[
-                CONTENT_MISSING_FROM_A_SEQUENCE,
-                UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
-            ],
+            &[UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER],
         );
     }
 
@@ -740,10 +733,7 @@ mod an_adjacently_tagged_enum {
         assert_each_body_reads_as_serde_reads_it::<by_serde::Payment, collecting_throughout::Payment>(
             "an adjacently tagged enum collecting type errors throughout",
             BODIES,
-            &[
-                CONTENT_MISSING_FROM_A_SEQUENCE,
-                UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER,
-            ],
+            &[UNIT_STRUCTS_AS_EMPTY_SEQUENCES_IN_THE_BUFFER],
         );
     }
 }
