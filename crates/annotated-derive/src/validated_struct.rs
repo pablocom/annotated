@@ -9,7 +9,7 @@ use syn::{
 };
 
 use crate::pattern;
-use crate::serde_names::{SerdeField, SerdeStruct};
+use crate::serde_names::{SerdeField, SerdeStruct, UnreadableAttribute};
 use crate::written_rule::{
     NamedArgument, RuleCall, StructCustom, StructRule, WrittenRule, written_rules, written_struct_rules,
 };
@@ -79,7 +79,7 @@ pub struct RuleCheck {
 }
 
 impl<'a> ValidatedStruct<'a> {
-    pub fn from_input(input: &'a DeriveInput, refusal: &str) -> syn::Result<Self> {
+    pub fn from_input(input: &'a DeriveInput, refusal: &str, unreadable: UnreadableAttribute) -> syn::Result<Self> {
         let Data::Struct(DataStruct {
             fields: Fields::Named(fields),
             ..
@@ -87,7 +87,7 @@ impl<'a> ValidatedStruct<'a> {
         else {
             return Err(Error::new_spanned(&input.ident, refusal));
         };
-        let serde_struct = SerdeStruct::from_input(input)?;
+        let serde_struct = SerdeStruct::from_input(input, unreadable)?;
         let is_transparent = serde_struct.is_transparent;
         let fields = fields
             .named

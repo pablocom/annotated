@@ -1,6 +1,6 @@
 use syn::{DataEnum, DeriveInput, Error, Fields, Ident, Variant};
 
-use crate::serde_names::{SerdeEnum, SerdeField, Tag};
+use crate::serde_names::{SerdeEnum, SerdeField, Tag, UnreadableAttribute};
 use crate::validated_struct::{Place, StructCheck, ValidatedField, ValidatedStruct};
 use crate::written_rule::{StructRule, written_enum_rules, written_variant_rules};
 
@@ -18,8 +18,12 @@ pub struct ValidatedVariant<'a> {
 }
 
 impl<'a> ValidatedEnum<'a> {
-    pub fn from_input(input: &'a DeriveInput, data: &'a DataEnum) -> syn::Result<Self> {
-        let serde_enum = SerdeEnum::from_input(input)?;
+    pub fn from_input(
+        input: &'a DeriveInput,
+        data: &'a DataEnum,
+        unreadable: UnreadableAttribute,
+    ) -> syn::Result<Self> {
+        let serde_enum = SerdeEnum::from_input(input, unreadable)?;
         let enum_rules = written_enum_rules(&input.attrs)?;
         let is_reporting_all = enum_rules.iter().any(|rule| matches!(rule, StructRule::ReportAll));
         let variants = data

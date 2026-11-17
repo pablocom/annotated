@@ -32,6 +32,9 @@ Use these words, with these meanings, in code, docs and conversation.
 
 Both report a field under the name serde reads it by. To find that name, the derives read `#[serde(...)]` attributes with `serde_derive_internals`, which publishes the code serde's own derive reads them with.
 
+- `#[derive(Deserialize)]` reads the input as serde would, so an attribute `serde_derive_internals` refuses is a compile error, with its message.
+- `#[derive(Validate)]` needs the names only, and serde's own derive, when the type has it, reports an attribute it refuses. So `Validate` leaves such an attribute out, one added by a later serde say, and reads the others: since `serde_derive_internals` stops reading a `#[serde(...)]` at its first error, they are read again one by one then. A type whose attributes all read pays nothing for it.
+
 ## Issues, problems and paths
 
 ```text

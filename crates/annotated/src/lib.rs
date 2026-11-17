@@ -139,7 +139,9 @@ pub use validate::Validate;
 ///   `HashMap<K, V>` with `each(nested)` bounds `V` alone. A type parameter used only in the type deriving, as in a
 ///   recursive `children: Vec<Tree<T>>`, is bounded by nothing.
 /// - A field is reported under the name serde reads it by, from `#[serde(...)]` attributes such as `rename_all` and
-///   `rename`. The struct doesn't need to derive serde's traits.
+///   `rename`. The struct doesn't need to derive serde's traits. A serde attribute the derive can't read, such as one a
+///   later serde added, is left out without an error, and the others are read: serde's own derive reports it, when
+///   the type has it.
 /// - A field with `#[serde(flatten)]` is reported at the struct's own location, since its keys sit in the struct's
 ///   map: issues inside a flattened `address` are at `street`, not `address.street`.
 /// - The field of a struct with `#[serde(transparent)]` is reported at the struct's own location, since serde reads

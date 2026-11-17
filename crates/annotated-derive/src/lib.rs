@@ -33,6 +33,7 @@ use syn::{Data, DeriveInput, Error, parse_macro_input};
 
 use deserialized_enum::DeserializedEnum;
 use deserialized_struct::DeserializedStruct;
+use serde_names::UnreadableAttribute;
 use validated_enum::ValidatedEnum;
 use validated_struct::ValidatedStruct;
 
@@ -46,12 +47,12 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
 fn validate_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let input = receiver::without_self(input)?;
     match &input.data {
-        Data::Enum(data) => {
-            ValidatedEnum::from_input(&input, data).map(|validated_enum| expansion::validate_enum_impl(&validated_enum))
-        }
+        Data::Enum(data) => ValidatedEnum::from_input(&input, data, UnreadableAttribute::IsLeftOut)
+            .map(|validated_enum| expansion::validate_enum_impl(&validated_enum)),
         Data::Struct(_) | Data::Union(_) => ValidatedStruct::from_input(
             &input,
             "`Validate` can only be derived for a struct with named fields or an enum",
+            UnreadableAttribute::IsLeftOut,
         )
         .map(|validated_struct| expansion::validate_impl(&validated_struct)),
     }

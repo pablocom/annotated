@@ -90,6 +90,27 @@ fn a_field_with_an_alias_is_reported_by_its_name() {
 }
 
 #[derive(Validate)]
+#[serde(an_attribute_of_a_later_serde, rename_all = "camelCase")]
+struct Newsletter {
+    #[serde(rename_all_in_a_later_serde, rename = "e-mail")]
+    #[validate(required)]
+    email: String,
+    #[serde(rename = 7)]
+    #[validate(required)]
+    sent_to_list: String,
+}
+
+#[test]
+fn a_serde_attribute_validate_can_t_read_is_left_out_and_those_beside_it_are_read() {
+    let newsletter = Newsletter {
+        email: String::new(),
+        sent_to_list: String::new(),
+    };
+
+    assert_eq!(issues_of(&newsletter), ["e-mail: required", "sentToList: required"]);
+}
+
+#[derive(Validate)]
 #[serde(transparent)]
 struct EmailAddress {
     #[validate(required)]

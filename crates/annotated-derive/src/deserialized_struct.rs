@@ -1,7 +1,7 @@
 use syn::punctuated::Punctuated;
 use syn::{Attribute, DeriveInput, Error, ExprPath, Ident, Meta, Token};
 
-use crate::serde_names::SerdeStruct;
+use crate::serde_names::{SerdeStruct, UnreadableAttribute};
 use crate::validated_struct::{FieldRule, ValidatedField, ValidatedStruct, nested_rules_in};
 
 pub struct DeserializedStruct<'a> {
@@ -44,11 +44,12 @@ impl<'a> DeserializedStruct<'a> {
         let validated = ValidatedStruct::from_input(
             input,
             "`Deserialize` can only be derived for a struct with named fields or an enum",
+            UnreadableAttribute::IsAnError,
         )?;
         let collects_type_errors = collects_type_errors(&input.attrs)?;
         refuse_serde_attributes_other_than(&ON_A_STRUCT, &input.attrs)?;
         refuse_what_fields_can_t_take(&validated.fields, "struct")?;
-        let serde = SerdeStruct::from_input(input)?;
+        let serde = SerdeStruct::from_input(input, UnreadableAttribute::IsAnError)?;
         if serde.is_denying_unknown_fields {
             refuse_flatten(&validated.fields, "a struct")?;
         }

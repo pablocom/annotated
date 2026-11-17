@@ -1,7 +1,8 @@
 use proc_macro2::Span;
 use serde_derive_internals::ast::{self, Container, Data};
 use serde_derive_internals::{Ctxt, Derive, attr};
-use syn::{DeriveInput, ExprPath, Ident, Lifetime, WherePredicate, parse_quote};
+use syn::punctuated::Punctuated;
+use syn::{Attribute, DeriveInput, ExprPath, Ident, Lifetime, Meta, Token, WherePredicate, parse_quote};
 
 pub struct SerdeStruct {
     pub name: String,
@@ -58,18 +59,82 @@ pub enum DefaultValue {
     ReturnedBy(ExprPath),
 }
 
-fn read<T>(input: &DeriveInput, reading: impl FnOnce(&Container) -> T) -> syn::Result<T> {
+// What reading serde's attributes does with one that serde's own derive would refuse, because `serde_derive_internals`
+// doesn't know it, as one added by a later serde, or because it is malformed.
+#[derive(Clone, Copy)]
+pub enum UnreadableAttribute {
+    // `Deserialize` reads the input as serde would, so it can't go on without the attribute.
+    IsAnError,
+    // `Validate` needs serde's names only, and serde's own derive, when the type has it, reports the attribute.
+    // `serde_derive_internals` stops reading a `#[serde(...)]` at its first error, so the attributes are then read
+    // again one by one, so that the one it can't read takes no other with it.
+    IsLeftOut,
+}
+
+fn read<T>(input: &DeriveInput, unreadable: UnreadableAttribute, reading: fn(&Container) -> T) -> syn::Result<T> {
     let context = Ctxt::new();
+    let read = read_with(&context, input, reading);
+    match (context.check(), unreadable) {
+        (Ok(()), _) => Ok(read),
+        (Err(error), UnreadableAttribute::IsAnError) => Err(error),
+        (Err(_), UnreadableAttribute::IsLeftOut) => {
+            let context = Ctxt::new();
+            let read = read_with(&context, &with_serde_attributes_one_by_one(input), reading);
+            drop(context.check());
+            Ok(read)
+        }
+    }
+}
+
+fn read_with<T>(context: &Ctxt, input: &DeriveInput, reading: fn(&Container) -> T) -> T {
     let serde_private_module = Ident::new("__private", Span::call_site());
-    let read = Container::from_ast(&context, input, Derive::Deserialize, &serde_private_module)
-        .map(|container| reading(&container));
-    context.check()?;
-    Ok(read.expect("serde reads any item it finds no error in"))
+    let container = Container::from_ast(context, input, Derive::Deserialize, &serde_private_module)
+        .expect("serde reads a struct or an enum, whatever its attributes");
+    reading(&container)
+}
+
+fn with_serde_attributes_one_by_one(input: &DeriveInput) -> DeriveInput {
+    let mut input = input.clone();
+    one_by_one(&mut input.attrs);
+    match &mut input.data {
+        syn::Data::Struct(data) => data.fields.iter_mut().for_each(|field| one_by_one(&mut field.attrs)),
+        syn::Data::Enum(data) => {
+            for variant in &mut data.variants {
+                one_by_one(&mut variant.attrs);
+                variant.fields.iter_mut().for_each(|field| one_by_one(&mut field.attrs));
+            }
+        }
+        syn::Data::Union(_) => {}
+    }
+    input
+}
+
+// An attribute that doesn't parse as a list of serde's attributes is left out whole.
+fn one_by_one(attributes: &mut Vec<Attribute>) {
+    *attributes = attributes
+        .drain(..)
+        .flat_map(|attribute| {
+            if !attribute.path().is_ident("serde") {
+                return vec![attribute];
+            }
+            attribute
+                .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+                .map_or_else(
+                    |_| Vec::new(),
+                    |serde_attributes| {
+                        serde_attributes
+                            .into_iter()
+                            .map(|serde_attribute| parse_quote!(#[serde(#serde_attribute)]))
+                            .collect()
+                    },
+                )
+        })
+        .collect();
 }
 
 impl SerdeStruct {
-    pub fn from_input(input: &DeriveInput) -> syn::Result<Self> {
-        read(input, Self::from_container)
+    pub fn from_input(input: &DeriveInput, unreadable: UnreadableAttribute) -> syn::Result<Self> {
+        read(input, unreadable, Self::from_container)
     }
 
     fn from_container(container: &Container) -> Self {
@@ -92,8 +157,8 @@ impl SerdeStruct {
 }
 
 impl SerdeEnum {
-    pub fn from_input(input: &DeriveInput) -> syn::Result<Self> {
-        read(input, Self::from_container)
+    pub fn from_input(input: &DeriveInput, unreadable: UnreadableAttribute) -> syn::Result<Self> {
+        read(input, unreadable, Self::from_container)
     }
 
     fn from_container(container: &Container) -> Self {
