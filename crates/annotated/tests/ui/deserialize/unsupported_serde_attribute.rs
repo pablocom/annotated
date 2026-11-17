@@ -8,27 +8,9 @@ struct NewMember {
 }
 
 #[derive(Deserialize)]
-struct NewTeam {
-    #[serde(alias = "title", bound = "")]
+#[serde(try_from = "String")]
+struct Handle {
     name: String,
-}
-
-#[derive(Deserialize)]
-#[serde(bound(serialize = "T: Clone", deserialize = "T: Clone"))]
-struct Page<T> {
-    items: Vec<T>,
-}
-
-#[derive(Deserialize)]
-#[serde(bound = "T: Clone")]
-struct Shelf<T> {
-    items: Vec<T>,
-}
-
-#[derive(Deserialize)]
-struct Invoice {
-    #[serde(skip_serializing, bound(deserialize = ""))]
-    total: u32,
 }
 
 #[derive(Deserialize)]

@@ -680,6 +680,25 @@ fn the_issues_a_collection_reports_out_of_the_order_of_its_elements_are_still_re
 }
 
 #[derive(Deserialize, Debug)]
+struct Tree<T> {
+    #[allow(dead_code)]
+    value: T,
+    #[validate(length(max = 1), each(nested))]
+    #[allow(dead_code)]
+    children: Vec<Tree<T>>,
+}
+
+#[test]
+fn a_recursive_generic_struct_is_read_whatever_its_type_parameter() {
+    let body = r#"{
+        "value": 0,
+        "children": [{ "value": 1, "children": [{ "value": 2, "children": [] }, { "value": 3, "children": [] }] }]
+    }"#;
+
+    assert_eq!(issues_reading::<Tree<u8>>(body), ["children[0].children: length"]);
+}
+
+#[derive(Deserialize, Debug)]
 #[validate(custom(Self::has_no_friend_of_the_same_age))]
 struct Mentee {
     #[validate(range(max = Self::OLDEST))]

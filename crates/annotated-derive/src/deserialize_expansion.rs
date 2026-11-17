@@ -1,9 +1,10 @@
-use proc_macro2::{Literal, Span, TokenStream, TokenTree};
+use proc_macro2::{Literal, Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 use syn::{DeriveInput, GenericParam, Generics, Ident, Lifetime, LifetimeParam, Type, WherePredicate, parse_quote};
 
+use crate::bounds::{Bounds, Used};
 use crate::described_rules::rules_function;
 use crate::deserialized_struct::{DeserializedStruct, Form};
 use crate::expansion::{Expansion, message_override, validity_of};
@@ -159,7 +160,9 @@ impl<'a> DeserializeExpansion<'a> {
         let name = &input.ident;
         let (_, type_generics, _) = input.generics.split_for_impl();
         let wrapper_generics = self.with_the_de_lifetime(&input.generics);
-        let (wrapper_impl_generics, wrapper_type_generics, where_clause) = wrapper_generics.split_for_impl();
+        let (wrapper_definition_generics, wrapper_type_generics, where_clause) = wrapper_generics.split_for_impl();
+        let generics_reading_fields = self.generics_reading_fields();
+        let (impl_generics, _, reading_where_clause) = generics_reading_fields.split_for_impl();
         self.read_fields()
             .filter_map(|field| {
                 let function = self.serde_field_of(field).deserialize_with.as_ref()?;
@@ -167,13 +170,13 @@ impl<'a> DeserializeExpansion<'a> {
                 let field_type = field.field_type;
                 let read_by_the_function = quote_at!(function.span()=> #function(#deserializer)?);
                 Some(quote! {
-                    struct #wrapper #wrapper_impl_generics #where_clause {
+                    struct #wrapper #wrapper_definition_generics #where_clause {
                         value: #field_type,
                         marker: ::core::marker::PhantomData<fn() -> (#name #type_generics, &'de ())>,
                     }
 
-                    impl #wrapper_impl_generics #serde::Deserialize<'de> for #wrapper #wrapper_type_generics
-                    #where_clause
+                    impl #impl_generics #serde::Deserialize<'de> for #wrapper #wrapper_type_generics
+                    #reading_where_clause
                     {
                         fn deserialize<__D: #serde::Deserializer<'de>>(
                             #deserializer: __D,
@@ -213,79 +216,89 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn generics_reading_fields(&self) -> Generics {
-        let mut generics = self.with_the_de_lifetime(&self.generics_checking_fields());
-        generics.make_where_clause().predicates.extend(self.reading_bounds());
-        generics
-    }
-
-    pub fn reading_bounds(&self) -> Vec<WherePredicate> {
-        let parameters = type_and_const_parameters(&self.input().generics);
-        self.fields()
-            .iter()
-            .filter_map(|field| self.reading_bound_of(field, &parameters))
-            .collect()
-    }
-
-    fn generics_checking_fields(&self) -> Generics {
-        let checking_bounds = self.checking_bounds();
-        let mut generics = self.input().generics.clone();
-        if !checking_bounds.is_empty() {
-            generics.make_where_clause().predicates.extend(checking_bounds);
+        let mut generics = self.with_the_de_lifetime(&self.input().generics);
+        let bounds = self.bounds();
+        if !bounds.is_empty() {
+            generics.make_where_clause().predicates.extend(bounds);
         }
         generics
     }
 
-    pub fn checking_bounds(&self) -> Vec<WherePredicate> {
-        let input = self.input();
-        let parameters = type_and_const_parameters(&input.generics);
-        let mut checking_bounds: Vec<_> = self
-            .fields()
+    // As serde's derive decides them: those `#[serde(bound = "...")]` gives, and for every field whose bounds aren't
+    // given, the bounds of the type parameters it uses. A bound on the struct, or the enum, gives every bound.
+    pub fn bounds(&self) -> Vec<WherePredicate> {
+        let serde = &self.deserialized_struct.serde;
+        let given = serde
+            .bound
             .iter()
-            .flat_map(|field| self.checking_bounds_of(field, &parameters))
-            .collect();
-        let is_default_of_its_type = matches!(self.deserialized_struct.serde.default, Some(DefaultValue::OfItsType));
-        if is_default_of_its_type && !parameters.is_empty() {
+            .chain(&serde.variant_bound)
+            .chain(serde.fields.iter().filter_map(|field| field.bound.as_ref()))
+            .flatten()
+            .cloned();
+        if serde.bound.is_some() {
+            return given.collect();
+        }
+        let input = self.input();
+        let mut checking = Bounds::implemented_elsewhere(&input.generics);
+        let mut reading = Bounds::implemented_here(&input.generics, &input.ident);
+        for field in self.fields() {
+            self.add_bounds_of(field, &mut checking, &mut reading);
+        }
+        let mut bounds: Vec<_> = given.collect();
+        bounds.extend(checking.into_predicates());
+        bounds.extend(reading.into_predicates());
+        let is_default_of_its_type = matches!(serde.default, Some(DefaultValue::OfItsType));
+        let has_parameters =
+            input.generics.type_params().next().is_some() || input.generics.const_params().next().is_some();
+        if is_default_of_its_type && has_parameters {
             let name = &input.ident;
             let (_, type_generics, _) = input.generics.split_for_impl();
-            checking_bounds.push(parse_quote!(#name #type_generics: ::core::default::Default));
-        }
-        checking_bounds
-    }
-
-    fn reading_bound_of(&self, field: &ValidatedField, parameters: &[&Ident]) -> Option<WherePredicate> {
-        let serde = &self.serde;
-        let field_type = field.field_type;
-        let is_read_by_serde = !self.is_skipped(field) && !self.is_read_by_a_function(field);
-        if !is_read_by_serde || !mentions_any(field_type.to_token_stream(), parameters) {
-            return None;
-        }
-        if field.has_nested_values() {
-            return Some(parse_quote!(#field_type: ::annotated::Deserialize<'de>));
-        }
-        Some(parse_quote!(#field_type: #serde::Deserialize<'de>))
-    }
-
-    fn checking_bounds_of(&self, field: &ValidatedField, parameters: &[&Ident]) -> Vec<WherePredicate> {
-        let (takes_a_default, is_its_type_s_default) = match self.when_absent(field) {
-            WhenAbsent::TakesDefault(default) => (true, matches!(default, DefaultValue::OfItsType)),
-            WhenAbsent::TakesStructDefault => (true, false),
-            WhenAbsent::IsMissing | WhenAbsent::IsNone | WhenAbsent::IsNeverAbsent => (false, false),
-        };
-        if !takes_a_default && self.reads_nested_values(field) {
-            return Vec::new();
-        }
-        let mut bounds = Vec::new();
-        let field_type = field.field_type;
-        if is_its_type_s_default && mentions_any(field_type.to_token_stream(), parameters) {
-            bounds.push(parse_quote!(#field_type: ::core::default::Default));
-        }
-        let validated_type = field
-            .nested_value_type()
-            .filter(|nested_type| mentions_any(nested_type.to_token_stream(), parameters));
-        if let Some(validated_type) = validated_type {
-            bounds.push(parse_quote!(#validated_type: ::annotated::Validate));
+            bounds.push(parse_quote!(#name #type_generics: ::core::default::Default));
         }
         bounds
+    }
+
+    // A field is bounded by `Default` when it takes its type's, as serde's own bounds it even with a bound given. It is
+    // bounded by `Validate` when its nested values are validated, and by the `Deserialize` it is read through, serde's
+    // or, for its nested values, annotated's.
+    fn add_bounds_of(&self, field: &ValidatedField, checking: &mut Bounds, reading: &mut Bounds) {
+        let serde = &self.serde;
+        let field_type = field.field_type;
+        let takes_a_default = match self.when_absent(field) {
+            WhenAbsent::TakesDefault(DefaultValue::OfItsType) => {
+                checking.add(&Used::whole(field_type), &quote!(::core::default::Default));
+                true
+            }
+            WhenAbsent::TakesDefault(_) | WhenAbsent::TakesStructDefault => true,
+            WhenAbsent::IsMissing | WhenAbsent::IsNone | WhenAbsent::IsNeverAbsent => false,
+        };
+        let has_its_bounds_given =
+            self.serde_field_of(field).bound.is_some() || self.deserialized_struct.serde.variant_bound.is_some();
+        if has_its_bounds_given || !field.has_nested_values() && !self.is_read_by_serde(field) {
+            return;
+        }
+        let nested_values = field.nested_value_type().unwrap_or(field_type);
+        let are_nested_values_validated = takes_a_default || !self.reads_nested_values(field);
+        if field.has_nested_values() && are_nested_values_validated {
+            checking.add(&Used::whole(nested_values), &quote!(::annotated::Validate));
+        }
+        if !self.is_read_by_serde(field) {
+            return;
+        }
+        if !self.reads_nested_values(field) {
+            reading.add(&Used::whole(field_type), &quote!(#serde::Deserialize<'de>));
+            return;
+        }
+        reading.add(&Used::whole(nested_values), &quote!(::annotated::Deserialize<'de>));
+        let around_the_nested_values = Used {
+            value_type: field_type,
+            apart: Some(nested_values),
+        };
+        reading.add(&around_the_nested_values, &quote!(#serde::Deserialize<'de>));
+    }
+
+    fn is_read_by_serde(&self, field: &ValidatedField) -> bool {
+        !self.is_skipped(field) && !self.is_read_by_a_function(field)
     }
 
     pub fn field_identifier(&self) -> TokenStream {
@@ -406,8 +419,6 @@ impl<'a> DeserializeExpansion<'a> {
         let visitor_generics = with_lifetime(&input.generics, visitor_lifetime);
         let (visitor_definition_generics, visitor_type_generics, visitor_where_clause) =
             visitor_generics.split_for_impl();
-        let generics_checking_fields = with_lifetime(&self.generics_checking_fields(), visitor_lifetime);
-        let (checking_impl_generics, _, checking_where_clause) = generics_checking_fields.split_for_impl();
         let generics_reading_fields = with_lifetime(&self.generics_reading_fields(), visitor_lifetime);
         let (impl_generics, _, where_clause) = generics_reading_fields.split_for_impl();
         let expecting = self
@@ -461,7 +472,7 @@ impl<'a> DeserializeExpansion<'a> {
 
             #reading
 
-            impl #checking_impl_generics __Visitor #visitor_type_generics #checking_where_clause {
+            impl #impl_generics __Visitor #visitor_type_generics #where_clause {
                 #checked_value
             }
         }
@@ -1529,24 +1540,4 @@ pub fn with_lifetime(generics: &Generics, lifetime: &Lifetime) -> Generics {
         .params
         .insert(position, GenericParam::Lifetime(LifetimeParam::new(lifetime.clone())));
     generics
-}
-
-fn type_and_const_parameters(generics: &Generics) -> Vec<&Ident> {
-    generics
-        .params
-        .iter()
-        .filter_map(|parameter| match parameter {
-            GenericParam::Type(type_parameter) => Some(&type_parameter.ident),
-            GenericParam::Const(const_parameter) => Some(&const_parameter.ident),
-            GenericParam::Lifetime(_) => None,
-        })
-        .collect()
-}
-
-fn mentions_any(tokens: TokenStream, parameters: &[&Ident]) -> bool {
-    tokens.into_iter().any(|token| match token {
-        TokenTree::Ident(ident) => parameters.iter().any(|parameter| ident == **parameter),
-        TokenTree::Group(group) => mentions_any(group.stream(), parameters),
-        TokenTree::Punct(_) | TokenTree::Literal(_) => false,
-    })
 }

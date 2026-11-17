@@ -3,6 +3,7 @@ use quote::{ToTokens, format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{ExprPath, Generics, Ident, Lifetime, parse_quote};
 
+use crate::bounds::add_once;
 use crate::deserialize_expansion::{DeserializeExpansion, with_lifetime, without_lifetime_parameters};
 use crate::deserialized_enum::{DeserializedEnum, DeserializedVariant};
 use crate::deserialized_struct::Form;
@@ -105,21 +106,19 @@ impl<'a> EnumExpansion<'a> {
         }
     }
 
-    // The bounds of the fields of every variant read, as each variant's own reading needs them.
+    // The bounds of the fields of every variant read, as each variant's own reading needs them, and those the enum's
+    // `#[serde(bound = "...")]` gives.
     fn generics_reading_variants(&self) -> Generics {
-        let mut checking_generics = self.deserialized_enum.input.generics.clone();
-        let checking_bounds: Vec<_> = self
-            .contents_read()
-            .flat_map(DeserializeExpansion::checking_bounds)
-            .collect();
-        if !checking_bounds.is_empty() {
-            checking_generics.make_where_clause().predicates.extend(checking_bounds);
-        }
         let borrowed_lifetimes = &self.deserialized_enum.borrowed_lifetimes;
-        let mut generics = checking_generics;
+        let mut generics = self.deserialized_enum.input.generics.clone();
         generics.params.insert(0, parse_quote!('de: #(#borrowed_lifetimes)+*));
-        let reading_bounds = self.contents_read().flat_map(DeserializeExpansion::reading_bounds);
-        generics.make_where_clause().predicates.extend(reading_bounds);
+        let mut bounds: Vec<_> = self.deserialized_enum.bound.iter().flatten().cloned().collect();
+        for bound in self.contents_read().flat_map(DeserializeExpansion::bounds) {
+            add_once(&mut bounds, bound);
+        }
+        if !bounds.is_empty() {
+            generics.make_where_clause().predicates.extend(bounds);
+        }
         generics
     }
 
@@ -702,20 +701,22 @@ impl EnumExpansion<'_> {
         let ident = variant.ident;
         let (_, type_generics, _) = input.generics.split_for_impl();
         let wrapper_generics = self.variant_wrapper_generics();
-        let (wrapper_impl_generics, wrapper_type_generics, where_clause) = wrapper_generics.split_for_impl();
+        let (wrapper_definition_generics, wrapper_type_generics, where_clause) = wrapper_generics.split_for_impl();
+        let generics_reading_variants = self.generics_reading_variants();
+        let (impl_generics, _, reading_where_clause) = generics_reading_variants.split_for_impl();
         let field_types = variant
             .content
             .iter()
             .flat_map(|content| content.validated.fields.iter().map(|field| field.field_type));
         let read_by_the_function = quote_at!(function.span()=> #function(#deserializer)?);
         let wrapper = quote! {
-            struct __DeserializeVariantWith #wrapper_impl_generics #where_clause {
+            struct __DeserializeVariantWith #wrapper_definition_generics #where_clause {
                 value: (#(#field_types),*),
                 marker: ::core::marker::PhantomData<fn() -> (#name #type_generics, &'de ())>,
             }
 
-            impl #wrapper_impl_generics #serde::Deserialize<'de> for __DeserializeVariantWith #wrapper_type_generics
-            #where_clause
+            impl #impl_generics #serde::Deserialize<'de> for __DeserializeVariantWith #wrapper_type_generics
+            #reading_where_clause
             {
                 fn deserialize<__D: #serde::Deserializer<'de>>(
                     #deserializer: __D,

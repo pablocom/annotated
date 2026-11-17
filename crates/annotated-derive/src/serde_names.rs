@@ -1,7 +1,7 @@
 use proc_macro2::Span;
 use serde_derive_internals::ast::{self, Container, Data};
 use serde_derive_internals::{Ctxt, Derive, attr};
-use syn::{DeriveInput, ExprPath, Ident, Lifetime, parse_quote};
+use syn::{DeriveInput, ExprPath, Ident, Lifetime, WherePredicate, parse_quote};
 
 pub struct SerdeStruct {
     pub name: String,
@@ -10,6 +10,8 @@ pub struct SerdeStruct {
     pub expecting: Option<String>,
     pub default: Option<DefaultValue>,
     pub borrowed_lifetimes: Vec<Lifetime>,
+    pub bound: Option<Vec<WherePredicate>>,
+    pub variant_bound: Option<Vec<WherePredicate>>,
 }
 
 pub struct SerdeField {
@@ -19,6 +21,7 @@ pub struct SerdeField {
     pub is_flattened: bool,
     pub default: Option<DefaultValue>,
     pub deserialize_with: Option<ExprPath>,
+    pub bound: Option<Vec<WherePredicate>>,
 }
 
 pub struct SerdeEnum {
@@ -28,6 +31,7 @@ pub struct SerdeEnum {
     pub is_denying_unknown_fields: bool,
     pub expecting: Option<String>,
     pub borrowed_lifetimes: Vec<Lifetime>,
+    pub bound: Option<Vec<WherePredicate>>,
 }
 
 pub enum Tag {
@@ -44,6 +48,7 @@ pub struct SerdeVariant {
     pub is_skipped: bool,
     pub is_other: bool,
     pub deserialize_with: Option<ExprPath>,
+    pub bound: Option<Vec<WherePredicate>>,
     pub fields: Vec<SerdeField>,
 }
 
@@ -78,6 +83,8 @@ impl SerdeStruct {
             expecting: container.attrs.expecting().map(ToOwned::to_owned),
             default: DefaultValue::from_serde(container.attrs.default()),
             borrowed_lifetimes: borrowed_lifetimes(container),
+            bound: container.attrs.de_bound().map(<[WherePredicate]>::to_vec),
+            variant_bound: None,
         }
     }
 }
@@ -107,6 +114,7 @@ impl SerdeEnum {
                     is_skipped: variant.attrs.skip_deserializing(),
                     is_other: variant.attrs.other(),
                     deserialize_with: variant.attrs.deserialize_with().map(reachable_function),
+                    bound: variant.attrs.de_bound().map(<[WherePredicate]>::to_vec),
                     fields: variant.fields.iter().map(SerdeField::from_serde).collect(),
                 })
                 .collect(),
@@ -119,6 +127,7 @@ impl SerdeEnum {
             is_denying_unknown_fields: container.attrs.deny_unknown_fields(),
             expecting: container.attrs.expecting().map(ToOwned::to_owned),
             borrowed_lifetimes: borrowed_lifetimes(container),
+            bound: container.attrs.de_bound().map(<[WherePredicate]>::to_vec),
         }
     }
 }
@@ -132,6 +141,7 @@ impl SerdeField {
             is_flattened: field.attrs.flatten(),
             default: DefaultValue::from_serde(field.attrs.default()),
             deserialize_with: field.attrs.deserialize_with().map(reachable_function),
+            bound: field.attrs.de_bound().map(<[WherePredicate]>::to_vec),
         }
     }
 }

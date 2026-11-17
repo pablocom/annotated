@@ -14,6 +14,7 @@ macro_rules! quote_at {
     }};
 }
 
+mod bounds;
 mod described_rules;
 mod deserialize_enum_expansion;
 mod deserialize_expansion;

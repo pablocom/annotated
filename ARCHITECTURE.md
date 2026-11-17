@@ -325,14 +325,19 @@ The crate implements the trait for the containers a `nested` or `each(nested)` f
 - `#[validate(...)]`, like the `Validate` derive.
 - `#[annotated(...)]`, for its own options.
 - The `#[serde(...)]` attributes in [Serde attributes](#serde-attributes).
-- Serde attributes that only change serializing, which it accepts and ignores, since deserializing never uses them: `skip_serializing`, `skip_serializing_if`, `serialize_with`, `getter`, `into`, `bound(serialize = ...)`, and the serializing half of `rename` and `rename_all`.
+- Serde attributes that only change serializing, which it accepts and ignores, since deserializing never uses them: `skip_serializing`, `skip_serializing_if`, `serialize_with`, `getter`, `into`, `bound(serialize = ...)`, and the serializing half of `rename`, `rename_all` and `bound`.
 
-Any other serde attribute is a compile error that names the accepted ones, until each is supported deliberately.
+Any other serde attribute on the struct or the enum is a compile error that names the accepted ones, until each is supported deliberately. A field and a variant take every attribute serde has for them.
 
-**Generics.** Type parameters are supported. As in serde's derive, the bounds come from the fields: each field type that mentions a type parameter is bounded by the trait the field is read through. A field type that can't be read is then an error at the field, not a bound that no caller can meet. Lifetime parameters are supported for borrowing, as [Borrowing](#borrowing) says.
+**Generics.** Type and const parameters are supported, with bounds, defaults and where clauses, and lifetime parameters for borrowing, as [Borrowing](#borrowing) says. The bounds are decided as serde's derive decides them, by `bounds.rs`: each type parameter a field uses is bounded by the trait the field is read through. A field type that can't be read is then an error at the field.
 
-- A field whose default is `Default::default()` is also bounded by `Default`.
-- A nested value checked with `Validate`, as [Serde attributes](#serde-attributes) says, is bounded by `Validate`. Its type is found the way `each` finds an element's type, by how the field's type is written.
+- A field read by serde bounds the type parameters it uses by serde's `Deserialize<'de>`.
+- A field with nested values bounds the type parameters of their type by `annotated::Deserialize<'de>`, and the rest of its type's by serde's, since annotated's containers read their keys with serde. The nested values' type is found the way `each` finds an element's type, by how the field's type is written: a `HashMap<K, V>` with `each(nested)` bounds `V` by annotated's trait and `K` by serde's.
+- A field whose default is `Default::default()` bounds the type parameters it uses by `Default`, and a nested value checked with `Validate`, as [Serde attributes](#serde-attributes) says, those of its type by `Validate`.
+- A type parameter used only in `PhantomData` is bounded by nothing. Neither is one used only in the type deriving, under a trait the derive implements: in a recursive `children: Vec<Tree<T>>`, `T` needs what reading a `Tree<T>` needs, which the impl being written already says. Bounding `T` by `annotated::Deserialize` there would refuse a `Tree<u8>`.
+- Like serde's, these bounds can ask more than a type needs: a `Wrapper<T>` with `nested` bounds `T` by annotated's trait, whatever `Wrapper<T>` needs. `#[serde(bound = "...")]`, or `#[serde(bound(deserialize = "..."))]`, gives the bounds instead, as with serde: on the struct or the enum, every bound, and on a field or a variant, those of what it reads, but for `Default`, which serde infers even then. The bounds given apply to every impl the derive writes, the types reading a field through a function included.
+
+The `Validate` derive bounds the type parameters of each nested value by `Validate` the same way.
 
 ### Serde attributes
 
@@ -340,8 +345,8 @@ The derive reads a field the way serde's derive reads it with the same attribute
 
 | On | Attributes |
 |---|---|
-| The struct | `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` |
-| A field | `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow`, `flatten` |
+| The struct | `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default`, `bound` |
+| A field | `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow`, `flatten`, `bound` |
 
 **Rules check every value the struct ends up with.** A value from `default`, a skipped field's value, and a value read by `deserialize_with` are checked by the field's rules like any other. So the report stays the one serde followed by `validate()` gives, but for the absent key of an `Option` that `required` asks for, which serde reads as its default or `None`.
 
@@ -368,7 +373,7 @@ The derive reads a field the way serde's derive reads it with the same attribute
 - With `collect_type_errors`, the field is read into `Content` first, and the function reads it from there:
   - When the function fails because a value has the wrong type, is out of range or has the wrong length, through serde's `invalid_type`, `invalid_value` or `invalid_length`, the failure is a `Problem::InvalidType` at the field, as for any other field. None of these quote the input.
   - Any other error, such as one the function makes with `Error::custom`, ends deserialization as the format's error. Its message may repeat the input, so it never becomes an issue.
-- As in serde's derive, the function reads its field through a type of its own, whose `Deserialize` calls the function, since the function is generic over the deserializer. A field read by a function is bounded by no trait: the function says what it needs, in bounds on the struct.
+- As in serde's derive, the function reads its field through a type of its own, whose `Deserialize` calls the function, since the function is generic over the deserializer. A field read by a function is bounded by no trait: the function says what it needs, in bounds on the struct or in `#[serde(bound = "...")]`.
 
 #### Borrowing
 
@@ -438,8 +443,8 @@ Both derives work on enums, with every kind of variant: unit, newtype, tuple and
 
 | On | Attributes |
 |---|---|
-| The enum | `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting` |
-| A variant | `rename`, `alias`, `rename_all`, `skip_deserializing`, `skip`, `other`, `untagged`, `deserialize_with`, `with`, `borrow` |
+| The enum | `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`, `deny_unknown_fields`, `expecting`, `bound` |
+| A variant | `rename`, `alias`, `rename_all`, `skip_deserializing`, `skip`, `other`, `untagged`, `deserialize_with`, `with`, `borrow`, `bound` |
 | A variant's field | Everything a struct's field takes, in [Serde attributes](#serde-attributes) |
 
 - A skipped variant can't be read: its name is unknown, as with serde.

@@ -1,5 +1,0 @@
-error: with `#[derive(Deserialize)]`, a variant's `#[serde(...)]` takes `rename`, `alias`, `rename_all`, `untagged`, `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with`, `borrow` and those that only change serializing
- --> tests/ui/deserialize/unsupported_variant_serde_attribute.rs:6:13
-  |
-6 |     #[serde(bound = "")]
-  |             ^^^^^

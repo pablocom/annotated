@@ -292,6 +292,162 @@ fn a_module_without_the_prelude_derives_both() {
     derives_both::<without_the_prelude::Internal>();
 }
 
+// Type, const and lifetime parameters, with bounds, defaults and where clauses, borrowed fields, recursion, and bounds
+// given by `#[serde(bound = "...")]`.
+mod generics {
+    use std::borrow::Cow;
+    use std::collections::HashMap;
+    use std::fmt::Display;
+    use std::hash::Hash;
+    use std::marker::PhantomData;
+
+    use annotated::{Deserialize, Validate};
+
+    use super::Address;
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Shelf<T: Clone, U = u32, const N: usize = 3>
+    where
+        U: Copy + Default,
+    {
+        #[validate(length(max = N), each(nested))]
+        pub items: Vec<T>,
+        #[serde(default)]
+        #[validate(range(max = 3))]
+        pub count: u8,
+        #[serde(default)]
+        #[validate(required)]
+        pub unit: Option<U>,
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Catalog<K: Eq + Hash + Display + Clone, V> {
+        #[validate(each(nested))]
+        pub entries: HashMap<K, V>,
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Borrowed<'a, 'b: 'a, T> {
+        #[validate(length(max = 5))]
+        pub name: &'a str,
+        #[serde(borrow)]
+        #[validate(required)]
+        pub note: Cow<'b, str>,
+        #[validate(required)]
+        pub value: Option<T>,
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Tree<T> {
+        #[validate(required)]
+        pub value: Option<T>,
+        #[validate(each(nested))]
+        pub children: Vec<Tree<T>>,
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub enum Either<L, R> {
+        Left(#[validate(nested)] L),
+        Right {
+            #[validate(each(nested))]
+            values: Vec<R>,
+        },
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct Defaulted<T> {
+        #[serde(default)]
+        #[validate(nested)]
+        pub item: T,
+        #[validate(length(max = 1))]
+        pub kinds: Vec<PhantomData<T>>,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct Label<Kind> {
+        pub text: String,
+        pub kind: PhantomData<Kind>,
+    }
+
+    impl<'de, Kind> serde::Deserialize<'de> for Label<Kind> {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let text = <String as serde::Deserialize>::deserialize(deserializer)?;
+            Ok(Self {
+                text,
+                kind: PhantomData,
+            })
+        }
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    #[serde(bound(deserialize = "T: Validate"))]
+    pub struct Given<T> {
+        #[validate(length(max = 3))]
+        pub label: Label<T>,
+        #[serde(skip)]
+        #[validate(each(nested))]
+        pub items: Vec<T>,
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    pub struct GivenOnAField<T> {
+        #[serde(bound(deserialize = ""))]
+        #[validate(length(max = 3))]
+        pub label: Label<T>,
+    }
+
+    #[derive(Debug, Validate, Deserialize)]
+    #[serde(bound = "")]
+    pub enum GivenOnAnEnum<T> {
+        Labelled(#[validate(length(max = 3))] Label<T>),
+        #[serde(bound(deserialize = "T: Default"))]
+        Defaulted {
+            #[serde(default)]
+            #[validate(length(max = 3))]
+            labels: Vec<Label<T>>,
+            #[serde(skip)]
+            #[validate(required)]
+            value: Option<T>,
+        },
+    }
+
+    impl<Kind> annotated::rules::HasLength for Label<Kind> {
+        const UNIT: annotated::LengthUnit = annotated::LengthUnit::Chars;
+
+        fn length(&self) -> usize {
+            self.text.chars().count()
+        }
+    }
+
+    #[derive(Debug, Clone, Default, Validate, Deserialize)]
+    pub struct Unit {
+        #[validate(range(max = 3))]
+        pub value: u8,
+    }
+
+    pub struct Unreadable;
+
+    #[test]
+    fn generic_types_derive_both_with_the_bounds_their_fields_need() {
+        super::derives_both::<Shelf<Unit>>();
+        super::derives_both::<Shelf<Unit, u8, 4>>();
+        super::derives_both::<Catalog<String, Address>>();
+        super::derives_both::<Tree<u8>>();
+        super::derives_both::<Either<Address, Unit>>();
+        super::derives_both::<Defaulted<Unit>>();
+        super::derives_both::<Given<Unit>>();
+        super::derives_both::<GivenOnAField<Unreadable>>();
+        super::derives_both::<GivenOnAnEnum<u8>>();
+    }
+
+    #[test]
+    fn a_struct_borrowing_from_the_input_derives_both() {
+        fn borrows<'de, T: Validate + Deserialize<'de>>() {}
+
+        borrows::<Borrowed<'_, '_, u8>>();
+    }
+}
+
 // `Self` in a field's type, in a bound and in a rule's arguments, in a struct, a generic one and an enum's variants.
 mod self_in_the_input {
     use annotated::{Deserialize, Problem, Validate};

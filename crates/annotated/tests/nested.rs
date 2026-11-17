@@ -280,3 +280,46 @@ fn a_struct_behind_a_mutable_reference_is_validated() {
 
     assert_eq!(issues_of(&borrowed), ["street: required"]);
 }
+
+#[derive(Validate)]
+struct Page<T> {
+    #[validate(each(nested))]
+    items: Vec<T>,
+}
+
+#[test]
+fn a_type_parameter_checked_with_nested_is_validated() {
+    let page = Page {
+        items: vec![Address {
+            street: String::new(),
+            ..address()
+        }],
+    };
+
+    assert_eq!(issues_of(&page), ["items[0].street: required"]);
+}
+
+#[derive(Validate)]
+struct Tree<T> {
+    #[allow(dead_code)]
+    value: T,
+    #[validate(length(max = 1), each(nested))]
+    children: Vec<Tree<T>>,
+}
+
+#[test]
+fn a_recursive_generic_struct_is_validated_whatever_its_type_parameter() {
+    let leaf = || Tree {
+        value: 1,
+        children: Vec::new(),
+    };
+    let tree = Tree {
+        value: 0,
+        children: vec![Tree {
+            value: 2,
+            children: vec![leaf(), leaf()],
+        }],
+    };
+
+    assert_eq!(issues_of(&tree), ["children[0].children: length"]);
+}

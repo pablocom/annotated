@@ -1,7 +1,8 @@
 use proc_macro2::{Group, Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote};
-use syn::{Expr, Ident};
+use syn::{DeriveInput, Expr, Generics, Ident};
 
+use crate::bounds::{Bounds, Used};
 use crate::described_rules::rules_function;
 use crate::validated_enum::{ValidatedEnum, ValidatedVariant};
 use crate::validated_struct::{
@@ -43,7 +44,9 @@ pub fn validate_impl(validated_struct: &ValidatedStruct) -> TokenStream {
     let rules_function = rules_function(validated_struct);
     let input = validated_struct.input;
     let name = &input.ident;
-    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+    let generics = generics_validating(input, &validated_struct.fields);
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
+    let (_, type_generics, _) = input.generics.split_for_impl();
     quote! {
         impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
             fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
@@ -66,7 +69,14 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
     let enum_checks = expansion.whole_value_checks(&validated_enum.enum_checks, &quote!(self), &quote!(Self));
     let input = validated_enum.input;
     let name = &input.ident;
-    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+    let fields: Vec<_> = validated_enum
+        .variants
+        .iter()
+        .flat_map(|variant| &variant.content.fields)
+        .collect();
+    let generics = generics_validating(input, fields);
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
+    let (_, type_generics, _) = input.generics.split_for_impl();
     quote! {
         impl #impl_generics ::annotated::Validate for #name #type_generics #where_clause {
             fn validate_into(&self, #at: &::annotated::Location<'_>, #found: &mut ::annotated::Report) {
@@ -77,6 +87,22 @@ pub fn validate_enum_impl(validated_enum: &ValidatedEnum) -> TokenStream {
             }
         }
     }
+}
+
+// As serde's derive bounds the type parameters a field reads, the type parameters of each nested value are bounded by
+// `Validate`.
+fn generics_validating<'a>(input: &DeriveInput, fields: impl IntoIterator<Item = &'a ValidatedField<'a>>) -> Generics {
+    let mut bounds = Bounds::implemented_here(&input.generics, &input.ident);
+    for field in fields.into_iter().filter(|field| field.has_nested_values()) {
+        let nested_values = field.nested_value_type().unwrap_or(field.field_type);
+        bounds.add(&Used::whole(nested_values), &quote!(::annotated::Validate));
+    }
+    let bounds = bounds.into_predicates();
+    let mut generics = input.generics.clone();
+    if !bounds.is_empty() {
+        generics.make_where_clause().predicates.extend(bounds);
+    }
+    generics
 }
 
 impl Expansion {

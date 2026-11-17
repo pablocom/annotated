@@ -532,6 +532,77 @@ fn a_field_whose_type_is_the_type_parameter_itself_is_read_with_the_type_given()
     );
 }
 
+// serde reads a label whatever its kind, so a kind that can't be read needs no bound.
+#[derive(Debug, PartialEq)]
+struct Label<Kind> {
+    text: String,
+    kind: std::marker::PhantomData<Kind>,
+}
+
+impl<'de, Kind> serde::Deserialize<'de> for Label<Kind> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Ok(Self {
+            text,
+            kind: std::marker::PhantomData,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct Unreadable;
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(bound(deserialize = ""))]
+struct Parcel<Kind> {
+    label: Label<Kind>,
+    #[validate(required)]
+    recipient: String,
+}
+
+#[test]
+fn the_bounds_a_struct_s_serde_bound_gives_replace_those_of_its_type_parameters() {
+    assert_eq!(
+        issues_reading::<Parcel<Unreadable>>(r#"{ "label": "fragile", "recipient": "" }"#),
+        ["recipient: required"]
+    );
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct Crate<Kind> {
+    #[serde(bound(deserialize = ""))]
+    label: Label<Kind>,
+    #[validate(required)]
+    recipient: String,
+}
+
+#[test]
+fn the_bounds_a_field_s_serde_bound_gives_replace_those_of_the_type_parameters_it_uses() {
+    assert_eq!(
+        issues_reading::<Crate<Unreadable>>(r#"{ "label": "fragile", "recipient": "" }"#),
+        ["recipient: required"]
+    );
+}
+
+fn parsed<'de, D: serde::Deserializer<'de>, T: std::str::FromStr>(deserializer: D) -> Result<T, D::Error> {
+    let text = <String as serde::Deserialize>::deserialize(deserializer)?;
+    text.parse()
+        .map_err(|_| serde::de::Error::custom(format!("{text} isn't a value")))
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct Measure<T> {
+    #[serde(deserialize_with = "parsed", bound(deserialize = "T: std::str::FromStr"))]
+    value: T,
+}
+
+#[test]
+fn a_field_s_serde_bound_is_a_bound_of_the_struct() {
+    let measure = deserialize::<Measure<u8>>(r#"{ "value": "21" }"#).unwrap();
+
+    assert_eq!(measure, Measure { value: 21 });
+}
+
 #[derive(Deserialize, Debug, PartialEq)]
 struct NamesOfTheGeneratedCode {
     #[validate(range(min = 1))]

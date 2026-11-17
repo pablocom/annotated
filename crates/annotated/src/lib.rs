@@ -134,6 +134,10 @@ pub use validate::Validate;
 /// - `each(...)` applies its rules to every element of a collection, reported at its index, or to every value of a map,
 ///   reported at its key. It works on anything that implements [`rules::HasElements`]. `each(nested)` validates every
 ///   element.
+/// - On a generic struct or enum, the impl bounds the type parameters of each nested value by [`Validate`], as serde's
+///   derive bounds those of a field it reads. The nested value's type is found as `each` finds an element's type, so a
+///   `HashMap<K, V>` with `each(nested)` bounds `V` alone. A type parameter used only in the type deriving, as in a
+///   recursive `children: Vec<Tree<T>>`, is bounded by nothing.
 /// - A field is reported under the name serde reads it by, from `#[serde(...)]` attributes such as `rename_all` and
 ///   `rename`. The struct doesn't need to derive serde's traits.
 /// - A field with `#[serde(flatten)]` is reported at the struct's own location, since its keys sit in the struct's
@@ -282,18 +286,33 @@ pub use annotated_derive::Validate;
 ///
 /// The struct is read as serde's derive would read it, by the names serde gives the struct and its fields.
 ///
-/// - **Supported:** `rename_all`, `rename`, `deny_unknown_fields`, `expecting` and `default` on the struct, and
-///   `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow` and `flatten` on a
-///   field.
+/// - **Supported:** `rename_all`, `rename`, `deny_unknown_fields`, `expecting`, `default` and `bound` on the struct,
+///   and `rename`, `alias`, `default`, `skip_deserializing`, `skip`, `deserialize_with`, `with`, `borrow`, `flatten`
+///   and `bound` on a field.
 /// - **Accepted and ignored:** attributes that only change serializing, so that the struct can derive serde's
 ///   `Serialize` too. These are `into` and `bound(serialize = "...")` on the struct, and `skip_serializing`,
 ///   `skip_serializing_if`, `serialize_with`, `getter` and `bound(serialize = "...")` on a field. When a `rename` or
 ///   `rename_all` gives separate names for serializing and deserializing, the deserializing name is the one read.
-/// - **Compile errors:** any other serde attribute, and `flatten` in a struct with `deny_unknown_fields`.
+/// - **Compile errors:** any other serde attribute on the struct, and `flatten` in a struct with
+///   `deny_unknown_fields`.
 ///
 /// A struct can have lifetime parameters, and its fields borrow from the input as with serde: a `&str` or `&[u8]`
 /// field always, any other field with `#[serde(borrow)]`. A value the input can't lend, such as a JSON string with an
 /// escape in it, is the format's error, or [`Problem::InvalidType`] under `collect_type_errors`.
+///
+/// # Generics
+///
+/// A struct or an enum can have type and const parameters, with bounds, defaults and where clauses. As serde's derive
+/// does, the impl bounds each type parameter a field uses by the trait the field is read through: serde's
+/// `Deserialize<'de>`, or this crate's [`Deserialize`](trait@Deserialize) for the type of its nested values, found as
+/// `each` finds an element's type. A value taken from `Default::default()` bounds them by `Default`, and a nested value
+/// checked with [`Validate`] by `Validate`. A type parameter used only in `PhantomData`, or only in the type deriving,
+/// as in a recursive `children: Vec<Tree<T>>`, is bounded by nothing.
+///
+/// Like serde's, these bounds can ask more than a type needs: a field `Wrapper<T>` read with `nested` bounds `T` by
+/// [`Deserialize`](trait@Deserialize), whatever `Wrapper<T>` needs. `#[serde(bound = "...")]`, or
+/// `#[serde(bound(deserialize = "..."))]`, gives the bounds instead, as with serde: on the struct or the enum, all of
+/// them, and on a field or a variant, those of what it reads.
 ///
 /// # What ends deserialization
 ///
@@ -415,9 +434,9 @@ pub use annotated_derive::Validate;
 /// are at their index.
 ///
 /// - The enum takes `tag`, `content`, `untagged`, `rename_all`, `rename_all_fields`, `rename`,
-///   `deny_unknown_fields` and `expecting`, and a variant takes `rename`, `alias`, `rename_all`, `untagged`,
-///   `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with` and `borrow`, as with serde. A variant's fields
-///   take what a struct's fields take. Any other serde attribute on the enum or a variant is a compile error.
+///   `deny_unknown_fields`, `expecting` and `bound`, and a variant takes `rename`, `alias`, `rename_all`, `untagged`,
+///   `skip_deserializing`, `skip`, `other`, `deserialize_with`, `with`, `borrow` and `bound`, as with serde. A
+///   variant's fields take what a struct's fields take. Any other serde attribute on the enum is a compile error.
 /// - A skipped variant is never read: its name is unknown, and its fields need no `Deserialize`. A unit variant with
 ///   `other` is read for any tag that names no other variant. A variant with `deserialize_with` or `with` is read by
 ///   the function, and its fields' rules check what the function returns. A `nested` rule checks it with [`Validate`],
