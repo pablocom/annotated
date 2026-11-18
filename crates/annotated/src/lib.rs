@@ -562,7 +562,8 @@ pub use annotated_derive::Validate;
 ///     full_name: String,
 /// }
 ///
-/// let error = my_api::checks::json::from_str::<NewMember>(r#"{ "full_name": "" }"#).unwrap_err();
+/// let mut body = serde_json::Deserializer::from_str(r#"{ "full_name": "" }"#);
+/// let error = my_api::checks::from_deserializer::<NewMember, _>(&mut body).unwrap_err();
 ///
 /// assert_eq!(error.to_string(), "full_name: is required");
 /// ```
