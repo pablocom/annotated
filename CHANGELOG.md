@@ -13,6 +13,10 @@ This file lists every change that users of the crates can notice. The format fol
   - Under `#[derive(Deserialize)]`, the field's type has to name the set, alone or in an `Option`. `each` through a set inside another value, such as `Vec<HashSet<String>>` with `each(each(...))` or a `Box<HashSet<String>>`, is a compile error, and so is a set behind a type alias.
   - A forgotten `nested` on a set of values with rules of their own suggests `each(nested)`.
 
+### Fixed
+
+- The compile error for `each(...)` on a value without elements names what `each` goes through, and says to implement `rules::HasElements` for a collection of your own. It told you to implement it for the value's type, which Rust forbids for a type of another crate, such as `u8`.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

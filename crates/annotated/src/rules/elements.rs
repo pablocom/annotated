@@ -37,7 +37,8 @@ use crate::Location;
 #[diagnostic::on_unimplemented(
     message = "`each` can't go through the elements of `{Self}`",
     label = "`{Self}` doesn't implement `annotated::rules::HasElements`",
-    note = "implement `annotated::rules::HasElements` for `{Self}` to say what its elements are"
+    note = "`each` goes through the elements of a list, an array, a slice or a set, and the values of a map; for a \
+            collection of your own, implement `annotated::rules::HasElements` to say what its elements are"
 )]
 pub trait HasElements {
     /// An element of the collection, or a value of the map.

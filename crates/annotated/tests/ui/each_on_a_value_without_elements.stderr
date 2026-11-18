@@ -8,7 +8,7 @@ error[E0277]: `each` can't go through the elements of `u8`
   |                ---- required by a bound introduced by this call
   |
   = help: the trait `HasElements` is not implemented for `u8`
-  = note: implement `annotated::rules::HasElements` for `u8` to say what its elements are
+  = note: `each` goes through the elements of a list, an array, a slice or a set, and the values of a map; for a collection of your own, implement `annotated::rules::HasElements` to say what its elements are
   = help: the following other types implement trait `HasElements`:
             &C
             BTreeMap<K, V>
