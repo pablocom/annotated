@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "annotated"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "annotated-derive",
  "serde",
@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "annotated-derive"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "proc-macro2",
  "quote",
