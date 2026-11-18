@@ -463,7 +463,14 @@ pub use annotated_derive::Validate;
 ///   otherwise for its own type is of the wrong type there. `serde_json` hands over an integer beyond 64 bits as a
 ///   float, unless its `arbitrary_precision` feature is on. MessagePack, as `rmp-serde` writes it, holds a 128-bit
 ///   integer as bytes. `serde_json`'s `RawValue` reads the input's text.
-/// - It needs a self-describing format, such as JSON.
+/// - It needs a format whose input says what type each value is, such as JSON or MessagePack. With a format that
+///   keeps values as text, a valid body is refused: a query string or a form body hands over `age=30` as a string,
+///   and XML hands over `<age>30</age>` as an element, neither of which is a `u8`. A format whose input can't be read
+///   without its type, such as bincode or postcard, fails on every body. Without the option, each of them reads as it
+///   does with serde.
+/// - To collect them only while developing, write `#[cfg_attr(debug_assertions, annotated(collect_type_errors))]`. A
+///   release build then reads each value straight from the format, without the buffer, and the first value of the
+///   wrong type ends deserialization.
 ///
 /// ```
 /// use annotated::Deserialize;
