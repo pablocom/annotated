@@ -4,6 +4,8 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-18
+
 ### Added
 
 - `each(...)` goes through the elements of a `HashSet` and a `BTreeSet`, `each(nested)` included.
@@ -274,7 +276,8 @@ No change that users can notice.
 - The `json` feature, which adds `serde_json` and turns on `serde`. `annotated::json::from_str` and `from_slice` read a JSON document and collect every issue in it. Like `serde_json`, they reject characters after the value, and that error comes before any issue. `from_str_fail_fast` and `from_slice_fail_fast` return only the first issue.
 - `examples/axum`, an axum extractor to copy into your app. It reads a JSON body with `annotated::json::from_slice`, and rejects a request it can't read the way axum's `Json` does. It responds to issues with 422 and RFC 9457 problem details, which list each issue's JSON Pointer, code, params and message.
 
-[Unreleased]: https://github.com/pablocom/annotated/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/pablocom/annotated/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/pablocom/annotated/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/pablocom/annotated/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/pablocom/annotated/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/pablocom/annotated/compare/v0.3.0...v0.3.1
