@@ -27,11 +27,18 @@ How we work in this repository. The [README](README.md) shows how to use the lib
 - A claim that a change is more performant gives before → after medians from the benchmarks, timed in one sitting on one pinned core.
 - The compilation flags and the hardware the benchmarks run on move their numbers, so measuring doesn't replace understanding: know why a change costs or saves what it does, and when a number disagrees with that, find out why before trusting either.
 
+## Trunk-based development
+
+This repository follows trunk-based development: `main` is the trunk and its only long-lived branch.
+
+- Commit on `main` itself, in small, atomic commits, each green on its own, and push once its checks pass. No feature branches, no pull requests, no release branches.
+- A branch made for work under way, such as an agent's worktree, is short-lived and lands on `main` by rebasing or cherry-picking, never by a merge commit, so the history stays linear.
+- CI [releases](#releasing) every push to `main` that changes a crate's code, so what reaches `main` is what users get. Push a change only once it is whole.
+
 ## Commits
 
 - [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `<type>(<scope>): <description>`, scope `core`, `derive`, `utoipa`, `axum`, `benchmarks`, `ci`, `docs` or `repo`; imperative, lowercase, no trailing period. Breaking changes take `!` and a `BREAKING CHANGE:` footer. The body says why. The type and the `!` decide the version of the next [release](#releasing), so they have to be true.
 - No attribution to Claude: no `Co-Authored-By` trailer and no session link.
-- Trunk-based: small, atomic commits straight to `main`, each green on its own, pushed once its checks pass.
 - Every change users can notice gets a line under *Unreleased* in the changelog of each crate it changes, in the same commit: `CHANGELOG.md` for annotated, and the one in its directory for a crate released on its own. The lines there become the notes of the next release.
 
 Before each commit, run what CI runs:
