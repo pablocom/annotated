@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use annotated::Validate;
 
@@ -42,6 +42,7 @@ struct Warehouse {
     manager_address: Box<Address>,
     docks: HashMap<String, Address>,
     gates: &'static [Address],
+    suppliers: HashSet<Address>,
 }
 
 fn main() {}

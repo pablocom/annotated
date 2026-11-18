@@ -689,11 +689,13 @@ mod through_macros {
     }
 
     macro_rules! with_fields_of_types {
-        ($name:ident, $text:ty, $address:ty, $tier:ty) => {
+        ($name:ident, $text:ty, $address:ty, $tier:ty, $tags:ty) => {
             #[derive(Debug, Validate, Deserialize)]
             pub struct $name {
                 #[validate(length(max = 3))]
                 pub nickname: $text,
+                #[validate(each(length(max = 3)))]
+                pub tags: $tags,
                 #[validate(nested)]
                 pub address: $address,
                 #[validate(each(nested))]
@@ -710,7 +712,13 @@ mod through_macros {
         };
     }
 
-    with_fields_of_types!(Note, Option<String>, Address, super::Tier);
+    with_fields_of_types!(
+        Note,
+        Option<String>,
+        Address,
+        super::Tier,
+        Option<std::collections::BTreeSet<String>>
+    );
 }
 
 #[test]
@@ -799,6 +807,8 @@ mod linted {
         unsafe_code
     )]
 
+    use std::collections::HashSet;
+
     use annotated::{Deserialize, Problem, Validate};
 
     /// A member.
@@ -831,6 +841,24 @@ mod linted {
         #[validate(not_nested)]
         #[expect(dead_code, reason = "only read, never used")]
         best_friend: Friend,
+        /// Its interests.
+        #[serde(default)]
+        #[validate(length(max = 5_usize), each(length(max = 20_usize)))]
+        interests: HashSet<String>,
+        /// Its badges.
+        #[validate(each(required))]
+        badges: Option<HashSet<String>>,
+        /// The friends it met.
+        #[validate(each(nested, custom(is_a_friend)))]
+        met: HashSet<Friend>,
+    }
+
+    /// Checks a friend.
+    fn is_a_friend(friend: &Friend) -> Result<(), Problem> {
+        if friend.nickname == "foe" {
+            return Err(Problem::custom("foe", "is a foe"));
+        }
+        Ok(())
     }
 
     /// Checks a member.
@@ -842,7 +870,7 @@ mod linted {
     }
 
     /// A friend.
-    #[derive(Debug, Validate, Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash, Validate, Deserialize)]
     pub struct Friend {
         /// Their name.
         #[validate(required)]

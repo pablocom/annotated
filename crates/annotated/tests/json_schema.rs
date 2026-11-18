@@ -5,7 +5,7 @@
 // The types here are only described, never built.
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display};
 
 use annotated::json_schema::Reason;
@@ -665,6 +665,30 @@ fn the_rules_of_each_element_are_written_into_items() {
         schema,
         object_with(json!({
             "tags": { "type": "array", "items": { "type": "string", "maxLength": 20 } }
+        }))
+    );
+}
+
+#[test]
+fn the_rules_of_each_element_of_a_set_are_written_into_items() {
+    #[derive(Validate)]
+    struct Post {
+        #[validate(length(max = 5), each(length(max = 20)))]
+        tags: BTreeSet<String>,
+    }
+
+    let tags = json!({ "type": "array", "uniqueItems": true, "items": { "type": "string" } });
+    let schema = with_the_rules_of::<Post>(object_with(json!({ "tags": tags })));
+
+    assert_eq!(
+        schema,
+        object_with(json!({
+            "tags": {
+                "type": "array",
+                "uniqueItems": true,
+                "maxItems": 5,
+                "items": { "type": "string", "maxLength": 20 }
+            }
         }))
     );
 }

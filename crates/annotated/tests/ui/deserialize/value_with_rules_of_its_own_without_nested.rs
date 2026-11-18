@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use annotated::{Deserialize, Validate};
 
-#[derive(Validate, Deserialize, Default)]
+#[derive(Validate, Deserialize, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct Address {
     #[validate(required)]
     street: String,
@@ -42,6 +42,11 @@ struct Directory {
 struct Draft {
     #[serde(skip)]
     address: Address,
+}
+
+#[derive(Deserialize)]
+struct Mailing {
+    recipients: BTreeSet<Address>,
 }
 
 fn main() {}

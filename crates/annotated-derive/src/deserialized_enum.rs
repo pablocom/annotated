@@ -1,8 +1,8 @@
 use syn::{DataEnum, DeriveInput, ExprPath, Fields, Ident};
 
 use crate::deserialized_struct::{
-    AcceptedSerdeAttributes, DeserializedStruct, Form, refuse_flatten, refuse_serde_attributes_other_than,
-    refuse_what_fields_can_t_take,
+    AcceptedSerdeAttributes, DeserializedStruct, Form, refuse_each_through_a_set_they_do_not_hold, refuse_flatten,
+    refuse_serde_attributes_other_than, refuse_what_fields_can_t_take,
 };
 use crate::options::Options;
 use crate::serde_names::{SerdeEnum, SerdeStruct, Tag, UnreadableAttribute};
@@ -63,6 +63,11 @@ impl<'a> DeserializedEnum<'a> {
             refuse_what_fields_can_t_take(&variant.content.fields)?;
         }
         let serde = SerdeEnum::from_input(input, UnreadableAttribute::IsAnError)?;
+        for (variant, serde_variant) in validated.variants.iter().zip(&serde.variants) {
+            if !serde_variant.is_skipped && serde_variant.deserialize_with.is_none() {
+                refuse_each_through_a_set_they_do_not_hold(&variant.content.fields)?;
+            }
+        }
         if serde.is_denying_unknown_fields {
             for variant in &validated.variants {
                 refuse_flatten(&variant.content.fields, "an enum")?;

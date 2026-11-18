@@ -1,0 +1,21 @@
+error[E0080]: evaluation panicked: `#[derive(Deserialize)]` checks a set's elements as it reads them only when it sees the set by its name: write `HashSet` or `BTreeSet` in this field's type
+  --> tests/ui/deserialize/set_behind_a_type_alias.rs:11:11
+   |
+ 8 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+...
+11 |     tags: Tags,
+   |           ^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: `#[derive(Deserialize)]` checks a set's elements as it reads them only when it sees the set by its name: write `HashSet` or `BTreeSet` in this field's type
+  --> tests/ui/deserialize/set_behind_a_type_alias.rs:13:22
+   |
+ 8 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+...
+13 |     sections: Option<Sections>,
+   |                      ^^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)

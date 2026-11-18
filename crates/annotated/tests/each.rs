@@ -2,7 +2,7 @@
 
 mod support;
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::hash::RandomState;
 
 use annotated::Validate;
@@ -294,4 +294,119 @@ fn report_all_reports_every_rule_an_element_breaks() {
     };
 
     assert_eq!(issues_of(&labels), ["tags[1]: length", "tags[1]: prefix"]);
+}
+
+#[derive(Validate, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Subscriber {
+    #[validate(required)]
+    name: String,
+}
+
+type Sections = BTreeSet<String>;
+
+#[derive(Validate)]
+struct Newsletter {
+    #[validate(each(length(max = 5)))]
+    sections: BTreeSet<String>,
+    #[validate(each(length(max = 5)))]
+    topics: HashSet<String>,
+    #[validate(each(nested))]
+    subscribers: BTreeSet<Subscriber>,
+    #[validate(each(nested))]
+    editors: HashSet<Subscriber>,
+    #[validate(each(each(length(max = 5))))]
+    issues: Vec<BTreeSet<String>>,
+    #[validate(each(length(max = 5)))]
+    #[allow(clippy::box_collection)]
+    archived_sections: Box<BTreeSet<String>>,
+    #[validate(each(length(max = 5)))]
+    regional_sections: Sections,
+}
+
+fn newsletter() -> Newsletter {
+    Newsletter {
+        sections: BTreeSet::new(),
+        topics: HashSet::new(),
+        subscribers: BTreeSet::new(),
+        editors: HashSet::new(),
+        issues: Vec::new(),
+        archived_sections: Box::default(),
+        regional_sections: Sections::new(),
+    }
+}
+
+#[test]
+fn each_checks_an_element_of_a_b_tree_set_at_its_index_in_the_set_s_order() {
+    let newsletter = Newsletter {
+        sections: BTreeSet::from(["photography".to_owned(), "art".to_owned()]),
+        ..newsletter()
+    };
+
+    assert_eq!(issues_of(&newsletter), ["sections[1]: length"]);
+}
+
+#[test]
+fn each_checks_every_element_of_a_hash_set() {
+    let newsletter = Newsletter {
+        topics: HashSet::from(["photography".to_owned()]),
+        ..newsletter()
+    };
+
+    assert_eq!(issues_of(&newsletter), ["topics[0]: length"]);
+}
+
+#[test]
+fn each_nested_validates_every_element_of_a_b_tree_set() {
+    let newsletter = Newsletter {
+        subscribers: BTreeSet::from([
+            Subscriber { name: "Sam".to_owned() },
+            Subscriber { name: String::new() },
+        ]),
+        ..newsletter()
+    };
+
+    assert_eq!(issues_of(&newsletter), ["subscribers[0].name: required"]);
+}
+
+#[test]
+fn each_nested_validates_every_element_of_a_hash_set() {
+    let newsletter = Newsletter {
+        editors: HashSet::from([Subscriber { name: String::new() }]),
+        ..newsletter()
+    };
+
+    assert_eq!(issues_of(&newsletter), ["editors[0].name: required"]);
+}
+
+#[test]
+fn each_inside_each_checks_the_elements_of_every_set_in_a_list() {
+    let newsletter = Newsletter {
+        issues: vec![
+            BTreeSet::new(),
+            BTreeSet::from(["photography".to_owned(), "art".to_owned()]),
+        ],
+        ..newsletter()
+    };
+
+    assert_eq!(issues_of(&newsletter), ["issues[1][1]: length"]);
+}
+
+#[test]
+fn each_checks_every_element_of_a_boxed_set() {
+    let newsletter = Newsletter {
+        archived_sections: Box::new(BTreeSet::from(["photography".to_owned(), "art".to_owned()])),
+        ..newsletter()
+    };
+
+    assert_eq!(issues_of(&newsletter), ["archived_sections[1]: length"]);
+}
+
+#[test]
+fn each_checks_every_element_of_a_set_behind_a_type_alias() {
+    let newsletter = Newsletter {
+        regional_sections: Sections::from(["photography".to_owned(), "art".to_owned()]),
+        ..newsletter()
+    };
+
+    assert_eq!(issues_of(&newsletter), ["regional_sections[1]: length"]);
 }

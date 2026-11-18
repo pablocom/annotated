@@ -136,9 +136,9 @@ pub use validate::Validate;
 ///   is none.
 /// - `nested` validates a field whose type implements [`Validate`], and reports under the field's name. The value can be
 ///   behind a `Box`, an `Rc`, an `Arc`, a reference or a `Cow`. A tuple's elements are each validated at their index.
-/// - `each(...)` applies its rules to every element of a collection, reported at its index, or to every value of a map,
-///   reported at its key. It works on anything that implements [`rules::HasElements`]. `each(nested)` validates every
-///   element.
+/// - `each(...)` applies its rules to every element of a list, an array or a set, reported at its index, or to every
+///   value of a map, reported at its key. It works on anything that implements [`rules::HasElements`]. `each(nested)`
+///   validates every element. A set's element is at its index in the set's order, which for a `HashSet` is arbitrary.
 /// - A field whose type implements [`Validate`], or holds a type that does, as `Option<Address>`, `Vec<Address>` or
 ///   `HashMap<String, Vec<Address>>` do, needs `nested` or `each(nested)`. Without either, nothing would check the
 ///   rules inside, so the field is a compile error, which says which of the two fits its type. `not_nested` on the
@@ -379,7 +379,7 @@ pub use annotated_derive::Validate;
 ///   read from a sequence.
 /// - A field that is present is checked by its `#[validate(...)]` rules exactly as [`Validate`] checks it. So for input
 ///   that has every field, the issues are the same, in the same order, as when deserializing with serde and then
-///   validating.
+///   validating, but for the elements of a set, which are checked in the order of the input, as below.
 /// - A field checked with `nested`, or with `each(...)` holding `nested`, is read through
 ///   [`Deserialize`](trait@Deserialize):
 ///   - A field missing inside it is reported at its full path.
@@ -396,6 +396,14 @@ pub use annotated_derive::Validate;
 ///   skipped or read by a function, needs `nested` when its type implements [`Validate`] instead, since `nested`
 ///   checks it with `Validate` and nothing else does. As for [`Validate`](macro@Validate), a field whose type mentions
 ///   a type, const or lifetime parameter needs neither: the derive can't tell.
+/// - A `HashSet` or a `BTreeSet` checked with `each(...)` is read as the list of its elements, which `each` checks at
+///   their index in the input, in the order of the input, where [`Validate`] would follow the set's order, arbitrary
+///   for a `HashSet`. Two equal elements are both checked, and the set built keeps the first, as serde's does. The
+///   field's other rules check the set built, so `length` counts its distinct elements. A set that isn't read, a
+///   default or one a function returned, is checked in its own order. The derive sees a set by its name, in the
+///   field's type or the `Option` it is, so `each` through a set inside another value, such as
+///   `Vec<HashSet<String>>` with `each(each(...))` or a `Box<HashSet<String>>`, is a compile error, and so is a set
+///   behind a type alias.
 /// - Struct-level rules run last, as with [`Validate`], once every field was present and could be built. Otherwise they
 ///   are skipped, since there is no struct to check.
 ///

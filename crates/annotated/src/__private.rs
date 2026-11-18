@@ -3,6 +3,10 @@ pub use regex::Regex;
 #[cfg(feature = "serde")]
 pub use serde;
 
+#[cfg(feature = "serde")]
+use std::collections::{BTreeSet, HashSet};
+#[cfg(feature = "serde")]
+use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 
 use crate::{Issue, Location, Problem, Report, Validate};
@@ -71,6 +75,76 @@ impl<T: crate::Deserialize<'static>> OwnRules<T> {
     pub const EXIST_FOR_DESERIALIZE: bool = true;
 }
 
+/// A set that `#[derive(Deserialize)]` reads as the list of its elements, in the order of the input, so that `each`
+/// checks every element at its index in the input. The list becomes the set once it is checked.
+#[cfg(feature = "serde")]
+pub trait ReadAsAList: Sized {
+    /// The set's elements, in the order they were read.
+    type List;
+
+    /// The set of the `list`'s elements, inserted in their order, as serde inserts them, so that of two equal elements
+    /// the first is kept.
+    fn from_list(list: Self::List) -> Self;
+}
+
+#[cfg(feature = "serde")]
+impl<T: Eq + Hash, S: BuildHasher + Default> ReadAsAList for HashSet<T, S> {
+    type List = Vec<T>;
+
+    fn from_list(list: Vec<T>) -> Self {
+        let mut set = Self::with_capacity_and_hasher(list.len(), S::default());
+        for element in list {
+            set.insert(element);
+        }
+        set
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T: Ord> ReadAsAList for BTreeSet<T> {
+    type List = Vec<T>;
+
+    fn from_list(list: Vec<T>) -> Self {
+        let mut set = Self::new();
+        for element in list {
+            set.insert(element);
+        }
+        set
+    }
+}
+
+/// Whether `T` is a `HashSet` or a `BTreeSet`. `#[derive(Deserialize)]` reads a set as the list of its elements only
+/// when the field's type names it, so it asks this of the type of a field checked with `each(...)` whose name it doesn't
+/// know, in a constant that fails to compile when the type is a set.
+///
+/// The constant is inherent for the two sets, and takes the place of the one [`NotASet`] gives every other type, as
+/// with [`OwnRules`].
+#[cfg(feature = "serde")]
+pub struct Collection<T: ?Sized>(PhantomData<T>);
+
+/// What [`Collection`] answers for a type that is neither a `HashSet` nor a `BTreeSet`. Its constant is named through
+/// `Collection<T>`, with the trait in scope.
+#[cfg(feature = "serde")]
+pub trait NotASet {
+    /// Whether the type is a `HashSet` or a `BTreeSet`.
+    const IS_A_SET: bool = false;
+}
+
+#[cfg(feature = "serde")]
+impl<T: ?Sized> NotASet for Collection<T> {}
+
+#[cfg(feature = "serde")]
+impl<T, S> Collection<HashSet<T, S>> {
+    /// A `HashSet` is a set.
+    pub const IS_A_SET: bool = true;
+}
+
+#[cfg(feature = "serde")]
+impl<T> Collection<BTreeSet<T>> {
+    /// A `BTreeSet` is a set.
+    pub const IS_A_SET: bool = true;
+}
+
 /// The problem of a tag that names none of the `variants` of its enum.
 #[cold]
 #[must_use]
@@ -110,6 +184,15 @@ impl ElementIssues {
             may_some_be_left_out: found_in_elements.is_finished(),
             waiting: found_in_elements.into_issues().into_iter(),
         }
+    }
+
+    /// Like [`ElementIssues::new`], but leaves `found_in_elements` empty, with its limit, where `new` takes it. A set's
+    /// elements are checked where the set is built, and the field's checks still name the report afterwards, to append
+    /// it when the set couldn't be built.
+    #[must_use]
+    pub fn taken_from(found_in_elements: &mut Report) -> Self {
+        let left_behind = found_in_elements.new_alike();
+        Self::new(std::mem::replace(found_in_elements, left_behind))
     }
 
     /// Moves the next waiting issues that are at `at` or under it into `found`, and returns whether there were any.

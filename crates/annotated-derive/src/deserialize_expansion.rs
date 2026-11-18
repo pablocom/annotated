@@ -11,6 +11,7 @@ use crate::expansion::{Expansion, message_override, validity_of};
 use crate::generated::{CratePaths, in_a_scope_of_its_own};
 use crate::own_rules::{self, WithoutNested};
 use crate::serde_names::{DefaultValue, SerdeField};
+use crate::sets::{collection_of, is_a_set, refusals_of_sets_it_can_t_see};
 use crate::validated_struct::{
     FieldRule, Place, ValidatedField, nested_rules_in, option_content, patterns_compiled_once,
 };
@@ -34,6 +35,8 @@ pub struct DeserializeExpansion<'a> {
     wrapper: Ident,
     leftovers: Ident,
     element_at: Ident,
+    list: Ident,
+    set: Ident,
     visitor_lifetime: Lifetime,
     field_checks_label: Lifetime,
     struct_checks_label: Lifetime,
@@ -62,6 +65,8 @@ impl<'a> DeserializeExpansion<'a> {
             wrapper: local("wrapper"),
             leftovers: local("leftovers"),
             element_at: local("element_at"),
+            list: local("list"),
+            set: local("set"),
             visitor_lifetime: Lifetime::new("'__visitor", Span::call_site()),
             field_checks_label,
             struct_checks_label: Lifetime::new("'struct_checks", Span::mixed_site()),
@@ -141,11 +146,13 @@ impl<'a> DeserializeExpansion<'a> {
             }
         };
         let refusals_of_unchecked_own_rules = own_rules::refusals(&input.generics, self.fields_without_nested());
+        let refusals_of_sets_it_can_t_see =
+            refusals_of_sets_it_can_t_see(&input.generics, self.fields_read_from_the_input());
         in_a_scope_of_its_own(
             input,
             paths,
             &patterns_compiled_once(self.fields()),
-            &quote!(#impls #refusals_of_unchecked_own_rules),
+            &quote!(#impls #refusals_of_unchecked_own_rules #refusals_of_sets_it_can_t_see),
         )
     }
 
@@ -164,6 +171,13 @@ impl<'a> DeserializeExpansion<'a> {
                 (field, without_nested)
             })
             .collect()
+    }
+
+    // The fields annotated reads from the input itself: neither skipped, read by a function, nor flattened.
+    pub fn fields_read_from_the_input(&self) -> impl Iterator<Item = &'a ValidatedField<'a>> {
+        self.fields()
+            .iter()
+            .filter(|field| self.is_read_by_serde(field) && !field.is_flattened)
     }
 
     pub fn new_visitor(&self) -> TokenStream {
@@ -597,8 +611,9 @@ impl<'a> DeserializeExpansion<'a> {
             return quote!(<#wrapper_type as #serde::Deserialize<'de>>::deserialize(#deserializer)?.value);
         }
         if !self.is_read_with_issues(field) {
+            let read_type = self.read_type_of(field);
             return quote_at! {field_type.span()=>
-                <#field_type as #serde::Deserialize<'de>>::deserialize(#deserializer)?
+                <#read_type as #serde::Deserialize<'de>>::deserialize(#deserializer)?
             };
         }
         let reading_with_its_issues = self.reading_with_its_issues(field);
@@ -629,8 +644,9 @@ impl<'a> DeserializeExpansion<'a> {
                 };
             }
             if !self.is_read_with_issues(field) {
+                let read_type = self.read_type_of(field);
                 return quote! {
-                    let #slot: #slot_type = #serde::de::SeqAccess::next_element::<#field_type>(&mut #seq)?;
+                    let #slot: #slot_type = #serde::de::SeqAccess::next_element::<#read_type>(&mut #seq)?;
                 };
             }
             let read_issues = read_issues_of(field);
@@ -669,6 +685,7 @@ impl<'a> DeserializeExpansion<'a> {
     fn reading_with_its_issues(&self, field: &ValidatedField) -> TokenStream {
         let Expansion { at, .. } = &self.rules;
         let field_type = field.field_type;
+        let read_type = self.read_type_of(field);
         let read_issues = read_issues_of(field);
         let at_the_field = match &field.place {
             Place::Named(name) => quote!(&self.#at.field(#name)),
@@ -677,7 +694,7 @@ impl<'a> DeserializeExpansion<'a> {
         };
         if !self.deserialized_struct.collects_type_errors {
             return quote_at! {field_type.span()=>
-                _annotated::__private::DeserializeAt::<#field_type>::new(#at_the_field, &mut #read_issues)
+                _annotated::__private::DeserializeAt::<#read_type>::new(#at_the_field, &mut #read_issues)
             };
         }
         let type_name = type_name_of(field_type);
@@ -697,7 +714,7 @@ impl<'a> DeserializeExpansion<'a> {
             quote!(CollectingTypeErrorsAt)
         };
         quote_at! {field_type.span()=>
-            _annotated::__private::#seed::<#field_type>::new(#type_name, #at_the_field, &mut #read_issues)
+            _annotated::__private::#seed::<#read_type>::new(#type_name, #at_the_field, &mut #read_issues)
         }
     }
 
@@ -708,6 +725,104 @@ impl<'a> DeserializeExpansion<'a> {
 
     fn reads_nested_values(&self, field: &ValidatedField) -> bool {
         field.has_nested_values() && !self.is_skipped(field) && !self.is_read_by_a_function(field)
+    }
+
+    // A set whose elements are checked by `each` is read as the list of their elements, so that each is checked at its
+    // index in the input, where a client finds it. The set's own order is arbitrary for a `HashSet`, and sorted for a
+    // `BTreeSet`. A set annotated doesn't read follows its own order.
+    fn set_read_as_a_list(&self, field: &ValidatedField<'a>) -> Option<&'a Type> {
+        if !self.is_read_by_serde(field) || field.is_flattened {
+            return None;
+        }
+        collection_of(field).filter(|collection| is_a_set(collection))
+    }
+
+    fn read_type_of(&self, field: &ValidatedField<'a>) -> TokenStream {
+        let Some(set) = self.set_read_as_a_list(field) else {
+            return field.field_type.to_token_stream();
+        };
+        let list = quote_at!(set.span()=> <#set as _annotated::__private::ReadAsAList>::List);
+        if field.is_optional {
+            return quote!(::core::option::Option<#list>);
+        }
+        list
+    }
+
+    // For each `each` rule of a set read as a list that checks more than nested values, the issues its elements had,
+    // checked as they were read.
+    fn buffers_of_elements_checked_apart(&self, field: &ValidatedField<'a>) -> Vec<Ident> {
+        if self.set_read_as_a_list(field).is_none() {
+            return Vec::new();
+        }
+        field
+            .rules
+            .iter()
+            .filter(|rule| rule.is_each_checking_more_than_nested_values())
+            .enumerate()
+            .map(|(position, _)| field.local(&format!("issues_of_each_{position}")))
+            .collect()
+    }
+
+    // Each list read becomes the set it was read as, once its `each` rules checked its elements apart.
+    fn sets_from_the_lists_read(&self) -> Vec<TokenStream> {
+        let list = &self.list;
+        self.fields()
+            .iter()
+            .filter_map(|field| {
+                let set = self.set_read_as_a_list(field)?;
+                let slot = slot_of(field);
+                let elements_checked = self.elements_checked_apart(field, &quote!(&#list));
+                let set_from_the_list = quote! {
+                    {
+                        #elements_checked
+                        <#set as _annotated::__private::ReadAsAList>::from_list(#list)
+                    }
+                };
+                let options_around_the_list =
+                    self.options_around_the_value_read(field) + usize::from(field.is_optional);
+                let read_value = mapped_through_options(options_around_the_list, &slot, list, &set_from_the_list);
+                Some(quote!(let #slot = #read_value;))
+            })
+            .collect()
+    }
+
+    // How many `Option`s the slot of a field wraps its value read in: whether it was present, and whether it could be
+    // built.
+    fn options_around_the_value_read(&self, field: &ValidatedField) -> usize {
+        let is_never_absent = matches!(self.when_absent(field), WhenAbsent::IsNeverAbsent);
+        usize::from(!is_never_absent) + usize::from(self.is_read_with_issues(field))
+    }
+
+    // `collection` refers to a set's elements: those read, or the set's own.
+    fn elements_checked_apart(&self, field: &ValidatedField<'a>, collection: &TokenStream) -> TokenStream {
+        let waiting_for_the_elements = if field.joins_nested_issues_element_by_element() {
+            let read_issues = read_issues_of(field);
+            quote!(let mut #read_issues = _annotated::__private::ElementIssues::taken_from(&mut #read_issues);)
+        } else {
+            TokenStream::new()
+        };
+        let elements_checked =
+            self.rules_of(field)
+                .elements_checked_apart(&field.rules, collection, &self.rules.field_location(field));
+        quote! {
+            #waiting_for_the_elements
+            #elements_checked
+        }
+    }
+
+    // A default isn't read, so its elements are checked in the set's own order, into the buffers the field joins.
+    fn elements_of_a_default_checked_apart(&self, field: &ValidatedField<'a>) -> TokenStream {
+        let Self { set, .. } = self;
+        let value = &self.rules.value;
+        if !field.is_optional {
+            return self.elements_checked_apart(field, &quote!(&#value));
+        }
+        let elements_checked = self.elements_checked_apart(field, &quote!(#set));
+        quote! {
+            if let ::core::option::Option::Some(#set) = &#value {
+                #elements_checked
+            }
+        }
     }
 
     fn is_skipped(&self, field: &ValidatedField) -> bool {
@@ -915,7 +1030,8 @@ impl<'a> DeserializeExpansion<'a> {
             return quote!(#serde::de::MapAccess::next_value::<#wrapper_type>(&mut #map)?.value);
         }
         if !self.is_read_with_issues(field) {
-            return quote!(#serde::de::MapAccess::next_value::<#field_type>(&mut #map)?);
+            let read_type = self.read_type_of(field);
+            return quote!(#serde::de::MapAccess::next_value::<#read_type>(&mut #map)?);
         }
         let reading_with_its_issues = self.reading_with_its_issues(field);
         let value = quote_at! {field_type.span()=>
@@ -954,6 +1070,11 @@ impl<'a> DeserializeExpansion<'a> {
             .iter()
             .filter(|field| field.has_nested_values() && !self.is_read_with_issues(field))
             .map(read_issues_of);
+        let buffers_of_elements_checked_apart = self
+            .fields()
+            .iter()
+            .flat_map(|field| self.buffers_of_elements_checked_apart(field));
+        let sets_from_the_lists_read = self.sets_from_the_lists_read();
         let nested_values_not_read_validated = self.nested_values_not_read_validated();
         let values_of_slots = self.fields().iter().map(|field| self.value_of_slot(field));
         let values_from_the_struct_default = self.values_from_the_struct_default();
@@ -992,6 +1113,8 @@ impl<'a> DeserializeExpansion<'a> {
                 let #at = self.#at;
                 let #found = self.#found;
                 #(let mut #buffers_of_nested_values_not_read = #found.new_alike();)*
+                #(let mut #buffers_of_elements_checked_apart = #found.new_alike();)*
+                #(#sets_from_the_lists_read)*
                 #(#values_of_slots)*
                 #values_from_the_struct_default
                 #(#nested_values_not_read_validated)*
@@ -1017,7 +1140,7 @@ impl<'a> DeserializeExpansion<'a> {
                 if self.holds_its_value(field) {
                     let slot = slot_of(field);
                     let value_of_field = quote!(&#slot);
-                    let waiting_for_the_elements = waiting_for_the_elements(field);
+                    let waiting_for_the_elements = self.waiting_for_the_elements(field);
                     let checks = if keeps_validity {
                         self.validity_of_a_value_held(field, &value_of_field)
                     } else {
@@ -1052,7 +1175,7 @@ impl<'a> DeserializeExpansion<'a> {
         } else {
             self.rules_of(field).field_rule_checks(field)
         };
-        let waiting_for_the_elements = waiting_for_the_elements(field);
+        let waiting_for_the_elements = self.waiting_for_the_elements(field);
         let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built }));
         let missing_arm = self
             .can_be_missing(field)
@@ -1111,7 +1234,7 @@ impl<'a> DeserializeExpansion<'a> {
         } else {
             self.rules_of(field).field_passes_every_rule(field)
         };
-        let waiting_for_the_elements = waiting_for_the_elements(field);
+        let waiting_for_the_elements = self.waiting_for_the_elements(field);
         let not_built_arm = not_built.map(|(pattern, not_built)| quote!(#pattern => { #not_built false }));
         let missing_arm = self
             .can_be_missing(field)
@@ -1128,11 +1251,29 @@ impl<'a> DeserializeExpansion<'a> {
         }
     }
 
-    fn rules_of(&self, field: &ValidatedField) -> Expansion {
-        if !field.has_nested_values() {
-            return self.rules.clone();
+    // The elements of a set read as a list were checked apart, so their issues wait for the field's checks.
+    fn waiting_for_the_elements(&self, field: &ValidatedField<'a>) -> TokenStream {
+        if !field.joins_nested_issues_element_by_element() || self.set_read_as_a_list(field).is_some() {
+            return TokenStream::new();
         }
-        self.rules.reading_nested_issues_from(&read_issues_of(field))
+        let read_issues = read_issues_of(field);
+        quote! {
+            let mut #read_issues = _annotated::__private::ElementIssues::new(#read_issues);
+        }
+    }
+
+    fn rules_of(&self, field: &ValidatedField<'a>) -> Expansion {
+        let buffers_of_elements_checked_apart = self.buffers_of_elements_checked_apart(field);
+        let rules = if buffers_of_elements_checked_apart.is_empty() {
+            self.rules.clone()
+        } else {
+            self.rules
+                .joining_elements_checked_apart_into(buffers_of_elements_checked_apart)
+        };
+        if !field.has_nested_values() {
+            return rules;
+        }
+        rules.reading_nested_issues_from(&read_issues_of(field))
     }
 
     fn slot_states(&self, field: &ValidatedField) -> SlotStates {
@@ -1212,7 +1353,7 @@ impl<'a> DeserializeExpansion<'a> {
     }
 
     fn slot_type_of(&self, field: &ValidatedField) -> TokenStream {
-        let field_type = field.field_type;
+        let field_type = self.read_type_of(field);
         let is_never_absent = matches!(self.when_absent(field), WhenAbsent::IsNeverAbsent);
         if is_never_absent && self.is_read_with_issues(field) {
             return quote!(::core::option::Option<#field_type>);
@@ -1351,18 +1492,29 @@ impl<'a> DeserializeExpansion<'a> {
             .expect("the field is one of the struct's")
     }
 
-    fn value_when_absent(&self, field: &ValidatedField, default_value: &TokenStream) -> TokenStream {
-        if !self.reads_nested_values(field) {
+    fn value_when_absent(&self, field: &ValidatedField<'a>, default_value: &TokenStream) -> TokenStream {
+        let is_a_set_read_as_a_list = self.set_read_as_a_list(field).is_some();
+        if !self.reads_nested_values(field) && !is_a_set_read_as_a_list {
             return self.as_its_slot_holds_it(field, default_value);
         }
         let value = &self.rules.value;
         let field_type = field.field_type;
-        let validating_nested_values = self.validating_nested_values(field, &quote!(&#value));
+        let validating_nested_values = if self.reads_nested_values(field) {
+            self.validating_nested_values(field, &quote!(&#value))
+        } else {
+            TokenStream::new()
+        };
+        let elements_checked = if is_a_set_read_as_a_list {
+            self.elements_of_a_default_checked_apart(field)
+        } else {
+            TokenStream::new()
+        };
         let held_value = self.as_its_slot_holds_it(field, &quote!(#value));
         quote! {
             {
                 let #value: #field_type = #default_value;
                 #validating_nested_values
+                #elements_checked
                 #held_value
             }
         }
@@ -1526,13 +1678,18 @@ fn slot_of(field: &ValidatedField) -> Ident {
     field.local("slot")
 }
 
-fn waiting_for_the_elements(field: &ValidatedField) -> TokenStream {
-    if !field.joins_nested_issues_element_by_element() {
-        return TokenStream::new();
-    }
-    let read_issues = read_issues_of(field);
-    quote! {
-        let mut #read_issues = _annotated::__private::ElementIssues::new(#read_issues);
+// `value` holds a list inside `options` `Option`s: the same value, with the list made a set by `set_from_the_list`.
+fn mapped_through_options(options: usize, value: &Ident, list: &Ident, set_from_the_list: &TokenStream) -> TokenStream {
+    match options {
+        0 => quote!({
+            let #list = #value;
+            #set_from_the_list
+        }),
+        1 => quote!(::core::option::Option::map(#value, |#list| #set_from_the_list)),
+        _ => {
+            let inside = mapped_through_options(options - 1, value, list, set_from_the_list);
+            quote!(::core::option::Option::map(#value, |#value| #inside))
+        }
     }
 }
 

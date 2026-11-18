@@ -12,10 +12,11 @@ error[E0277]: `each` can't go through the elements of `u8`
   = help: the following other types implement trait `HasElements`:
             &C
             BTreeMap<K, V>
+            BTreeSet<T>
             Box<C>
             HashMap<K, V, S>
+            HashSet<T, S>
             Vec<T>
             VecDeque<T>
-            [T; N]
-            [T]
+          and $N others
   = note: this error originates in the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)

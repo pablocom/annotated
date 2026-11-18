@@ -28,6 +28,7 @@ mod pattern;
 mod receiver;
 mod reserved_names;
 mod serde_names;
+mod sets;
 mod validated_enum;
 mod validated_struct;
 mod written_rule;

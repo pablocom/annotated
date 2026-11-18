@@ -3,6 +3,7 @@ use syn::{Attribute, DeriveInput, Error, ExprPath, Ident, Meta, Token};
 
 use crate::options::Options;
 use crate::serde_names::{SerdeStruct, UnreadableAttribute};
+use crate::sets::refuse_each_through_a_set_the_field_does_not_hold;
 use crate::validated_struct::{FieldRule, ValidatedField, ValidatedStruct, nested_rules_in};
 
 pub struct DeserializedStruct<'a> {
@@ -53,6 +54,7 @@ impl<'a> DeserializedStruct<'a> {
         )?;
         refuse_serde_attributes_other_than(&ON_A_STRUCT, &input.attrs)?;
         refuse_what_fields_can_t_take(&validated.fields)?;
+        refuse_each_through_a_set_they_do_not_hold(&validated.fields)?;
         let serde = SerdeStruct::from_input(input, UnreadableAttribute::IsAnError)?;
         if serde.is_denying_unknown_fields {
             refuse_flatten(&validated.fields, "a struct")?;
@@ -72,6 +74,13 @@ impl<'a> DeserializedStruct<'a> {
 pub fn refuse_what_fields_can_t_take(fields: &[ValidatedField]) -> syn::Result<()> {
     for field in fields {
         refuse_nested_more_than_once(&field.rules)?;
+    }
+    Ok(())
+}
+
+pub fn refuse_each_through_a_set_they_do_not_hold(fields: &[ValidatedField]) -> syn::Result<()> {
+    for field in fields {
+        refuse_each_through_a_set_the_field_does_not_hold(field)?;
     }
     Ok(())
 }

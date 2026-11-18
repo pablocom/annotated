@@ -11,6 +11,7 @@ use crate::expansion::Expansion;
 use crate::generated::{CratePaths, in_a_scope_of_its_own};
 use crate::own_rules;
 use crate::serde_names::Tag;
+use crate::sets::refusals_of_sets_it_can_t_see;
 use crate::validated_struct::{Place, patterns_compiled_once};
 
 pub fn deserialize_enum_impl(deserialized_enum: &DeserializedEnum, paths: &CratePaths) -> TokenStream {
@@ -119,11 +120,16 @@ impl<'a> EnumExpansion<'a> {
             self.contents_read()
                 .flat_map(DeserializeExpansion::fields_without_nested),
         );
+        let refusals_of_sets_it_can_t_see = refusals_of_sets_it_can_t_see(
+            &input.generics,
+            self.contents_read()
+                .flat_map(DeserializeExpansion::fields_read_from_the_input),
+        );
         in_a_scope_of_its_own(
             input,
             paths,
             &patterns_compiled_once(fields),
-            &quote!(#impls #refusals_of_unchecked_own_rules),
+            &quote!(#impls #refusals_of_unchecked_own_rules #refusals_of_sets_it_can_t_see),
         )
     }
 

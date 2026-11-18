@@ -1,0 +1,23 @@
+error: `#[derive(Deserialize)]` checks a set's elements as it reads them, which it can do only when the set is the field's own type or an `Option` of it, and this `each` goes through a set inside another value
+ --> tests/ui/deserialize/each_through_a_set_inside_another_value.rs:7:21
+  |
+7 |     #[validate(each(each(length(max = 10))))]
+  |                     ^^^^
+
+error: `#[derive(Deserialize)]` checks a set's elements as it reads them, which it can do only when the set is the field's own type or an `Option` of it, and this `each` goes through a set inside another value
+  --> tests/ui/deserialize/each_through_a_set_inside_another_value.rs:13:21
+   |
+13 |     #[validate(each(each(length(max = 10))))]
+   |                     ^^^^
+
+error: `#[derive(Deserialize)]` checks a set's elements as it reads them, which it can do only when the set is the field's own type or an `Option` of it, and this `each` goes through a set inside another value
+  --> tests/ui/deserialize/each_through_a_set_inside_another_value.rs:19:16
+   |
+19 |     #[validate(each(length(max = 10)))]
+   |                ^^^^
+
+error: `#[derive(Deserialize)]` checks a set's elements as it reads them, which it can do only when the set is the field's own type or an `Option` of it, and this `each` goes through a set inside another value
+  --> tests/ui/deserialize/each_through_a_set_inside_another_value.rs:25:16
+   |
+25 |     #[validate(each(length(max = 10)))]
+   |                ^^^^

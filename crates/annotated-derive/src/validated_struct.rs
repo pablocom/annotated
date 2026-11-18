@@ -420,6 +420,10 @@ impl FieldRule {
         }
     }
 
+    pub fn is_each_checking_more_than_nested_values(&self) -> bool {
+        matches!(self, Self::Each { .. }) && !self.checks_only_nested_values()
+    }
+
     fn from_written(written: WrittenRule, checked_type: Option<&Type>) -> syn::Result<Self> {
         match written {
             WrittenRule::Each { span, element_rules } => Self::each(element_rules, checked_type, span),

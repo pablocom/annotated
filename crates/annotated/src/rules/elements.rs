@@ -1,10 +1,18 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt::Display;
 
 use crate::Location;
 
-/// A collection whose elements `#[validate(each(...))]` can check: the elements of a sequence, each at its index, or
-/// the values of a map, each at its key.
+/// A collection whose elements `#[validate(each(...))]` can check: the elements of a sequence or a set, each at its
+/// index, or the values of a map, each at its key.
+///
+/// It is implemented for `Vec`, `VecDeque`, arrays, slices, `HashSet`, `BTreeSet`, `HashMap` and `BTreeMap`, and for
+/// any of these behind a reference or a `Box`.
+///
+/// A set's elements are at their index in its iteration order. A `HashSet`'s order is arbitrary, so there the index
+/// names the element only in that same set. `#[derive(Deserialize)]` checks the elements of a set it reads from the
+/// input as it reads them, each at its index in the input, when the field's type names the `HashSet` or the
+/// `BTreeSet`, alone or in an `Option`.
 ///
 /// Implement it for a collection of your own to let `each` go through it:
 ///
@@ -96,6 +104,37 @@ impl<C: HasElements + ?Sized> HasElements for Box<C> {
     }
 }
 
+/// An element is at its index in the set's iteration order, which is arbitrary, so the index names the element only in
+/// this same set.
+impl<T, S> HasElements for HashSet<T, S> {
+    type Element = T;
+
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&T, &Location<'_>) -> bool) {
+        for_each_element_at_its_index(self, at, check);
+    }
+}
+
+/// An element is at its index in the set's order, which is the elements' own.
+impl<T> HasElements for BTreeSet<T> {
+    type Element = T;
+
+    fn for_each_element(&self, at: &Location<'_>, check: impl FnMut(&T, &Location<'_>) -> bool) {
+        for_each_element_at_its_index(self, at, check);
+    }
+}
+
+fn for_each_element_at_its_index<'a, T: 'a>(
+    elements: impl IntoIterator<Item = &'a T>,
+    at: &Location<'_>,
+    mut check: impl FnMut(&T, &Location<'_>) -> bool,
+) {
+    for (index, element) in elements.into_iter().enumerate() {
+        if !check(element, &at.index(index)) {
+            return;
+        }
+    }
+}
+
 impl<K: Display, V, S> HasElements for HashMap<K, V, S> {
     type Element = V;
 
@@ -145,6 +184,20 @@ mod tests {
         let queue = VecDeque::from(["tin", "jars"]);
 
         assert_eq!(elements_checked_until_a_check_answers_false(&queue), 1);
+    }
+
+    #[test]
+    fn going_through_a_hash_set_stops_once_a_check_answers_false() {
+        let set = HashSet::from(["tin", "jars"]);
+
+        assert_eq!(elements_checked_until_a_check_answers_false(&set), 1);
+    }
+
+    #[test]
+    fn going_through_a_b_tree_set_stops_once_a_check_answers_false() {
+        let set = BTreeSet::from(["tin", "jars"]);
+
+        assert_eq!(elements_checked_until_a_check_answers_false(&set), 1);
     }
 
     #[test]

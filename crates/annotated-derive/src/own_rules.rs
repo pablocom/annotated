@@ -3,6 +3,7 @@ use quote::{ToTokens, quote};
 use syn::spanned::Spanned;
 use syn::{Generics, Ident, Type, TypePath};
 
+use crate::sets::is_a_set;
 use crate::validated_struct::{
     Nesting, ValidatedField, content_of, element_type, is_map, option_content, type_arguments, ungrouped,
 };
@@ -167,7 +168,7 @@ fn is_a_collection(written_type: &Type) -> bool {
                 .segments
                 .last()
                 .is_some_and(|last_segment| last_segment.ident == "Vec" || last_segment.ident == "VecDeque");
-            is_a_list || is_map(type_path)
+            is_a_list || is_a_set(written_type) || is_map(type_path)
         }
         _ => false,
     }
@@ -206,13 +207,13 @@ fn refusal_message(without_nested: WithoutNested, joining: Joining) -> &'static 
     }
 }
 
-struct ItemParameters {
+pub struct ItemParameters {
     names: Vec<String>,
     lifetimes: Vec<String>,
 }
 
 impl ItemParameters {
-    fn of(generics: &Generics) -> Self {
+    pub fn of(generics: &Generics) -> Self {
         let names = generics
             .type_params()
             .map(|parameter| &parameter.ident)
@@ -226,7 +227,7 @@ impl ItemParameters {
         Self { names, lifetimes }
     }
 
-    fn are_mentioned_in(&self, written_type: &Type) -> bool {
+    pub fn are_mentioned_in(&self, written_type: &Type) -> bool {
         if self.names.is_empty() && self.lifetimes.is_empty() {
             return false;
         }

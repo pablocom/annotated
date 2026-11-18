@@ -5,6 +5,8 @@
 // The types here are only described, never read.
 #![allow(dead_code)]
 
+use std::collections::HashSet;
+
 use annotated::rules::HasLength;
 use annotated::{Deserialize, FieldRules, Location, Problem, Report, Rules, Validate, ValueRules};
 use serde::Deserializer;
@@ -54,6 +56,22 @@ fn a_struct_read_collecting_its_issues_describes_its_rules() {
             ],
             Some(&ValueRules::optional().with_elements(ValueRules::new().with_problem(Problem::Email)))
         )
+    );
+}
+
+#[test]
+fn a_set_whose_elements_are_checked_as_they_are_read_describes_the_rules_of_its_elements() {
+    #[derive(Deserialize)]
+    struct Member {
+        #[validate(each(email))]
+        contacts: HashSet<String>,
+    }
+
+    let rules = <Member as Deserialize>::rules();
+
+    assert_eq!(
+        rules.fields().first().map(FieldRules::rules),
+        Some(&ValueRules::new().with_elements(ValueRules::new().with_problem(Problem::Email)))
     );
 }
 

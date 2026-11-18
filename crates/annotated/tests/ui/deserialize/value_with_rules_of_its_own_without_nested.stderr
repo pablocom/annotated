@@ -63,3 +63,14 @@ error[E0080]: evaluation panicked: this field holds a value with rules of its ow
    |              ^^^^^^^ evaluation of `_::_` failed here
    |
    = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field's elements have rules of their own, and serde would read them here, so their issues would be one error instead of issues at this field: add `#[validate(each(nested))]` to report them at this field, or `#[validate(not_nested)]` to read them as serde does
+  --> tests/ui/deserialize/value_with_rules_of_its_own_without_nested.rs:49:17
+   |
+47 | #[derive(Deserialize)]
+   |          ----------- in this derive macro expansion
+48 | struct Mailing {
+49 |     recipients: BTreeSet<Address>,
+   |                 ^^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)

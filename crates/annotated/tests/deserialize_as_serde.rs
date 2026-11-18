@@ -8,7 +8,8 @@
 
 #![cfg(feature = "serde")]
 
-use std::collections::BTreeMap;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug};
 
 use serde::de::{DeserializeOwned, MapAccess, SeqAccess, Visitor};
@@ -1239,6 +1240,103 @@ mod options {
             "options collecting type errors throughout",
             BODIES,
             &[OPTIONS_MISSING_FROM_A_SEQUENCE],
+        );
+    }
+}
+
+/// A word equal to, and ordered as, any other spelling of it, so that a set keeps one of two spellings, and prints
+/// which.
+#[derive(serde::Deserialize, Debug)]
+struct Spelling(String);
+
+impl PartialEq for Spelling {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&other.0)
+    }
+}
+
+impl Eq for Spelling {}
+
+impl PartialOrd for Spelling {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Spelling {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.to_ascii_lowercase().cmp(&other.0.to_ascii_lowercase())
+    }
+}
+
+fn is_a_word(spelling: &Spelling) -> Result<(), annotated::Problem> {
+    if spelling.0.contains(' ') {
+        return Err(annotated::Problem::custom("not_a_word", "must be a single word"));
+    }
+    Ok(())
+}
+
+mod sets {
+    use super::*;
+
+    read_by_both! {
+        struct Article {
+            #[validate(each(length(max = 20)))]
+            tags: BTreeSet<String>,
+            #[validate(each(nested))]
+            authors: Option<BTreeSet<Author>>,
+            #[validate(each(custom(is_a_word)))]
+            terms: Option<BTreeSet<Spelling>>,
+        }
+
+        #[derive(PartialEq, Eq, PartialOrd, Ord)]
+        struct Author {
+            name: String,
+        }
+    }
+
+    const BODIES: &[&str] = &[
+        r#"{"tags": ["rust", "api"]}"#,
+        r#"{"tags": ["rust", "api", "rust"]}"#,
+        r#"{"tags": [], "authors": [{"name": "Zoe"}, {"name": "Ann"}, {"name": "Zoe"}]}"#,
+        r#"{"tags": [], "terms": ["Rust", "API", "rust"]}"#,
+        r#"{"tags": [], "authors": null, "terms": null}"#,
+        "{}",
+        r#"{"tags": null}"#,
+        r#"{"tags": "rust"}"#,
+        r#"{"tags": ["rust", 1]}"#,
+        r#"{"tags": {"rust": 1}}"#,
+        r#"{"tags": [], "authors": [{}]}"#,
+        r#"{"tags": [], "authors": [{"name": "Zoe"}, 1]}"#,
+        r#"{"tags": [], "authors": {"name": "Zoe"}}"#,
+        r#"{"tags": [], "tags": []}"#,
+        r#"[["rust"], [{"name": "Zoe"}], ["Rust", "rust"]]"#,
+        r#"[["rust"], null, null]"#,
+        "[]",
+        r#""rust""#,
+        "null",
+    ];
+
+    #[test]
+    fn sets_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Article, by_annotated::Article>("sets", BODIES, &[]);
+    }
+
+    #[test]
+    fn sets_collecting_type_errors_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Article, collecting_at_the_root::Article>(
+            "sets collecting type errors",
+            BODIES,
+            &[],
+        );
+    }
+
+    #[test]
+    fn sets_collecting_type_errors_throughout_read_each_body_as_serde_reads_it() {
+        assert_each_body_reads_as_serde_reads_it::<by_serde::Article, collecting_throughout::Article>(
+            "sets collecting type errors throughout",
+            BODIES,
+            &[],
         );
     }
 }

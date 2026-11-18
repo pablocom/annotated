@@ -4,6 +4,15 @@ This file lists every change that users of the crates can notice. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `each(...)` goes through the elements of a `HashSet` and a `BTreeSet`, `each(nested)` included.
+  - `validate()` reports an element at its index in the set's order, which for a `HashSet` is arbitrary.
+  - `#[derive(Deserialize)]` reports an element at its index in the input, where a client can find it, in the order of the input. Two equal elements are both checked, and the set keeps the first, as serde's does. Other rules on the field check the set, so `length` counts its distinct elements.
+  - A set that isn't read from the input, such as a default or one returned by `deserialize_with`, is checked in the set's order.
+  - Under `#[derive(Deserialize)]`, the field's type has to name the set, alone or in an `Option`. `each` through a set inside another value, such as `Vec<HashSet<String>>` with `each(each(...))` or a `Box<HashSet<String>>`, is a compile error, and so is a set behind a type alias.
+  - A forgotten `nested` on a set of values with rules of their own suggests `each(nested)`.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

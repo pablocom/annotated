@@ -22,6 +22,7 @@ pub struct Expansion {
     is_reporting_all: bool,
     stop: TokenStream,
     nested_values: NestedValues,
+    elements_checked_apart: Vec<Ident>,
     is_within_an_element: bool,
 }
 
@@ -143,6 +144,7 @@ impl Expansion {
             is_reporting_all,
             stop,
             nested_values: NestedValues::Validated,
+            elements_checked_apart: Vec::new(),
             is_within_an_element: false,
         }
     }
@@ -158,6 +160,15 @@ impl Expansion {
         }
     }
 
+    // `buffers` holds, for each `each` rule that checks more than nested values, in the order written, the issues its
+    // elements had when they were checked apart, before the field's checks.
+    pub fn joining_elements_checked_apart_into(&self, buffers: Vec<Ident>) -> Self {
+        Self {
+            elements_checked_apart: buffers,
+            ..self.clone()
+        }
+    }
+
     fn has_read_nested_values(&self) -> bool {
         matches!(self.nested_values, NestedValues::ReadWithIssuesIn(_))
     }
@@ -165,6 +176,7 @@ impl Expansion {
     fn within_an_element(&self) -> Self {
         Self {
             stop: quote!(return false),
+            elements_checked_apart: Vec::new(),
             is_within_an_element: true,
             ..self.clone()
         }
@@ -257,9 +269,7 @@ impl Expansion {
 
     fn checks(&self, rules: &[FieldRule], is_value_optional: bool, value_at: &TokenStream) -> TokenStream {
         if self.is_reporting_all {
-            let checks = rules
-                .iter()
-                .map(|rule| self.rule_check(rule, is_value_optional, value_at));
+            let checks = self.rule_checks(rules, is_value_optional, value_at);
             return quote!(#(let _ = #checks;)*);
         }
         let passes_every_rule = self.passes_every_rule(rules, is_value_optional, value_at);
@@ -267,10 +277,23 @@ impl Expansion {
     }
 
     fn passes_every_rule(&self, rules: &[FieldRule], is_value_optional: bool, value_at: &TokenStream) -> TokenStream {
-        let checks = rules
-            .iter()
-            .map(|rule| self.rule_check(rule, is_value_optional, value_at));
+        let checks = self.rule_checks(rules, is_value_optional, value_at);
         quote!((#(#checks)&&*))
+    }
+
+    // An `each` whose elements were checked apart joins their issues where it is written.
+    fn rule_checks(&self, rules: &[FieldRule], is_value_optional: bool, value_at: &TokenStream) -> Vec<TokenStream> {
+        let mut buffers = self.elements_checked_apart.iter();
+        rules
+            .iter()
+            .map(|rule| {
+                let buffer = rule.is_each_checking_more_than_nested_values().then(|| buffers.next());
+                match buffer.flatten() {
+                    Some(buffer) => self.joined(buffer),
+                    None => self.rule_check(rule, is_value_optional, value_at),
+                }
+            })
+            .collect()
     }
 
     fn rule_check(&self, rule: &FieldRule, is_value_optional: bool, value_at: &TokenStream) -> TokenStream {
@@ -315,8 +338,8 @@ impl Expansion {
                 }
             };
         };
-        let after_an_issue = self.after_an_issue();
         if self.is_within_an_element {
+            let after_an_issue = self.after_an_issue();
             return quote! {
                 if #read_issues.join_those_at(#value_at, #found) {
                     #after_an_issue
@@ -325,11 +348,18 @@ impl Expansion {
                 }
             };
         }
+        self.joined(read_issues)
+    }
+
+    // The issues waiting in `buffer`, appended to `found`, as a failure of the field when there are any.
+    fn joined(&self, buffer: &Ident) -> TokenStream {
+        let found = &self.found;
+        let after_an_issue = self.after_an_issue();
         quote! {
-            if #read_issues.is_empty() {
+            if #buffer.is_empty() {
                 true
             } else {
-                #found.append(&mut #read_issues);
+                #found.append(&mut #buffer);
                 #after_an_issue
             }
         }
@@ -343,15 +373,39 @@ impl Expansion {
         value_at: &TokenStream,
     ) -> TokenStream {
         let Self {
+            found, found_before, ..
+        } = self;
+        let elements_checked = self.elements_checked(element_rules, are_elements_optional, span, value_at);
+        let after_an_issue = self.after_an_issue();
+        quote_at! {span=>
+            {
+                let #found_before = #found.len();
+                #elements_checked
+                if #found.len() == #found_before {
+                    true
+                } else {
+                    #after_an_issue
+                }
+            }
+        }
+    }
+
+    // Every element of the collection `value` holds checked by the rules of an `each`, into `found`.
+    fn elements_checked(
+        &self,
+        element_rules: &[FieldRule],
+        are_elements_optional: bool,
+        span: Span,
+        value_at: &TokenStream,
+    ) -> TokenStream {
+        let Self {
             found,
             element_at,
             value,
-            found_before,
             ..
         } = self;
         let within_an_element = self.within_an_element();
         let element_checks = within_an_element.checks(element_rules, are_elements_optional, &quote!(#element_at));
-        let after_an_issue = self.after_an_issue();
         let (skipping_the_element_s_read_issues, joining_the_read_issues_left) = match &self.nested_values {
             NestedValues::ReadWithIssuesIn(read_issues) if !nested_rules_in(element_rules).is_empty() => (
                 quote!(#read_issues.skip_those_at(#element_at);),
@@ -360,19 +414,49 @@ impl Expansion {
             _ => (TokenStream::new(), TokenStream::new()),
         };
         quote_at! {span=>
-            {
-                let #found_before = #found.len();
-                _annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
-                    #element_checks
-                    #skipping_the_element_s_read_issues
-                    true
-                });
-                #joining_the_read_issues_left
-                if #found.len() == #found_before {
-                    true
-                } else {
-                    #after_an_issue
+            _annotated::rules::HasElements::for_each_element(#value, #value_at, |#value, #element_at| {
+                #element_checks
+                #skipping_the_element_s_read_issues
+                true
+            });
+            #joining_the_read_issues_left
+        }
+    }
+
+    // The elements of the collection that `collection` refers to, checked by each `each` rule among `rules` that checks
+    // more than nested values, into the buffer of its own `elements_checked_apart` holds for it, in the same order.
+    pub fn elements_checked_apart(
+        &self,
+        rules: &[FieldRule],
+        collection: &TokenStream,
+        value_at: &TokenStream,
+    ) -> TokenStream {
+        let Self { found, value, .. } = self;
+        let checking_into_their_buffers = rules
+            .iter()
+            .filter(|rule| rule.is_each_checking_more_than_nested_values())
+            .filter_map(|rule| match rule {
+                FieldRule::Each {
+                    element_rules,
+                    are_elements_optional,
+                    span,
+                } => Some((element_rules, *are_elements_optional, *span)),
+                FieldRule::Check(_) | FieldRule::Nested { .. } => None,
+            })
+            .zip(&self.elements_checked_apart)
+            .map(|((element_rules, are_elements_optional, span), buffer)| {
+                let elements_checked = self.elements_checked(element_rules, are_elements_optional, span, value_at);
+                quote! {
+                    {
+                        let #found = &mut #buffer;
+                        #elements_checked
+                    }
                 }
+            });
+        quote! {
+            {
+                let #value = #collection;
+                #(#checking_into_their_buffers)*
             }
         }
     }

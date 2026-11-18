@@ -85,3 +85,14 @@ error[E0080]: evaluation panicked: this field's elements have rules of their own
    |            ^ evaluation of `_::_` failed here
    |
    = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this field's elements have rules of their own, and nothing checks them here: add `#[validate(each(nested))]` to check them, or `#[validate(not_nested)]` to leave them unchecked
+  --> tests/ui/value_with_rules_of_its_own_without_nested.rs:45:16
+   |
+40 | #[derive(Validate)]
+   |          -------- in this derive macro expansion
+...
+45 |     suppliers: HashSet<Address>,
+   |                ^^^^^^^ evaluation of `_::_` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the derive macro `Validate` (in Nightly builds, run with -Z macro-backtrace for more info)
